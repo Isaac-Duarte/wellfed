@@ -10,45 +10,27 @@ DOMAIN: Final = "wellfed"
 ENTRY_VERSION: Final = 2
 ENTRY_MINOR_VERSION: Final = 1
 
-# Version 2 of the entry's data (version 1 had no routes, and is not
-# migrated): `route` and `identity` on both routes,
-# then `secret` and `address` directly, or `url`, `token`, `token_id` and
-# `feeder_id` through the owner's server.
-CONF_ROUTE: Final = "route"
+# Version 2 of the entry's data (version 1, from test builds, is not
+# migrated): the feeder's `identity`, the client key's `secret`, and the
+# `address`, or none to find the feeder over mDNS.
 CONF_IDENTITY: Final = "identity"
 CONF_SECRET: Final = "secret"
 CONF_ADDRESS: Final = "address"
-CONF_URL: Final = "url"
-CONF_TOKEN: Final = "token"
-CONF_TOKEN_ID: Final = "token_id"
-CONF_FEEDER_ID: Final = "feeder_id"
 
-# Form fields that are never stored.
+# A form field that is never stored.
 CONF_INVITE: Final = "invite"
-CONF_FEEDER: Final = "feeder"
 
-# How the entry reaches its feeder: directly over the device API, or
-# through the owner's server.
-ROUTE_DIRECT: Final = "direct"
-ROUTE_SERVER: Final = "server"
-
-# The label the feeder lists this client under, and the server this
-# integration's token.
+# The label the feeder lists this client under.
 CLIENT_LABEL: Final = "home-assistant"
 
 # Fired on the bus for every event the feeder records as it happens.
 EVENT_FEEDER: Final = "wellfed_event"
 
-# Repairs that outlive an entry or a route: a client key a move to the
-# server route could not remove, and a token a deleted entry could not
-# revoke. A leftover key's repair keeps its id once its entry is deleted,
-# and is worded for that (`LEFTOVER_KEY_LEFT`): nothing checks it then.
-LEFTOVER_KEY_ISSUE: Final = "leftover_key"
-LEFTOVER_KEY_LEFT: Final = "leftover_key_left"
 # A key a setup flow's join may have enrolled when its answer was lost, left
-# when the flow ended: nothing checks it either.
+# when the flow ended: its repair outlives the flow, since nothing checks
+# the key after.
+LEFTOVER_KEY_ISSUE: Final = "leftover_key"
 LEFTOVER_KEY_UNJOINED: Final = "leftover_key_unjoined"
-TOKEN_LEFT_ISSUE: Final = "token_left"
 
 SERVICE_FEED: Final = "feed"
 SERVICE_CANCEL_FEED: Final = "cancel_feed"

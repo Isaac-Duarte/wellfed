@@ -35,7 +35,7 @@ describe("routes", () => {
   test("other docs keep their path", () => {
     expect(routeOf("roadmap.md")).toBe("roadmap");
     expect(routeOf("devices/README.md")).toBe("devices");
-    expect(routeOf("server/running.md")).toBe("server/running");
+    expect(routeOf("glossary.md")).toBe("glossary");
   });
 
   test("two files on one route are refused", () => {

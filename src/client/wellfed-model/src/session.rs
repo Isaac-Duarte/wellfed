@@ -41,7 +41,7 @@ pub enum OpenRefusal {
 /// which side to update.
 ///
 /// [device API evolution]: ../../../../docs/firmware/device-api.md#evolution
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Skew {
     Same,
@@ -124,10 +124,9 @@ impl DeviceName for Model {
     }
 }
 
-/// A kind or model of device in the owner's server's JSON. A kind or
-/// model a newer build added reads as `Unknown` (spelled `unknown`), so an
-/// older client lists such a device, shown as needing an update, rather
-/// than failing the whole list. The server never writes `Unknown`.
+/// A kind or model of device as a client reads it. A kind or model a newer
+/// build added reads as `Unknown` (spelled `unknown`), so an older client
+/// shows such a device as needing an update rather than failing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MaybeKnown<T> {
     Known(T),
@@ -180,54 +179,6 @@ impl<'de, T: DeviceName> Deserialize<'de> for MaybeKnown<T> {
             .copied()
             .find(|value| value.name() == name)
             .map_or(Self::Unknown, Self::Known))
-    }
-}
-
-/// OpenAPI schemas for the wire's device names, which `wellfed-proto`
-/// (`no_std`, with no schema derive) cannot carry itself: a field of
-/// either type names its function in `#[schema(schema_with = ..)]`.
-pub mod schema {
-    use utoipa::openapi::schema::{Object, ObjectBuilder, Type};
-
-    use super::{DeviceKind, Model};
-
-    /// [`Model`] as its JSON spells it.
-    pub fn model() -> Object {
-        ObjectBuilder::new()
-            .schema_type(Type::String)
-            .enum_values(Some(Model::ALL.map(Model::name)))
-            .description(Some("A device model, which names its kind."))
-            .build()
-    }
-
-    /// [`super::MaybeKnown`] of a [`DeviceKind`]: a kind a newer build added
-    /// reads as `unknown`.
-    pub fn maybe_device_kind() -> Object {
-        let mut names = DeviceKind::ALL.map(DeviceKind::name).to_vec();
-        names.push(super::UNKNOWN);
-        ObjectBuilder::new()
-            .schema_type(Type::String)
-            .enum_values(Some(names))
-            .description(Some(
-                "A kind of device, which one module of the device API serves; \
-                 `unknown` when a newer build added it.",
-            ))
-            .build()
-    }
-
-    /// [`super::MaybeKnown`] of a [`Model`]: a model a newer build added
-    /// reads as `unknown`.
-    pub fn maybe_model() -> Object {
-        let mut names = Model::ALL.map(Model::name).to_vec();
-        names.push(super::UNKNOWN);
-        ObjectBuilder::new()
-            .schema_type(Type::String)
-            .enum_values(Some(names))
-            .description(Some(
-                "A device model, which names its kind; `unknown` when a newer \
-                 build added it.",
-            ))
-            .build()
     }
 }
 

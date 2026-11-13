@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:wellfed/src/rust/api/router.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
@@ -28,8 +26,8 @@ String writeWords(WriteKind kind) => switch (kind) {
 };
 
 /// Changes other than a feed that went out and never said how they ended.
-/// Each stays on the way it went: Check only reads that way, and nothing is
-/// sent again. The owner puts one away once they have looked.
+/// Nothing is sent again, and no history names them: the owner looks at the
+/// feeder and puts each away.
 class UnconfirmedWrites extends StatelessWidget {
   const UnconfirmedWrites({super.key, required this.feeder});
 
@@ -50,12 +48,11 @@ class UnconfirmedWrites extends StatelessWidget {
               Notice(
                 tone: Tone.warning,
                 lead: '${writeWords(pending.kind)} may not have reached the feeder.',
-                text: 'Check asks the way it went, and sends nothing again.',
+                text: 'Look at the feeder to see whether it took. Nothing is sent again.',
               ),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  TextButton(onPressed: () => unawaited(feeder.checkWrite(pending.key)), child: const Text('Check')),
                   TextButton(onPressed: () => feeder.putAwayWrite(pending.key), child: const Text('Put away')),
                 ],
               ),
@@ -65,18 +62,4 @@ class UnconfirmedWrites extends StatelessWidget {
       );
     },
   );
-}
-
-/// The way this phone reaches a feeder now, under its name.
-class PathLine extends StatelessWidget {
-  const PathLine({super.key, required this.path});
-
-  final RoutePath? path;
-
-  @override
-  Widget build(BuildContext context) => Text(switch (path) {
-    RoutePath.server => 'Through the home server',
-    RoutePath.direct => 'Directly',
-    null => 'No way to it now',
-  }, style: TextStyle(fontSize: Sizes.xs, color: context.colors.textMuted));
 }

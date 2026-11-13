@@ -1,6 +1,6 @@
 //! A simulator running on the current [`tokio::task::LocalSet`], for the
-//! tests of every crate that talks to a feeder: this one's, and the
-//! server's service and end-to-end tests. Its randomness is a counter, so
+//! tests of every crate that talks to a feeder: this one's, the app's,
+//! Home Assistant's and the CLI's. Its randomness is a counter, so
 //! a test's identities and invite secrets repeat from run to run. The
 //! runtime, the relay and the generator are every device's
 //! (`wellfed_device_sim::harness`).
@@ -33,14 +33,6 @@ use wellfed_session::setup_code::Code;
 use wellfed_device_sim::harness::Alone;
 // The device sim's test helpers, as this simulator's tests name them.
 pub use wellfed_device_sim::harness::{Relay, counter, local};
-
-/// Make every program into the feeder's own settings record on `flash`
-/// fail from now on (`true`), or none: a save of the settings then lands
-/// the device's part alone and leaves the two records apart, so the
-/// feeder's settings are read-only with no generation.
-pub fn fail_feeder_settings(flash: &Flash, failing: bool) {
-    flash.fail_programs(failing.then_some(storage::FEEDER_SETTINGS));
-}
 
 /// Make every program into the meal call's store on `flash` fail from now
 /// on (`true`), or none: the next chunk an upload writes is lost with the

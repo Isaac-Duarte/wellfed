@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:wellfed/src/rust/api/error.dart';
-import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
 
@@ -119,20 +118,4 @@ class FakeBook extends ChangeNotifier implements FeederBook {
 
   @override
   void clockSynced(String identity) => _clockDue.remove(identity);
-
-  @override
-  KnownServer? server;
-
-  /// While set, the next write of [server] waits for it: a slow disk.
-  Future<void>? serverWrite;
-
-  @override
-  Future<void> setServer(KnownServer? server) async {
-    // Only the next write is slow.
-    final Future<void>? slow = serverWrite;
-    serverWrite = null;
-    await slow;
-    this.server = server;
-    notifyListeners();
-  }
 }

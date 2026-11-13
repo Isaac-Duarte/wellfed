@@ -166,9 +166,6 @@ class FeederAlertsController extends ChangeNotifier {
     try {
       await _ports.check([_feeder]);
       return null;
-    } on ServerTurnedAway {
-      return 'Away from home, your server turned this phone away. Log in to it again, '
-          'or check that it still has this feeder.';
     } on BridgeError catch (error) {
       return "Couldn't check: ${error.message}.";
     } on PlatformException catch (error) {

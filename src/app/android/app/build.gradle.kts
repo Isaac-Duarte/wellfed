@@ -86,9 +86,6 @@ android {
             // Never the debug key: without the owner's, the check below
             // stops the build.
             signingConfig = signingConfigs.findByName("release")
-            // R8 sees no caller of the TLS verifier's Kotlin half: Rust
-            // calls it over JNI.
-            proguardFiles("proguard-rules.pro")
         }
     }
 }
@@ -115,29 +112,9 @@ flutter {
     source = "../.."
 }
 
-// The Kotlin half of rustls-platform-verifier, which the Rust bridge calls to
-// check an https server against Android's trust store. Its version must be
-// the `rustls-platform-verifier-android` crate's, so it is read from the
-// lockfile, and only this one package comes from the project's own Maven
-// archive.
-repositories {
-    maven {
-        url = uri("https://github.com/rustls/rustls-platform-verifier/raw/maven-archive/android-release-support/maven/")
-        content { includeGroup("org.rustls") }
-    }
-}
-
-val rustlsVerifierVersion: String =
-    rootProject.file("../../../Cargo.lock").readLines().let { lines ->
-        val name = lines.indexOfFirst { it.trim() == "name = \"rustls-platform-verifier-android\"" }
-        require(name >= 0) { "rustls-platform-verifier-android is not in Cargo.lock" }
-        lines[name + 1].trim().removePrefix("version = \"").removeSuffix("\"")
-    }
-
 dependencies {
     // The Bluetooth plugin's own RxJava, for its error handler in MainActivity.
     implementation("io.reactivex.rxjava2:rxjava:2.2.21")
-    implementation("org.rustls:rustls-platform-verifier:$rustlsVerifierVersion")
     // The periodic catch-up, scheduled from Kotlin rather than through a
     // plugin: the plugins start their Flutter engine with every plugin
     // attached, which takes the Bluetooth plugin's links over from the app.

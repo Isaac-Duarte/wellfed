@@ -6,7 +6,6 @@ use std::str::FromStr;
 
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
 
 use crate::{
     DeviceKind, FeedOutcome, FeedReason, FoodLevel, Generation, MEAL_REMINDER_MINUTES_MAX,
@@ -15,7 +14,7 @@ use crate::{
 
 /// What a device reports about itself: the shared core every kind
 /// reports, then its own kind's part.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Status {
     pub build: String,
     /// The flash bank it booted from.
@@ -75,7 +74,7 @@ impl Status {
 
 /// The part of [`Status`] only one kind of device reports, tagged by the
 /// kind in JSON (`"kind": "feeder"`).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DeviceStatus {
     Feeder(FeederStatus),
@@ -96,13 +95,12 @@ impl DeviceStatus {
 }
 
 /// What a feeder reports beside the shared status.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeederStatus {
     /// The panel's child lock; `None` before it is known.
     pub locked: Option<bool>,
     // `None` while the feeder's settings records share no generation.
     #[serde(with = "crate::settings_generation")]
-    #[schema(value_type = Generation, required = true)]
     pub settings_generation: Option<Generation>,
     /// The hopper as the food beam last read it, in a feed or at rest.
     pub food: FoodLevel,
@@ -119,7 +117,7 @@ pub struct FeederStatus {
 
 /// The desiccant reminder, counted in the feeder's local calendar days
 /// from the last replacement.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum Desiccant {
     /// No replacement is recorded yet: reset it once the pack is fresh.
@@ -162,7 +160,7 @@ impl fmt::Display for Days {
 
 /// The supply as the feeder judges it: the adapter, the pack and the
 /// feeding owner's verdict on its floor.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Supply {
     /// The adapter's detect pin; absent with no fresh sample. Without the
     /// adapter the feeder runs on its batteries, and turns its Wi-Fi off
@@ -175,7 +173,7 @@ pub struct Supply {
 }
 
 /// A feed that ended on a fault: its `Fed` event has the rest.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeedFault {
     pub feed: u32,
     pub outcome: FeedOutcome,
@@ -184,7 +182,7 @@ pub struct FeedFault {
 
 /// Whether the feeder can start a feed now: the one decision a feed
 /// request obeys too.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "state", content = "reason", rename_all = "snake_case")]
 pub enum Readiness {
     Ready,
@@ -192,7 +190,7 @@ pub enum Readiness {
 }
 
 /// Why a feed cannot start now.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Blocked {
     /// The feeding owner has not opened yet.
@@ -265,7 +263,7 @@ impl Blocked {
 }
 
 /// Which Wi-Fi credentials the feeder joined with.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WifiSource {
     Build,
@@ -276,14 +274,14 @@ pub enum WifiSource {
     Unknown,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Power {
     pub adapter: bool,
     pub battery_mv: Option<u32>,
 }
 
 /// The battery pack, as the feeder judged its reading.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum Battery {
     /// No pack fitted.
@@ -291,7 +289,6 @@ pub enum Battery {
     Reading {
         mv: u16,
         /// The charge on stock's curve, 0-100 in steps of 10.
-        #[schema(maximum = 100)]
         percent: u8,
     },
     /// A value no pack of the board can read, as read.
@@ -309,7 +306,7 @@ pub enum Battery {
 /// A device's settings, by its kind, tagged by the kind in JSON (`"kind":
 /// "feeder"`). Each kind reads and writes its own through its own ops; this
 /// is what a host holds and serves without caring which kind it is.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Settings {
     Feeder(FeederSettings),
@@ -350,12 +347,11 @@ impl Settings {
 
 /// The feeder's settings. Its `generation` goes back in `If-Match` with a
 /// change, and is the `ETag` of a read.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeederSettings {
     // `None` while the feeder's two settings records share no generation:
     // then `writable` is false, and nothing may name one in `If-Match`.
     #[serde(with = "crate::settings_generation")]
-    #[schema(value_type = Generation, required = true)]
     pub generation: Option<Generation>,
     pub lights: bool,
     pub sound: bool,
@@ -367,11 +363,9 @@ pub struct FeederSettings {
     pub sound_window: Window,
     /// The desiccant reminder's period: days from a replacement until the
     /// next is due.
-    #[schema(minimum = 1, maximum = 90)]
     pub desiccant_days: u8,
     /// The feeder's local date of the last desiccant replacement; `None`
     /// before the first.
-    #[schema(value_type = Option<String>, format = Date)]
     pub desiccant_replaced: Option<jiff::civil::Date>,
     /// The `meal_soon` event ahead of each scheduled meal.
     pub meal_reminder: MealReminder,
@@ -431,7 +425,7 @@ impl FeederSettings {
 }
 
 /// The feeder's settings to change; absent fields stay as they are.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeederSettingsPatch {
     pub lights: Option<bool>,
     pub sound: Option<bool>,
@@ -440,23 +434,21 @@ pub struct FeederSettingsPatch {
     pub lights_window: Option<Window>,
     pub sound_window: Option<Window>,
     /// The desiccant reminder's period in days, 1-90.
-    #[schema(minimum = 1, maximum = 90)]
     pub desiccant_days: Option<u8>,
     pub meal_reminder: Option<MealReminder>,
 }
 
 /// Whether the feeder records a `meal_soon` event ahead of each scheduled
 /// meal, and how many minutes ahead (1-60). It goes to the event stream
-/// for the app and the server; the feeder plays nothing.
+/// for the app and Home Assistant; the feeder plays nothing.
 ///
 /// Spelled `off` or the minutes on the command line.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub enum MealReminder {
     #[default]
     Off,
     Before {
-        #[schema(minimum = 1, maximum = 60)]
         minutes: u8,
     },
     /// A value a newer build added, which this one cannot name. Never
@@ -517,15 +509,13 @@ impl FromStr for MealReminder {
 /// feeder's clock is invalid every window is open.
 ///
 /// Spelled `always` or `HH:MM-HH:MM` on the command line.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub enum Window {
     #[default]
     Always,
     Between {
-        #[schema(maximum = 1439)]
         start: u16,
-        #[schema(maximum = 1439)]
         end: u16,
     },
     /// A value a newer build added, which this one cannot name. Never

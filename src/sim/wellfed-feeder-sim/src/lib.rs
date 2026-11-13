@@ -1,5 +1,5 @@
 //! A simulated feeder that serves the real device API over TCP, for the
-//! server, the app and the CLI to work against without hardware.
+//! app, Home Assistant and the CLI to work against without hardware.
 //!
 //! It runs the feeder's own code: the product's loop pass
 //! (`wellfed_feeder::feeder`, the device API's driver and server, the

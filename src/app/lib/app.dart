@@ -12,7 +12,6 @@ import 'package:wellfed/platform/menu.dart';
 import 'package:wellfed/platform/notices.dart';
 import 'package:wellfed/platform/pairing_ports.dart';
 import 'package:wellfed/platform/phone.dart';
-import 'package:wellfed/platform/server_ports.dart';
 import 'package:wellfed/screens/alerts/alert_settings_screen.dart';
 import 'package:wellfed/screens/alerts/alerts_screen.dart';
 import 'package:wellfed/screens/desktop/sidebar_shell.dart';
@@ -23,27 +22,18 @@ import 'package:wellfed/screens/home/home.dart';
 import 'package:wellfed/screens/home/set_aside.dart';
 import 'package:wellfed/screens/home/welcome.dart';
 import 'package:wellfed/screens/install/install_screen.dart';
-import 'package:wellfed/screens/server/server_screens.dart';
 import 'package:wellfed/screens/settings/app_settings.dart';
 import 'package:wellfed/screens/setup/join.dart';
 import 'package:wellfed/screens/setup/recover_screen.dart';
 import 'package:wellfed/screens/setup/setup_screen.dart';
-import 'package:wellfed/src/rust/api/server.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/alerts/alert_settings.dart';
 import 'package:wellfed/state/alerts/alerts.dart';
-import 'package:wellfed/state/fleet/adopt.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/state/fleet/fleet.dart';
 import 'package:wellfed/state/fleet/store_notice.dart';
 import 'package:wellfed/state/install/install.dart';
 import 'package:wellfed/state/join/join.dart';
-import 'package:wellfed/state/server/add_server.dart';
-import 'package:wellfed/state/server/feeder_food.dart';
-import 'package:wellfed/state/server/household.dart';
-import 'package:wellfed/state/server/pet.dart';
-import 'package:wellfed/state/server/server.dart';
-import 'package:wellfed/state/server/server_history.dart';
 import 'package:wellfed/state/settings/backups.dart';
 import 'package:wellfed/state/setup/setup.dart';
 import 'package:wellfed/theme/theme.dart';
@@ -197,7 +187,7 @@ Future<void> _goTo(GoRouter router, GlobalKey<NavigatorState> pages, FeederFleet
   if (navigator == null) return;
   // Already showing: a second press, or the menu and a shortcut both
   // answering one, must not stack the page again. Only when the router's own
-  // page is on top, though: one pushed over it (About, a server page) leaves
+  // page is on top, though: one pushed over it (About, say) leaves
   // the router's location as it was, and the press goes back to the place.
   if (_same(placeOf(router), place) && _top(navigator)?.settings is Page<Object?>) return;
   while (navigator.canPop()) {
@@ -258,34 +248,8 @@ class _WellfedAppState extends State<WellfedApp> {
   late final _pairing = AppPairingPorts(widget.app.key);
   static const _phone = AppPhonePorts();
 
-  late final _server = HomeServer(widget.app, const AppServerPorts(), widget.app.router, widget.app.key);
   late final _feederPorts = AppFeederPorts(widget.app.key, widget.app.router);
-  late final _fleet = FeederFleet(widget.app, _feederPorts, server: _server);
-  late final _adopt = AdoptFlow(_feederPorts, _server);
-
-  /// Each server screen's controller, on the session open when it is made.
-  late final _serverScreens = ServerScreens(
-    server: _server,
-    phoneKey: widget.app.key,
-    adopt: _adopt,
-    newAddServer: () => AddServerFlow(_server),
-    newHousehold: () => switch (_server.session) {
-      final ServerSession session? => HouseholdFlow(session),
-      null => null,
-    },
-    newPet: (pet) => switch (_server.session) {
-      final ServerSession session? => PetFlow(session, pet),
-      null => null,
-    },
-    newFood: (feeder) => switch (_server.session) {
-      final ServerSession session? => FeederFoodFlow(session, feeder),
-      null => null,
-    },
-    newHistory: (feeder) => switch (_server.session) {
-      final ServerSession session? => ServerHistoryFlow(session, feeder),
-      null => null,
-    },
-  );
+  late final _fleet = FeederFleet(widget.app, _feederPorts);
   late final AppLifecycleListener _lifecycle;
 
   /// Alerts at home: Android only, where this phone watches in the
@@ -323,15 +287,13 @@ class _WellfedAppState extends State<WellfedApp> {
   void _openAlerts(String identity) => unawaited(_router.push('/alerts/$identity'));
 
   late final GoRouter _router = wellfedRouter(
-    // The server's feeders count as the phone's own do: with none at all,
-    // the welcome.
+    // With no feeders at all, the welcome.
     book: Listenable.merge([widget.app, _fleet, widget.app.notice]),
     root: (context) => switch (widget.app.notice.state) {
       final StoreNotice notice? => SetAsideScreen(notice: notice, onRead: () => unawaited(widget.app.notice.read())),
       null when _fleet.all.isEmpty => const WelcomeScreen(),
       null => HomeScreen(
         fleet: _fleet,
-        adopt: _adopt,
         pinsProblem: widget.app.pinsProblem,
         askToNotify: _alerts ? () => offerNotifications(widget.app.feeders) : null,
         earlierInstall: () async {
@@ -344,7 +306,6 @@ class _WellfedAppState extends State<WellfedApp> {
       fleet: _fleet,
       identity: identity,
       initialTab: tab,
-      server: _serverScreens,
       openAlerts: _alerts ? (context, identity) => unawaited(context.push('/alerts/$identity')) : null,
     ),
     alerts: _alerts
@@ -375,7 +336,6 @@ class _WellfedAppState extends State<WellfedApp> {
       '/settings': (context) => AppSettingsScreen(
         book: widget.app,
         newBackups: () => BackupsFlow(widget.app, AppBackupPorts(widget.app.key)),
-        server: _serverScreens,
         alerts: _alerts,
       ),
       if (_alerts)
@@ -394,9 +354,7 @@ class _WellfedAppState extends State<WellfedApp> {
     if (_alerts) widget.app.removeListener(_feedersChanged);
     _lifecycle.dispose();
     _router.dispose();
-    _adopt.dispose();
     _fleet.dispose();
-    _server.dispose();
     // A router left open would be taken over by the next one anyway; this
     // ends its updates now.
     widget.app.router?.close();

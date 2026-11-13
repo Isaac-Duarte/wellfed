@@ -1,8 +1,8 @@
 //! The consumer installer's steps, sans-IO: from a feeder on stock 1.1.15
 //! to the replacement confirmed on bank 1 ([consumer installation]). The
-//! Android app, `wellfed-server` and the `wellfed` CLI run these same
-//! steps; each supplies the IO (joining Wi-Fi, the UDP frame, the broker and
-//! image server stock talks to, the device API session).
+//! Android app runs these steps and supplies the IO (joining Wi-Fi, the
+//! UDP frame, the broker and image server stock talks to, the device API
+//! session).
 //!
 //! The run, in order ([`Step`] says which is next):
 //! 1. **Provision:** stock is pointed at the installer's broker, where it
@@ -12,7 +12,7 @@
 //!    stock's setup access point names the owner's Wi-Fi and the installer's
 //!    broker ([`Provision`]).
 //! 2. **Stock ready:** stock reports 1.1.15 on its adapter, the same
-//!    conditions its own precheck and the server's trial gate hold.
+//!    conditions its own precheck holds.
 //! 3. **Confirm the feeder:** trust on first use admits whichever stock-
 //!    shaped client reached the broker first, so the owner checks the
 //!    enrolled device ID and address before anything is sent to it. A second

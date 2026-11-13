@@ -1,5 +1,5 @@
 //! `wellfed-feeder-sim`: a simulated feeder on this computer, serving the
-//! device API so the server, the app and `wellfed` can run against it.
+//! device API so the app, Home Assistant and `wellfed` can run against it.
 //!
 //! Its flash image lives in `--state`, so its identity, clients, settings
 //! and history survive a restart. `--enroll-owner` admits the CLI's key as

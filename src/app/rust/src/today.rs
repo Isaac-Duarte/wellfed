@@ -226,7 +226,7 @@ pub(crate) fn event_entry(event: &Event) -> HistoryEntry {
         },
         // The history shows no install stops or boot records yet: the update
         // view says how an install went, and a boot reads as `Restarted`.
-        // Who invited a client is the server's to act on; the `Enrolled`
+        // An invite gets no row of its own; the `Enrolled`
         // after it shows the join.
         EventBody::Core(
             CoreEvent::UpdateStop { .. }

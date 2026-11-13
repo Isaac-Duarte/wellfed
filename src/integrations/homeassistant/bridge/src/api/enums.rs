@@ -43,8 +43,7 @@ macro_rules! view_enum {
 }
 
 view_enum! {
-    /// The role the feeder enrolled this client with, or through the
-    /// owner's server the account's role there.
+    /// The role the feeder enrolled this client with.
     Role {
         Owner => "owner",
         Member => "member",
@@ -52,9 +51,6 @@ view_enum! {
         UpdateSigner => "update_signer",
         /// A role a newer build added: it grants nothing here.
         NewerBuild => "newer_build",
-        /// Through the owner's server, an account that reads and changes
-        /// nothing.
-        Viewer => "viewer",
     }
 }
 
@@ -347,7 +343,7 @@ impl From<&model::Refusal> for RefusalKind {
             R::Portions { .. } => Self::Portions,
             R::NoClock => Self::NoClock,
             // Only a conditional meal-call erase gets it, which the
-            // integration never sends: the owner's server sends it.
+            // integration never sends.
             R::Replaced | R::Unknown => Self::NewerBuild,
         }
     }
@@ -387,8 +383,8 @@ view_enum! {
         NotRead => "not_read",
         /// A value outside what the feeder accepts.
         Invalid => "invalid",
-        /// The feeder runs a build from before API revisions, which the
-        /// server sends nothing but an update: update the feeder.
+        /// The feeder runs a build from before API revisions, which takes
+        /// nothing but an update: update the feeder.
         Legacy => "legacy",
         /// Another feed of this client's is still being answered or
         /// settled, a lost one is not yet released, or the integration's
@@ -445,32 +441,17 @@ view_enum! {
         /// A feed's answer never came: it is pending until a later update
         /// settles it, and comes before any update that does.
         Pending => "pending",
-        /// A feed whose answer never came ran: its `Fed` event, or the
-        /// server's journal, says how.
+        /// A feed whose answer never came ran: its `Fed` event says how.
         Settled => "settled",
-        /// A feed whose answer never came did not run: the feeder refused
-        /// it, as the server's journal learned, or the journal it went to
-        /// never had it, so it was never sent.
-        SettledUnfed => "settled_unfed",
-        /// A feed whose answer never came has no `Fed` event, or journal
-        /// entry, this session could find yet: whether it ran is not known.
-        /// It stays pending, and holds new feeds back until a later update
-        /// settles it or the owner releases it ([`UpdateKind::Released`]).
-        /// A lost feed from the other route comes so at each start: only
-        /// the owner's release ends it there.
+        /// A feed whose answer never came has no `Fed` event this session
+        /// could find yet: whether it ran is not known. It stays pending,
+        /// and holds new feeds back until a later update settles it or the
+        /// owner releases it ([`UpdateKind::Released`]).
         StillUnknown => "still_unknown",
         /// The feeder no longer knows this client's key; the session will
         /// not reconnect.
         Revoked => "revoked",
         Disconnected => "disconnected",
-        /// The server no longer takes this integration's token (revoked,
-        /// expired, or its account disabled); the session will not
-        /// reconnect until a new login.
-        TokenRefused => "token_refused",
-        /// The server no longer reaches the feeder for good: the feeder
-        /// dropped the server's key, or the server no longer holds it.
-        /// The owner adopts it again.
-        ServerLostFeeder => "server_lost_feeder",
         /// The feeder's alerts moved: what is open, and what opened and
         /// cleared since.
         Alerts => "alerts",
@@ -520,12 +501,6 @@ view_enum! {
         Legacy => "legacy",
         /// A value a newer build added, which this integration cannot name.
         NewerBuild => "newer_build",
-        /// Through the owner's server: the server is older than the feeder
-        /// or this integration, so update the server.
-        ServerBehind => "server_behind",
-        /// Through the owner's server: the server is newer than this
-        /// integration, so update the integration.
-        ServerAhead => "server_ahead",
     }
 }
 
@@ -537,65 +512,6 @@ impl From<model::Skew> for Skew {
             model::Skew::FeederAhead => Self::FeederAhead,
             model::Skew::Legacy => Self::Legacy,
             model::Skew::Unknown => Self::NewerBuild,
-        }
-    }
-}
-
-impl From<wellfed_server_client::api::FeederRefusal> for RefusalKind {
-    fn from(refusal: wellfed_server_client::api::FeederRefusal) -> Self {
-        use wellfed_server_client::api::FeederRefusal as R;
-        match refusal {
-            R::Forbidden => Self::Forbidden,
-            R::Busy => Self::Busy,
-            R::Stale => Self::Stale,
-            R::Unavailable => Self::Unavailable,
-            R::Invalid => Self::Invalid,
-            R::NotWritable => Self::NotWritable,
-            R::Full => Self::Full,
-            R::NotFound => Self::NotFound,
-            R::Muted => Self::Muted,
-            R::Time => Self::Time,
-            R::Fault => Self::Fault,
-            R::Portions => Self::Portions,
-            R::NoClock => Self::NoClock,
-            R::Unverified => Self::Unverified,
-            R::Unknown => Self::NewerBuild,
-        }
-    }
-}
-
-view_enum! {
-    /// An account's role on the owner's server.
-    AccountRole {
-        Owner => "owner",
-        Member => "member",
-        /// Reads, and changes nothing: Home Assistant refuses it at setup.
-        Viewer => "viewer",
-        /// A role a newer server added: it grants nothing here.
-        NewerBuild => "newer_build",
-    }
-}
-
-impl From<wellfed_server_client::api::Role> for Role {
-    fn from(role: wellfed_server_client::api::Role) -> Self {
-        use wellfed_server_client::api::Role as R;
-        match role {
-            R::Owner => Self::Owner,
-            R::Member => Self::Member,
-            R::Viewer => Self::Viewer,
-            R::Unknown => Self::NewerBuild,
-        }
-    }
-}
-
-impl From<wellfed_server_client::api::Role> for AccountRole {
-    fn from(role: wellfed_server_client::api::Role) -> Self {
-        use wellfed_server_client::api::Role as R;
-        match role {
-            R::Owner => Self::Owner,
-            R::Member => Self::Member,
-            R::Viewer => Self::Viewer,
-            R::Unknown => Self::NewerBuild,
         }
     }
 }
@@ -614,30 +530,5 @@ view_enum! {
         /// it: the key may be enrolled, so the flow keeps it and asks again
         /// before it spends another invite.
         Uncertain => "uncertain",
-    }
-}
-
-view_enum! {
-    /// Why a call to the owner's server at setup failed, as the flow words
-    /// it.
-    ServerProblem {
-        /// Nothing answered at that address.
-        Unreachable => "unreachable",
-        /// Something answered, but not as a Wellfed server of this API.
-        NotAServer => "not_a_server",
-        /// The address redirects elsewhere: use the address it names.
-        Redirected => "redirected",
-        /// The name or password is wrong.
-        BadCredentials => "bad_credentials",
-        /// Too many failed logins: wait a minute.
-        LoginLimited => "login_limited",
-        /// The account is past its expiry.
-        AccountDisabled => "account_disabled",
-        /// The token no longer holds: log in again.
-        Unauthorized => "unauthorized",
-        /// The account's role may not do that.
-        Forbidden => "forbidden",
-        /// The server refused for another reason.
-        Refused => "refused",
     }
 }

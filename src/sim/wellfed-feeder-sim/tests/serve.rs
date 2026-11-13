@@ -1,5 +1,5 @@
 //! The simulated feeder over real TCP on localhost, driven by
-//! `wellfed-connect` as the server and the CLI drive a feeder.
+//! `wellfed-connect` as the app, Home Assistant and the CLI drive a feeder.
 
 mod common;
 

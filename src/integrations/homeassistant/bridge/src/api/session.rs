@@ -19,31 +19,24 @@ use super::views::{Event, Feed};
     pyo3::pyclass(frozen, get_all, eq, from_py_object, module = "wellfed_homeassistant")
 )]
 pub struct Pending {
-    /// Names it: through the owner's server, the idempotency key it went
-    /// under, which the server's journal answers by.
+    /// Names it, for the store and the owner's release.
     pub id: String,
     pub portions: u8,
     /// When it went out, in Unix milliseconds: it is reported still
     /// unknown once the settle window has passed since, if nothing showed
     /// sooner that it never ran.
     pub sent_ms: i64,
-    /// Directly: the newest event known when it went out, which its `Fed`
-    /// comes after.
+    /// The newest event known when it went out, which its `Fed` comes
+    /// after.
     pub after: Option<u64>,
     /// Reported still unknown ([`UpdateKind::StillUnknown`]): it is not
     /// reported again.
     pub reported: bool,
     /// When the owner released it ([`UpdateKind::Released`]), in Unix
-    /// milliseconds. Directly, a lost feed holds new feeds back until it
-    /// settles or is released, however long that takes; once released it
-    /// is kept open to a late end for a week from then.
+    /// milliseconds. A lost feed holds new feeds back until it settles or
+    /// is released, however long that takes; once released it is kept open
+    /// to a late end for a week from then.
     pub released_ms: Option<i64>,
-    /// Through the owner's server, the id of the token it went under, which
-    /// names the journal that answers for it: a token belongs to one server
-    /// and one account, and only that journal's lack of it says it was
-    /// never sent. `None` for a direct feed. A route holds on the other
-    /// route's lost feeds without settling them.
-    pub token_id: Option<String>,
 }
 
 /// How a write ended.
@@ -87,13 +80,8 @@ impl Written {
     }
 
     pub(crate) fn refused(refusal: &model::Refusal) -> Self {
-        Self::refused_for(refusal.into())
-    }
-
-    /// Refused for `refusal`, as the owner's server names it.
-    pub(crate) fn refused_for(refusal: RefusalKind) -> Self {
         Self {
-            refusal: Some(refusal),
+            refusal: Some(refusal.into()),
             ..Self::result(WriteResult::Refused)
         }
     }
@@ -145,8 +133,7 @@ pub struct Update {
     /// For [`UpdateKind::StillUnknown`]: the portions that feed asked for.
     pub portions: Option<u8>,
     /// For [`UpdateKind::Pending`]: the feed to keep. For
-    /// [`UpdateKind::Settled`], [`UpdateKind::SettledUnfed`],
-    /// [`UpdateKind::StillUnknown`], [`UpdateKind::Released`],
+    /// [`UpdateKind::Settled`], [`UpdateKind::StillUnknown`], [`UpdateKind::Released`],
     /// [`UpdateKind::Forgotten`], [`UpdateKind::Sending`] and
     /// [`UpdateKind::Cleared`]: the pending feed it accounts for.
     pub pending: Option<Pending>,
@@ -154,8 +141,7 @@ pub struct Update {
     /// named; both `None` for a history that started over.
     pub gap_from: Option<u64>,
     pub gap_to: Option<u64>,
-    /// Why the session ended, for [`UpdateKind::Disconnected`] and
-    /// [`UpdateKind::ServerLostFeeder`]: for logs.
+    /// Why the session ended, for [`UpdateKind::Disconnected`]: for logs.
     pub reason: Option<String>,
     /// For [`UpdateKind::Alerts`].
     pub alerts: Option<Alerts>,
@@ -192,22 +178,11 @@ impl Update {
         capabilities: Capabilities,
         skew: model::Skew,
     ) -> Self {
-        Self::connected_as(build, role.into(), capabilities, skew.into())
-    }
-
-    /// A session opened, with the side to update already decided: through
-    /// the owner's server, its own revision counts too.
-    pub(crate) fn connected_as(
-        build: impl Into<String>,
-        role: Role,
-        capabilities: Capabilities,
-        skew: Skew,
-    ) -> Self {
         Self {
             build: Some(build.into()),
-            role: Some(role),
+            role: Some(role.into()),
             capabilities: Some(capabilities),
-            skew: Some(skew),
+            skew: Some(skew.into()),
             ..Self::kind(UpdateKind::Connected)
         }
     }
@@ -259,15 +234,6 @@ impl Update {
             feed: Some(feed),
             pending: Some(pending),
             ..Self::kind(UpdateKind::Settled)
-        }
-    }
-
-    /// A feed whose answer never came did not run after all: the
-    /// feeder refused it, as the server's journal later learned.
-    pub(crate) fn settled_unfed(pending: Pending) -> Self {
-        Self {
-            pending: Some(pending),
-            ..Self::kind(UpdateKind::SettledUnfed)
         }
     }
 
@@ -335,17 +301,6 @@ impl Update {
 
     pub(crate) fn revoked() -> Self {
         Self::kind(UpdateKind::Revoked)
-    }
-
-    pub(crate) fn token_refused() -> Self {
-        Self::kind(UpdateKind::TokenRefused)
-    }
-
-    pub(crate) fn server_lost_feeder(reason: impl Into<String>) -> Self {
-        Self {
-            reason: Some(reason.into()),
-            ..Self::kind(UpdateKind::ServerLostFeeder)
-        }
     }
 
     pub(crate) fn disconnected(reason: impl Into<String>) -> Self {

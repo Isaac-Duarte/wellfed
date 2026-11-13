@@ -1,18 +1,16 @@
 //! The device API's values as every host works with them: owned, with no
 //! lifetimes or wire buffers, so the client's `Connection` can hand them
-//! out, the server can store and serve them, and the app can take them
-//! through generated bindings ([API design]).
+//! out and the app and Home Assistant can take them through generated
+//! bindings.
 //!
 //! `wellfed-proto` is the wire: borrowed, `no_std` and positional, shaped
 //! for the feeder. This crate is what a host means by the same values, and
-//! [`convert`] is the one place the two meet, so the client, the server
+//! [`convert`] is the one place the two meet, so the app, Home Assistant
 //! and the CLI cannot read a field differently.
 //!
-//! The JSON forms are the HTTP API's (`wellfed-api` serves these types
-//! as they are, and its OpenAPI schemas come from their derives): fields
-//! `snake_case`, times RFC 3339, keys and fingerprints lowercase hex.
-//!
-//! [API design]: ../../../../docs/server/design.md#crates
+//! The JSON forms (the CLI's `--json`, the app's and Home Assistant's
+//! stored values): fields `snake_case`, times RFC 3339, keys and
+//! fingerprints lowercase hex.
 #![forbid(unsafe_code)]
 
 mod alerts;
@@ -31,7 +29,6 @@ mod update;
 use std::fmt;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use utoipa::ToSchema;
 
 pub use alerts::{Alert, AlertKey, AlertKind, AlertLevel, AlertsView, OpenAlert};
 pub use call::{CALL_BYTES_MAX, CALL_CHUNK_MAX, CALL_PLAYS_MAX, CALL_RATE_HZ, CallClip, CallView};
@@ -49,8 +46,7 @@ pub use request::{
     NtpServerError, Op, Phase, Refusal, TimeChanges, TimeSource, TimeSync, TimeView, Tune, Wifi,
 };
 pub use session::{
-    DeviceKind, DeviceName, Hello, Joined, LEGACY_SCHEMA_FROM, MaybeKnown, Model, OpenRefusal,
-    Skew, schema,
+    DeviceKind, DeviceName, Hello, Joined, LEGACY_SCHEMA_FROM, MaybeKnown, Model, OpenRefusal, Skew,
 };
 pub use stats::{
     Counters, Counts, Erases, FeedStats, Flash, Food, Memory, Portions, PowerStats, ResetCause,
@@ -81,9 +77,8 @@ pub use wellfed_proto::api::{PORTION_MG_MAX, PORTION_MG_MIN};
 
 /// A feeder store's generation: a write names the one it read, and the
 /// feeder refuses it once the store has moved on.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
-#[schema(value_type = u32)]
 pub struct Generation(pub u32);
 
 impl fmt::Display for Generation {
@@ -119,7 +114,7 @@ impl Generation {
 
 /// A settings generation that may be none, in JSON as the feeder sends it:
 /// a number always, [`wellfed_proto::api::NO_SETTINGS_GENERATION`] for
-/// none, so `/api/v1` keeps the field's type for older readers.
+/// none, so the JSON keeps the field's type for older readers.
 pub(crate) mod settings_generation {
     use serde::{Deserialize, Deserializer, Serializer};
 
@@ -141,8 +136,7 @@ pub(crate) mod settings_generation {
 }
 
 /// Bytes that travel as lowercase hex: a feeder's 32-byte identity key or a
-/// client's 4-byte fingerprint. Fields of this type carry
-/// `#[schema(value_type = String)]`.
+/// client's 4-byte fingerprint.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Hex<const N: usize>(pub [u8; N]);
 
@@ -216,8 +210,8 @@ mod tests {
         assert!(serde_json::from_str::<Hex<2>>("\"ab\"").is_err());
     }
 
-    /// The server stores these codes, and its JSON shows the same values,
-    /// so the two spellings never drift apart.
+    /// The codes and the JSON spell each value the same, so the two never
+    /// drift apart.
     #[test]
     fn stored_codes_are_the_json_spellings() {
         fn check<T: Serialize + Copy>(all: &[T], code: fn(T) -> &'static str) {

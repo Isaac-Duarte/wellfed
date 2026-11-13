@@ -106,7 +106,7 @@ One table names every sector, `wellfed_board::storage` (the PLAF103 board's), ch
 | 32–33 | Lifetime statistics ([statistics](device-api-diagnostics.md#statistics)) |
 | 34–35 | Portion calibration ([calibration](calibration.md#storage)) |
 | 36 | The factory reset's marker, or the [handover mark](consumer-installation.md#rollback) stock's activation leaves |
-| 37–39 | Reserved for the uplink store, the owner's server link. No build writes it yet; the factory reset and the handover from stock clear it |
+| 37–39 | Reserved for an uplink store. No build writes it yet; the factory reset and the handover from stock clear it |
 | 40–47 | The meal call's clip ([schedules](schedules.md#meal-call)) |
 | 48–49 | The feeder's settings: bowl mode, meal reminder and desiccant reminder. Added November 9, 2026 when the region grew from 48 sectors ([resource budget](resource-budget.md#the-storage-region)) |
 

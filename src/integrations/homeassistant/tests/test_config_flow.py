@@ -62,9 +62,6 @@ def _discovery(simulator: Simulator) -> ZeroconfServiceInfo:
 async def _pair(hass: HomeAssistant, simulator: Simulator) -> ConfigEntry:
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "direct"}
-    )
-    result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
         {CONF_INVITE: simulator.invite(), CONF_ADDRESS: simulator.address},
     )
@@ -180,9 +177,6 @@ async def test_reconfigure_changes_the_address(hass: HomeAssistant, simulator: S
         DOMAIN, context={"source": SOURCE_RECONFIGURE, "entry_id": entry.entry_id}
     )
     assert result["step_id"] == "reconfigure"
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "reconfigure_address"}
-    )
 
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_ADDRESS: simulator.address}
@@ -198,9 +192,6 @@ async def test_an_owner_invite_is_refused_and_its_key_removed(
     hass: HomeAssistant, simulator: Simulator
 ) -> None:
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "direct"}
-    )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
         {CONF_INVITE: simulator.invite("owner"), CONF_ADDRESS: simulator.address},
@@ -245,9 +236,6 @@ async def test_a_join_left_unchecked_is_checked_before_another_invite(
     _lose_the_answer(monkeypatch, joined)
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "direct"}
-    )
-    result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
         {CONF_INVITE: simulator.invite(), CONF_ADDRESS: simulator.address},
     )
@@ -277,9 +265,6 @@ async def test_a_setup_left_after_an_unchecked_join_names_the_key_in_a_repair(
     joined: list[bytes] = []
     _lose_the_answer(monkeypatch, joined)
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "direct"}
-    )
     invite = simulator.invite()
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_INVITE: invite, CONF_ADDRESS: simulator.address}

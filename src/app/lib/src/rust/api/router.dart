@@ -6,28 +6,23 @@
 import '../frb_generated.dart';
 import 'error.dart';
 import 'feeder.dart';
-import 'keys.dart';
 import 'model.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 
-import 'server.dart';
-import 'server_error.dart';
-import 'server_views.dart';
 import 'session.dart';
 import 'store.dart';
 part 'router.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`
-// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `follow_with`, `open_with`, `updates_with`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `updates_with`
 
 /// A feed's end as a settlement gives it, as the feed sheet shows one, for
-/// a feed whose `Fed` event this phone has not read: a server feed whose
-/// stream was down when it ended. When the feeder recorded it, and what its
-/// beam read, are the history's to say, and its requester is left
-/// [`FedBy::Unknown`], since the server's journal does not name the key
-/// the feeder heard. `None` for any settlement but [`Settlement::Fed`].
+/// an uncertain feed the feeder's history settled. When the feeder recorded
+/// it and what its beam read are the history row's to say, and its
+/// requester is left [`FedBy::Unknown`]. `None` for any settlement but
+/// [`Settlement::Fed`].
 FeedResult? settledFeed({required Settlement settlement}) =>
     RustLib.instance.api.crateApiRouterSettledFeed(settlement: settlement);
 
@@ -37,37 +32,24 @@ FeedResult? settledFeed({required Settlement settlement}) =>
 int feedDueSeconds({required int portions}) =>
     RustLib.instance.api.crateApiRouterFeedDueSeconds(portions: portions);
 
-// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<PathRouter>>
-abstract class PathRouter implements RustOpaqueInterface {
+// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<FeederRouter>>
+abstract class FeederRouter implements RustOpaqueInterface {
   /// The owner looked at the bowl and put `key` away: a new feed may go.
-  /// It stays pinned to its path until it settles, or for a week from
-  /// now; one nothing can settle (a direct write other than a feed) goes
-  /// now. A key that is no idempotency key is refused.
+  /// A feed stays pinned until the history settles it, or for a week from
+  /// now; one nothing can settle (a write other than a feed, or a feed
+  /// sent before its session knew any event) goes now. A key that is no
+  /// idempotency key is refused.
   void acknowledge({required String key});
 
-  /// Adopt `feeder`, which this phone paired before the server, as
-  /// `name`: an owner's invite made with `key` (this phone's own) goes
-  /// to the server, which records `key` as the account's phone key.
-  /// `address` is where the phone last found it (`ip:port`); without one
-  /// the server looks for it on mDNS. A feeder the server already lists
-  /// is only claimed.
-  Future<Adoption> adopt({
-    required String feeder,
-    required String name,
-    String? address,
-    required ClientKey key,
-  });
-
-  /// Run one request. One the server has no route for goes on the
-  /// phone's own session, when it may use one.
+  /// Run one request.
   Future<RoutedReply> ask({
     required String feeder,
     required FeederRequest request,
   });
 
-  /// Reach `session`'s feeder through it, when the path is direct. Call
-  /// it before running the session, so the router hears its history from
-  /// the start; a later session replaces it.
+  /// Reach `session`'s feeder through it. Call it before running the
+  /// session, so the router hears its history from the start; a later
+  /// session replaces it.
   void attach({required FeederSession session});
 
   /// The owner looked at every feeder's bowl after the record of writes
@@ -77,100 +59,26 @@ abstract class PathRouter implements RustOpaqueInterface {
   /// Stop the feed numbered `feed` if it still runs.
   Future<RoutedReply> cancelFeed({required String feeder, required int feed});
 
-  /// Read the server's list for `feeder` after an [`Adoption::Unsettled`]
-  /// one: adopted, its key is claimed; still unlisted while the server may
-  /// be adopting it, still unsettled; unlisted past the grace, `Failed`
-  /// with `NotFound`, and a new adoption makes a new invite. It sends
-  /// nothing but the claim.
-  Future<Adoption> checkAdoption({
-    required String feeder,
-    required ClientKey key,
-  });
-
-  /// Claim `key`, this phone's own, on every feeder the server lists, so
-  /// the token this login minted covers it: call it after each connect
-  /// and list. Each feeder is claimed once a session; a claim the server
-  /// could not settle is logged and tried again on the next call, and
-  /// none holds up another. An account with no key of its own claims
-  /// none.
-  Future<void> claimOwn({required ClientKey key});
-
-  /// Record `key`, this phone's own key on `feeder`, as the account's
-  /// phone key, for an adoption that left it [`Adoption::Unclaimed`].
-  Future<Adoption> claimPhone({required String feeder, required ClientKey key});
-
   /// End [`Self::updates`].
   void close();
-
-  /// The server the app keeps, handed over before anything else asks the
-  /// router (before the token is read, a session attached or a feed
-  /// made): its feeders' ids, and the keys its kept account may use. With
-  /// no account kept the phone uses none of its own until the server
-  /// says. [`Self::resume_server`] then refines it.
-  void configureServer({required KnownServer kept});
-
-  /// Route through `session` from now on, as `account`: a viewer or an
-  /// account with an expiry goes through the server only.
-  void connectServer({
-    required ServerSession session,
-    required ServerAccount account,
-  });
-
-  /// No server any more (logged out): every feeder goes direct. A write
-  /// pinned to the server stays pinned and uncertain.
-  void disconnectServer();
 
   /// Feed `portions` (1-48) on `feeder` once, as the owner confirmed it.
   Future<RoutedFeed> feed({required String feeder, required int portions});
 
-  /// Follow the server's live stream through the router, which settles
-  /// pinned writes and routes by what it hears: as
-  /// [`ServerSession::follow`].
-  Stream<ServerUpdate> follow({String? lastEventId});
-
   /// The one router keeping its pins at `pins_path` (`pending.json`
   /// beside the app's file); [`ErrorKind::InUse`] while another holds
-  /// them. With no server configured it passes every request to the
-  /// phone's own sessions.
+  /// them.
   ///
   /// [`ErrorKind::InUse`]: crate::api::error::ErrorKind::InUse
-  factory PathRouter({required String pinsPath}) =>
-      RustLib.instance.api.crateApiRouterPathRouterNew(pinsPath: pinsPath);
-
-  /// The path a new request to `feeder` takes now.
-  RoutePath? path({required String feeder});
+  factory FeederRouter({required String pinsPath}) =>
+      RustLib.instance.api.crateApiRouterFeederRouterNew(pinsPath: pinsPath);
 
   /// The writes that may have run, oldest first.
   List<PendingWrite> pending();
 
-  /// Read the server's feeders, and route by what it says of each.
-  Future<List<ServerFeeder>> refresh();
-
-  /// The app is configured with a server whose token it no longer holds
-  /// (its secret is gone from secure storage): no feeder goes on the
-  /// phone's own keys until a login or [`Self::disconnect_server`].
-  void refuseServer();
-
-  /// Read the server's journal for every write pinned to it, and settle
-  /// those it answers for.
-  Future<void> resolve();
-
-  /// At a cold start, route through `session`, a kept login: by the
-  /// account the server reads now, or with the server not answering, by
-  /// `cached`, the account as last read. With no cached account the
-  /// account counts as one with no key of its own until the server says,
-  /// and a token the server refuses closes the phone's own keys, as
-  /// [`Self::connect_server`] after a fresh login opens them. The error
-  /// is what the server, or the way to it, said.
-  Future<ServerAccount> resumeServer({
-    required ServerSession session,
-    ServerAccount? cached,
-  });
-
-  /// Ask a pending write's own path what became of it, only by reading:
-  /// the server's journal entry for its key, or the feeder's history as
-  /// the phone's own session read it. Nothing is sent, on either path.
-  Future<RetryOutcome> retry({required String key});
+  /// Ask what became of a pending write, only by reading the feeder's
+  /// history as the phone's own session read it. Nothing is sent.
+  RetryOutcome retry({required String key});
 
   /// The record of writes that may have run, when it did not read at the
   /// open and was set aside: every feed waits, as
@@ -181,48 +89,9 @@ abstract class PathRouter implements RustOpaqueInterface {
   Stream<RouterUpdate> updates();
 }
 
-@freezed
-sealed class Adoption with _$Adoption {
-  const Adoption._();
-
-  /// The server holds it, and this phone's key on it is the account's
-  /// phone key: deleting the account on the server revokes it.
-  const factory Adoption.adopted({required ServerFeeder feeder}) =
-      Adoption_Adopted;
-
-  /// The server holds it, and this phone's key is not the account's yet:
-  /// `error` says why, and [`PathRouter::claim_phone`] tries again.
-  const factory Adoption.unclaimed({
-    required ServerFeeder feeder,
-    required ServerError error,
-  }) = Adoption_Unclaimed;
-
-  /// The adoption's answer was lost, and the server did not list the
-  /// feeder when read: it may still be adopting it. Nothing more is sent
-  /// for it; [`PathRouter::check_adoption`] reads the list again, and a
-  /// new adoption only reads too until the router's grace has passed.
-  /// `error` is how it was lost: a server still looking for the feeder's
-  /// join answer is [`ServerErrorKind::OutcomeUnknown`]. Also a server
-  /// busy with another adoption of the feeder
-  /// ([`ServerErrorKind::FeederBusy`]), which did nothing: the list
-  /// shows the feeder once that adoption lands.
-  ///
-  /// [`ServerErrorKind::OutcomeUnknown`]: crate::api::server_error::ServerErrorKind::OutcomeUnknown
-  /// [`ServerErrorKind::FeederBusy`]: crate::api::server_error::ServerErrorKind::FeederBusy
-  const factory Adoption.unsettled({required ServerError error}) =
-      Adoption_Unsettled;
-
-  /// The feeder made no invite: `reply` says how that request ended.
-  const factory Adoption.noInvite({required RoutedReply reply}) =
-      Adoption_NoInvite;
-
-  /// The server did not adopt it; `error` says why.
-  const factory Adoption.failed({required ServerError error}) = Adoption_Failed;
-}
-
 /// Why a write went nowhere.
 enum NotSentReason {
-  /// The phone reaches the feeder no way it may use.
+  /// The phone has no session with the feeder.
   noPath,
 
   /// No idempotency key: the system random source failed.
@@ -231,27 +100,22 @@ enum NotSentReason {
   /// The pin could not be written down, so it did not go.
   store,
 
-  /// The server did not send it: the reply's `server` says why, when it
-  /// answered at all.
-  server,
-
   /// The phone's own session ended before it went.
   session,
 
   /// A feed, held back: the record of writes that may have run did not
   /// read and was set aside, and the owner has not yet said the bowls are
-  /// checked ([`PathRouter::bowls_checked`]).
+  /// checked ([`FeederRouter::bowls_checked`]).
   setAside,
 }
 
-/// A write that may have run, pinned to the path it went on.
+/// A write that may have run.
 class PendingWrite {
   /// Its idempotency key.
   final String key;
 
   /// The feeder's identity, lowercase hex.
   final String feeder;
-  final RoutePath path;
   final WriteKind kind;
 
   /// A feed's portions.
@@ -266,7 +130,6 @@ class PendingWrite {
   const PendingWrite({
     required this.key,
     required this.feeder,
-    required this.path,
     required this.kind,
     this.portions,
     required this.sentMs,
@@ -277,7 +140,6 @@ class PendingWrite {
   int get hashCode =>
       key.hashCode ^
       feeder.hashCode ^
-      path.hashCode ^
       kind.hashCode ^
       portions.hashCode ^
       sentMs.hashCode ^
@@ -290,7 +152,6 @@ class PendingWrite {
           runtimeType == other.runtimeType &&
           key == other.key &&
           feeder == other.feeder &&
-          path == other.path &&
           kind == other.kind &&
           portions == other.portions &&
           sentMs == other.sentMs &&
@@ -306,8 +167,8 @@ sealed class RetryOutcome with _$RetryOutcome {
     required Settlement settlement,
   }) = RetryOutcome_Settled;
 
-  /// Still not known: its own path did not say, or could not be reached.
-  /// Nothing was sent.
+  /// Still not known: the history the session read does not say. Nothing
+  /// was sent.
   const factory RetryOutcome.uncertain({required PendingWrite pending}) =
       RetryOutcome_Uncertain;
 
@@ -315,26 +176,13 @@ sealed class RetryOutcome with _$RetryOutcome {
   const factory RetryOutcome.unknown() = RetryOutcome_Unknown;
 }
 
-/// The way a request reaches a feeder. Stored in `pending.json`, like
-/// [`WriteKind`].
-enum RoutePath {
-  /// Through the owner's server.
-  server,
-
-  /// The phone's own session on the LAN.
-  direct,
-}
-
 @freezed
 sealed class RoutedFeed with _$RoutedFeed {
   const RoutedFeed._();
 
-  /// The feeder reserved it. On the server path its end arrives as
-  /// [`RouterUpdate::FeedEnded`]; on the direct path, on the session's
-  /// stream as before.
+  /// The feeder reserved it. Its end arrives on the session's stream.
   const factory RoutedFeed.started({
     required String key,
-    required RoutePath path,
     required int feed,
     required int portions,
 
@@ -345,30 +193,17 @@ sealed class RoutedFeed with _$RoutedFeed {
   /// The feeder refused it: nothing was fed.
   const factory RoutedFeed.refused({
     required String key,
-    required RoutePath path,
     required FeedRefusal refusal,
   }) = RoutedFeed_Refused;
 
-  /// It may have run. It is pinned to its path and never sent again;
-  /// [`PathRouter::retry`] asks that path what became of it.
+  /// It may have run. It stays pinned and is never sent again;
+  /// [`FeederRouter::retry`] reads the feeder's history for it.
   const factory RoutedFeed.uncertain({required PendingWrite pending}) =
       RoutedFeed_Uncertain;
 
-  /// Its call ended with no answer, but the server's stream had already
-  /// said what became of it: it is no longer pending. A `Started` feed's
-  /// end follows as [`RouterUpdate::FeedEnded`].
-  const factory RoutedFeed.settled({
-    required PendingWrite pending,
-    required Settlement settlement,
-  }) = RoutedFeed_Settled;
-
-  /// Nothing went out: safe to start over. `error` is the server's
-  /// reason when it refused it (a viewer may not feed) or could not be
-  /// reached.
-  const factory RoutedFeed.notSent({
-    required NotSentReason reason,
-    ServerError? error,
-  }) = RoutedFeed_NotSent;
+  /// Nothing went out: safe to start over.
+  const factory RoutedFeed.notSent({required NotSentReason reason}) =
+      RoutedFeed_NotSent;
 
   /// Another feed on this feeder is unanswered or uncertain: the owner
   /// looks at the bowl and puts it away first.
@@ -378,73 +213,55 @@ sealed class RoutedFeed with _$RoutedFeed {
 
 /// How a request through the router ended.
 class RoutedReply {
-  /// The path it went on; `None` when it went nowhere.
-  final RoutePath? path;
-
   /// The feeder's answer. `Unanswered` is a write that may have run, now
-  /// in `pending`; `NotSent` went nowhere, and says why. A write whose call
-  /// ended unanswered after the server's stream had already said what
-  /// became of it carries that end here instead, and is not pending.
+  /// in `pending`; `NotSent` went nowhere, and says why.
   final FeederReply reply;
   final PendingWrite? pending;
 
-  const RoutedReply({this.path, required this.reply, this.pending});
+  const RoutedReply({required this.reply, this.pending});
 
   @override
-  int get hashCode => path.hashCode ^ reply.hashCode ^ pending.hashCode;
+  int get hashCode => reply.hashCode ^ pending.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is RoutedReply &&
           runtimeType == other.runtimeType &&
-          path == other.path &&
           reply == other.reply &&
           pending == other.pending;
 }
 
-@freezed
-sealed class RouterUpdate with _$RouterUpdate {
-  const RouterUpdate._();
+/// What the router tells the screens: a pending write settled, and is no
+/// longer pending.
+class RouterUpdate {
+  final PendingWrite pending;
+  final Settlement settlement;
 
-  /// The path a new request to `feeder` takes now; `None` when the
-  /// phone reaches it no way at all.
-  const factory RouterUpdate.path({required String feeder, RoutePath? path}) =
-      RouterUpdate_Path;
+  const RouterUpdate({required this.pending, required this.settlement});
 
-  /// A pending write settled; it is no longer pending.
-  const factory RouterUpdate.settled({
-    required PendingWrite pending,
-    required Settlement settlement,
-  }) = RouterUpdate_Settled;
+  @override
+  int get hashCode => pending.hashCode ^ settlement.hashCode;
 
-  /// The server read the account anew and it changed (a new role or
-  /// expiry): the app keeps it, so a cold start with the server down goes
-  /// by it.
-  const factory RouterUpdate.account({required ServerAccount account}) =
-      RouterUpdate_Account;
-
-  /// A feed this phone sent through the server ended.
-  const factory RouterUpdate.feedEnded({
-    required String key,
-    required String feeder,
-    required Settlement settlement,
-  }) = RouterUpdate_FeedEnded;
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RouterUpdate &&
+          runtimeType == other.runtimeType &&
+          pending == other.pending &&
+          settlement == other.settlement;
 }
 
 @freezed
 sealed class Settlement with _$Settlement {
   const Settlement._();
 
-  /// It took effect.
-  const factory Settlement.done() = Settlement_Done;
-
-  /// The feeder refused it; nothing ran.
-  const factory Settlement.refused({required ServerRefusal refusal}) =
+  /// The feeder refused the feed; nothing ran.
+  const factory Settlement.refused({required FeedRefusal refusal}) =
       Settlement_Refused;
 
   /// The feeder reserved the feed under this number and runs it; its end
-  /// follows as [`RouterUpdate::FeedEnded`].
+  /// follows on the session's stream.
   const factory Settlement.started({required int feed}) = Settlement_Started;
 
   /// The feed ended, as the feeder's history says. An uncertain outcome
@@ -457,17 +274,8 @@ sealed class Settlement with _$Settlement {
     required FeedReason reason,
   }) = Settlement_Fed;
 
-  /// The feeder restarted with no record of the feed: whether food was
-  /// dispensed is not known, and it is never sent again.
-  const factory Settlement.unrecorded() = Settlement_Unrecorded;
-
-  /// The server holds no record of it: it was never sent.
+  /// It never went out.
   const factory Settlement.notSent() = Settlement_NotSent;
-
-  /// A meal call write another change to the call overtook: final, and
-  /// whether this one ever took effect no longer shows. Read the call to
-  /// see it now.
-  const factory Settlement.superseded() = Settlement_Superseded;
 }
 
 /// What a write asks of a feeder. Stored in `pending.json` (a pin keeps

@@ -7,7 +7,6 @@
 
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
 
 use crate::{Battery, Blocked, DeviceKind, Generation, Hex, UpdateCandidate, UpdateStop};
 
@@ -75,7 +74,7 @@ pub struct Gap {
 /// device records, or one of its own kind's. The JSON is flat, tagged by
 /// the event's `kind` alone, as the history stores it; [`Self::device`]
 /// names the kind whose module records it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum EventBody {
     Core(CoreEvent),
@@ -83,7 +82,7 @@ pub enum EventBody {
 }
 
 /// An event every kind of device records.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CoreEvent {
     Boot {
@@ -96,13 +95,11 @@ pub enum CoreEvent {
     },
     Enrolled {
         /// The new client's fingerprint (its key's first 4 bytes).
-        #[schema(value_type = String)]
         client: Hex<4>,
         role: ClientRole,
         path: EnrollPath,
     },
     Revoked {
-        #[schema(value_type = String)]
         client: Hex<4>,
         by: Source,
     },
@@ -131,15 +128,13 @@ pub enum CoreEvent {
     /// for, each named by its key's first 7 bytes. Recorded just before
     /// the client's `enrolled`.
     Invited {
-        #[schema(value_type = String)]
         client: Hex<7>,
-        #[schema(value_type = String)]
         by: Hex<7>,
     },
 }
 
 /// An event only a feeder records.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum FeederEvent {
     Lock {
@@ -239,7 +234,7 @@ pub enum FeederEvent {
 /// What the food beam across the hopper reads. One reading with food shows
 /// food at once; the hopper reads low after a second without (stock
 /// counts 20 readings; the second assumes its poll is 50 ms).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FoodLevel {
     /// Not read yet: the beam reads soon after a boot, on the adapter, or
@@ -254,7 +249,7 @@ pub enum FoodLevel {
     Unknown,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FeedOutcome {
     Done,
@@ -273,7 +268,7 @@ pub enum FeedOutcome {
 }
 
 /// Why a feed ended.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FeedReason {
     Done,
@@ -463,7 +458,7 @@ impl From<FeederEvent> for EventBody {
 }
 
 /// An event's kind, for filtering.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EventKind {
     Boot,
@@ -583,13 +578,12 @@ impl EventKind {
 }
 
 /// Who caused an event.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Source {
     Panel,
     Client {
         /// The client's fingerprint (its key's first 4 bytes).
-        #[schema(value_type = String)]
         client: Hex<4>,
     },
     Feeder,
@@ -605,7 +599,7 @@ pub enum Source {
 }
 
 /// Why a plan's occurrence did not run.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum MissedReason {
     /// It fell while the feeder was off or had no valid time, or the clock
@@ -623,7 +617,7 @@ pub enum MissedReason {
 }
 
 /// A role in the feeder's own client table.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ClientRole {
     Owner,
@@ -656,7 +650,7 @@ impl ClientRole {
 }
 
 /// How a client enrolled.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EnrollPath {
     Setup,
@@ -680,7 +674,7 @@ pub struct Sample {
     pub value: SampleValue,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "metric", rename_all = "snake_case")]
 pub enum SampleValue {
     Power {
@@ -735,7 +729,7 @@ impl SampleValue {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MetricKind {
     Power,

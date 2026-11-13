@@ -2,7 +2,7 @@ from _typeshed import SupportsGetItem
 from typing import Final, SupportsFloat, SupportsIndex, final
 from typing_extensions import disjoint_base
 
-__all__ = ["PORTIONS_MAX", "PORTIONS_MIN", "PORTION_MG_MAX", "PORTION_MG_MIN", "AccountRole", "Alert", "AlertKind", "AlertLevel", "Alerts", "By", "Capabilities", "Event", "EventKind", "Feed", "FeedFault", "FeedOutcome", "FeedReason", "Feeder", "FoodLevel", "HeldKey", "JoinFailed", "JoinProblem", "Joined", "Login", "NextMeal", "NotSent", "Pending", "Plan", "PortionsToday", "Readiness", "Redeemed", "RefusalKind", "Role", "ServerFeeder", "ServerProblem", "ServerRefused", "Settings", "Skew", "State", "Status", "Tune", "Update", "UpdateKind", "WellfedError", "WriteResult", "Written", "client_listed", "invite_feeder", "public_key", "redeem", "role_writes", "server_client_listed", "server_feeders", "server_login", "server_revoke_client", "server_revoke_token"]
+__all__ = ["PORTIONS_MAX", "PORTIONS_MIN", "PORTION_MG_MAX", "PORTION_MG_MIN", "Alert", "AlertKind", "AlertLevel", "Alerts", "By", "Capabilities", "Event", "EventKind", "Feed", "FeedFault", "FeedOutcome", "FeedReason", "Feeder", "FoodLevel", "HeldKey", "JoinFailed", "JoinProblem", "Joined", "NextMeal", "NotSent", "Pending", "Plan", "PortionsToday", "Readiness", "Redeemed", "RefusalKind", "Role", "Settings", "Skew", "State", "Status", "Tune", "Update", "UpdateKind", "WellfedError", "WriteResult", "Written", "invite_feeder", "public_key", "redeem"]
 
 PORTIONS_MAX: Final[int]
 """
@@ -25,32 +25,6 @@ The lightest portion weight the feeder stores, in milligrams.
 """
 
 @final
-class AccountRole:
-    """
-    An account's role on the owner's server.
-    """
-    Member: Final[AccountRole]
-    NewerBuild: Final[AccountRole]
-    """
-    A role a newer server added: it grants nothing here.
-    """
-    Owner: Final[AccountRole]
-    Viewer: Final[AccountRole]
-    """
-    Reads, and changes nothing: Home Assistant refuses it at setup.
-    """
-    def __eq__(self, value: object, /) -> bool: ...
-    def __hash__(self, /) -> int: ...
-    def __int__(self, /) -> int: ...
-    def __ne__(self, value: object, /) -> bool: ...
-    def __repr__(self, /) -> str: ...
-    @property
-    def key(self, /) -> str:
-        """
-        The snake_case name: an entity's state and its translation key.
-        """
-
-@final
 class Alert:
     """
     One alert.
@@ -67,7 +41,7 @@ class Alert:
     def key(self, /) -> str:
         """
         The alert's identity on its feeder, the same in the event that opens
-        it and the one that clears it, and in the server's webhook.
+        it and the one that clears it.
         """
     @property
     def kind(self, /) -> AlertKind: ...
@@ -77,8 +51,9 @@ class Alert:
 @final
 class AlertKind:
     """
-    What an alert is about: a feeder's alert kind, or the owner's
-    server's judgement that it can't reach the feeder.
+    What an alert is about, as the app's tracker names it. `Unreachable`
+    is a relay's judgement that it can't reach the feeder, which a
+    direct session never makes: its Connected sensor says so.
     """
     BatteryBelowFloor: Final[AlertKind]
     CannotFeed: Final[AlertKind]
@@ -432,11 +407,11 @@ class Feeder:
     """
     def __new__(cls, /, secret: bytes, identity: bytes, address: str | None = None, pending: SupportsGetItem[int, Pending] = ..., answered: SupportsGetItem[int, SupportsIndex] = ..., unread: bool = False) -> Feeder:
         """
-        `pending` and `answered` are what the last run left: the feeds
-        still unsettled, on either route, and the feed numbers the last
-        `Answered` update listed. `unread` says the integration's store did
-        not read, and the owner has not yet checked the bowls: every feed
-        waits until `bowls_checked`.
+        `pending` and `answered` are what the last run left: the feeds still
+        unsettled, and the feed numbers the last `Answered` update listed.
+        `unread` says the integration's store did not read, and the owner
+        has not yet checked the bowls: every feed waits until
+        `bowls_checked`.
         """
     def bowls_checked(self, /) -> None:
         """
@@ -484,16 +459,6 @@ class Feeder:
         The integration's store saved the record of the feed `id` names, as
         a `Sending` update asked: the feed goes out. Called from the event
         loop while `feed` blocks an executor thread.
-        """
-    @staticmethod
-    def server(url: str, token: str, token_id: str, feeder_id: str, identity: bytes, pending: SupportsGetItem[int, Pending] = ..., unread: bool = False) -> Feeder:
-        """
-        The session to the feeder `feeder_id` on the owner's server at
-        `url`, signed in with `token`; `identity` is the feeder's, and a
-        feeder under that id with another one is never served as this one.
-        `token_id` is the token's id, which each feed sent under it records.
-        `pending` is what the last run left unsettled, on either route, and
-        `unread` as for a direct session.
         """
     def set_lock(self, /, locked: bool) -> Written:
         """
@@ -624,24 +589,6 @@ class Joined:
         """
 
 @final
-class Login:
-    """
-    A sign-in that holds: Home Assistant's own token on the server.
-    """
-    @property
-    def role(self, /) -> AccountRole: ...
-    @property
-    def token(self, /) -> str:
-        """
-        The bearer token, shown once; the config entry keeps it.
-        """
-    @property
-    def token_id(self, /) -> str:
-        """
-        Its id, to revoke it by.
-        """
-
-@final
 class NextMeal:
     """
     The plans' next meal, by the feeder's clock.
@@ -696,8 +643,8 @@ class NotSent:
     """
     Legacy: Final[NotSent]
     """
-    The feeder runs a build from before API revisions, which the
-    server sends nothing but an update: update the feeder.
+    The feeder runs a build from before API revisions, which takes
+    nothing but an update: update the feeder.
     """
     NotRead: Final[NotSent]
     """
@@ -740,7 +687,7 @@ class Pending:
     """
     def __eq__(self, value: object, /) -> bool: ...
     def __ne__(self, value: object, /) -> bool: ...
-    def __new__(cls, /, id: str, portions: SupportsIndex, sent_ms: SupportsIndex, after: SupportsIndex | None, reported: bool, released_ms: SupportsIndex | None, token_id: str | None) -> Pending:
+    def __new__(cls, /, id: str, portions: SupportsIndex, sent_ms: SupportsIndex, after: SupportsIndex | None, reported: bool, released_ms: SupportsIndex | None) -> Pending:
         """
         A pending feed as the integration kept it, to hand back to a new
         session.
@@ -748,14 +695,13 @@ class Pending:
     @property
     def after(self, /) -> int | None:
         """
-        Directly: the newest event known when it went out, which its `Fed`
-        comes after.
+        The newest event known when it went out, which its `Fed` comes
+        after.
         """
     @property
     def id(self, /) -> str:
         """
-        Names it: through the owner's server, the idempotency key it went
-        under, which the server's journal answers by.
+        Names it, for the store and the owner's release.
         """
     @property
     def portions(self, /) -> int: ...
@@ -763,9 +709,9 @@ class Pending:
     def released_ms(self, /) -> int | None:
         """
         When the owner released it ([`UpdateKind::Released`]), in Unix
-        milliseconds. Directly, a lost feed holds new feeds back until it
-        settles or is released, however long that takes; once released it
-        is kept open to a late end for a week from then.
+        milliseconds. A lost feed holds new feeds back until it settles or
+        is released, however long that takes; once released it is kept open
+        to a late end for a week from then.
         """
     @property
     def reported(self, /) -> bool:
@@ -779,15 +725,6 @@ class Pending:
         When it went out, in Unix milliseconds: it is reported still
         unknown once the settle window has passed since, if nothing showed
         sooner that it never ran.
-        """
-    @property
-    def token_id(self, /) -> str | None:
-        """
-        Through the owner's server, the id of the token it went under, which
-        names the journal that answers for it: a token belongs to one server
-        and one account, and only that journal's lack of it says it was
-        never sent. `None` for a direct feed. A route holds on the other
-        route's lost feeds without settling them.
         """
 
 @final
@@ -918,8 +855,7 @@ class RefusalKind:
 @final
 class Role:
     """
-    The role the feeder enrolled this client with, or through the
-    owner's server the account's role there.
+    The role the feeder enrolled this client with.
     """
     Member: Final[Role]
     NewerBuild: Final[Role]
@@ -929,11 +865,6 @@ class Role:
     Owner: Final[Role]
     Server: Final[Role]
     UpdateSigner: Final[Role]
-    Viewer: Final[Role]
-    """
-    Through the owner's server, an account that reads and changes
-    nothing.
-    """
     def __eq__(self, value: object, /) -> bool: ...
     def __hash__(self, /) -> int: ...
     def __int__(self, /) -> int: ...
@@ -944,89 +875,6 @@ class Role:
         """
         The snake_case name: an entity's state and its translation key.
         """
-
-@final
-class ServerFeeder:
-    """
-    A feeder the server holds, as the setup flow offers it.
-    """
-    def __eq__(self, value: object, /) -> bool: ...
-    def __ne__(self, value: object, /) -> bool: ...
-    @property
-    def id(self, /) -> str:
-        """
-        Its id on the server.
-        """
-    @property
-    def identity(self, /) -> bytes:
-        """
-        Its identity key, which names it on either route.
-        """
-    @property
-    def name(self, /) -> str: ...
-
-@final
-class ServerProblem:
-    """
-    Why a call to the owner's server at setup failed, as the flow words
-    it.
-    """
-    AccountDisabled: Final[ServerProblem]
-    """
-    The account is past its expiry.
-    """
-    BadCredentials: Final[ServerProblem]
-    """
-    The name or password is wrong.
-    """
-    Forbidden: Final[ServerProblem]
-    """
-    The account's role may not do that.
-    """
-    LoginLimited: Final[ServerProblem]
-    """
-    Too many failed logins: wait a minute.
-    """
-    NotAServer: Final[ServerProblem]
-    """
-    Something answered, but not as a Wellfed server of this API.
-    """
-    Redirected: Final[ServerProblem]
-    """
-    The address redirects elsewhere: use the address it names.
-    """
-    Refused: Final[ServerProblem]
-    """
-    The server refused for another reason.
-    """
-    Unauthorized: Final[ServerProblem]
-    """
-    The token no longer holds: log in again.
-    """
-    Unreachable: Final[ServerProblem]
-    """
-    Nothing answered at that address.
-    """
-    def __eq__(self, value: object, /) -> bool: ...
-    def __hash__(self, /) -> int: ...
-    def __int__(self, /) -> int: ...
-    def __ne__(self, value: object, /) -> bool: ...
-    def __repr__(self, /) -> str: ...
-    @property
-    def key(self, /) -> str:
-        """
-        The snake_case name: an entity's state and its translation key.
-        """
-
-@final
-class ServerRefused(WellfedError):
-    """
-    The owner's server refused a setup call, or could not be reached;
-    `problem` says how, as the setup flow words it.
-    """
-    def __new__(cls, /, problem: ServerProblem, *_args) -> ServerRefused: ...
-    @property
-    def problem(self, /) -> ServerProblem: ...
 
 @final
 class Settings:
@@ -1084,16 +932,6 @@ class Skew:
     A value a newer build added, which this integration cannot name.
     """
     Same: Final[Skew]
-    ServerAhead: Final[Skew]
-    """
-    Through the owner's server: the server is newer than this
-    integration, so update the integration.
-    """
-    ServerBehind: Final[Skew]
-    """
-    Through the owner's server: the server is older than the feeder
-    or this integration, so update the server.
-    """
     def __eq__(self, value: object, /) -> bool: ...
     def __hash__(self, /) -> int: ...
     def __int__(self, /) -> int: ...
@@ -1297,8 +1135,7 @@ class Update:
     def pending(self, /) -> Pending | None:
         """
         For [`UpdateKind::Pending`]: the feed to keep. For
-        [`UpdateKind::Settled`], [`UpdateKind::SettledUnfed`],
-        [`UpdateKind::StillUnknown`], [`UpdateKind::Released`],
+        [`UpdateKind::Settled`], [`UpdateKind::StillUnknown`], [`UpdateKind::Released`],
         [`UpdateKind::Forgotten`], [`UpdateKind::Sending`] and
         [`UpdateKind::Cleared`]: the pending feed it accounts for.
         """
@@ -1310,8 +1147,7 @@ class Update:
     @property
     def reason(self, /) -> str | None:
         """
-        Why the session ended, for [`UpdateKind::Disconnected`] and
-        [`UpdateKind::ServerLostFeeder`]: for logs.
+        Why the session ended, for [`UpdateKind::Disconnected`]: for logs.
         """
     @property
     def replayed(self, /) -> bool:
@@ -1401,22 +1237,9 @@ class UpdateKind:
     `Feeder.unsaved`): it goes only once saved. A restart before its
     answer finds it lost.
     """
-    ServerLostFeeder: Final[UpdateKind]
-    """
-    The server no longer reaches the feeder for good: the feeder
-    dropped the server's key, or the server no longer holds it.
-    The owner adopts it again.
-    """
     Settled: Final[UpdateKind]
     """
-    A feed whose answer never came ran: its `Fed` event, or the
-    server's journal, says how.
-    """
-    SettledUnfed: Final[UpdateKind]
-    """
-    A feed whose answer never came did not run: the feeder refused
-    it, as the server's journal learned, or the journal it went to
-    never had it, so it was never sent.
+    A feed whose answer never came ran: its `Fed` event says how.
     """
     State: Final[UpdateKind]
     """
@@ -1424,18 +1247,10 @@ class UpdateKind:
     """
     StillUnknown: Final[UpdateKind]
     """
-    A feed whose answer never came has no `Fed` event, or journal
-    entry, this session could find yet: whether it ran is not known.
-    It stays pending, and holds new feeds back until a later update
-    settles it or the owner releases it ([`UpdateKind::Released`]).
-    A lost feed from the other route comes so at each start: only
-    the owner's release ends it there.
-    """
-    TokenRefused: Final[UpdateKind]
-    """
-    The server no longer takes this integration's token (revoked,
-    expired, or its account disabled); the session will not
-    reconnect until a new login.
+    A feed whose answer never came has no `Fed` event this session
+    could find yet: whether it ran is not known. It stays pending,
+    and holds new feeds back until a later update settles it or the
+    owner releases it ([`UpdateKind::Released`]).
     """
     def __eq__(self, value: object, /) -> bool: ...
     def __hash__(self, /) -> int: ...
@@ -1520,12 +1335,6 @@ class Written:
     @property
     def result(self, /) -> WriteResult: ...
 
-def client_listed(secret: bytes, identity: bytes, key: bytes, address: str | None = None) -> bool | None:
-    """
-    Whether the feeder `identity` still lists the client key `key`, as the
-    key `secret` reads its clients now; `None` when no session could ask.
-    """
-
 def invite_feeder(text: str) -> bytes:
     """
     The identity key of the feeder `text` invites to.
@@ -1544,41 +1353,4 @@ def redeem(invite: str, label: str, address: str | None = None, held: HeldKey | 
     which works once, is spent only when the feeder does not know it. A join
     that did not enroll a key raises `JoinFailed`, whose `held` is the key
     to hand the next call.
-    """
-
-def role_writes(role: Role) -> bool:
-    """
-    Whether `role` may make every write the integration offers, by the
-    feeder's own matrix: its write entities show only then.
-    """
-
-def server_client_listed(url: str, token: str, feeder_id: str, key: bytes) -> bool | None:
-    """
-    Whether the feeder `feeder_id` still lists the client key `key`, as the
-    server reads it now; `None` when the server cannot say (the feeder is
-    offline, or the account may not list its clients).
-    """
-
-def server_feeders(url: str, token: str) -> list[ServerFeeder]:
-    """
-    The feeders the server at `url` holds, as `token` sees them.
-    """
-
-def server_login(url: str, name: str, password: str, label: str) -> Login:
-    """
-    Sign in to the owner's server at `url` as `name`, and create a token
-    labelled `label` for Home Assistant. The password is used for this alone
-    and not kept; an account that may change nothing is refused.
-    """
-
-def server_revoke_client(url: str, token: str, feeder_id: str, key: bytes) -> bool:
-    """
-    Remove the client key `key` from the feeder `feeder_id` through the
-    server; whether it was done. Sent once: `False` when it was refused, or
-    may not have run.
-    """
-
-def server_revoke_token(url: str, token: str, token_id: str) -> None:
-    """
-    Revoke the token `token_id` with itself.
     """

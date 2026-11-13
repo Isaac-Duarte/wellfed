@@ -67,22 +67,20 @@ class FeederCard extends StatelessWidget {
                             ],
                           ),
                         ),
-                        if (!controller.state.viewer) ...[
-                          const SizedBox(width: Space.s2),
-                          FilledButton(
-                            style: FilledButton.styleFrom(
-                              minimumSize: const Size(0, 44),
-                              padding: const EdgeInsets.symmetric(horizontal: 14),
-                              textStyle: const TextStyle(
-                                fontFamily: Fonts.family,
-                                fontSize: Sizes.base,
-                                fontWeight: Fonts.semibold,
-                              ),
+                        const SizedBox(width: Space.s2),
+                        FilledButton(
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size(0, 44),
+                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                            textStyle: const TextStyle(
+                              fontFamily: Fonts.family,
+                              fontSize: Sizes.base,
+                              fontWeight: Fonts.semibold,
                             ),
-                            onPressed: controller.state.canFeed ? () => feedNow(context, controller) : null,
-                            child: const Text('Feed'),
                           ),
-                        ],
+                          onPressed: controller.state.canFeed ? () => feedNow(context, controller) : null,
+                          child: const Text('Feed'),
+                        ),
                       ],
                     ),
                     if (why != null) ...[
@@ -187,14 +185,11 @@ class FeederCard extends StatelessWidget {
                       ),
                     ],
                     for (final notice in notices) ...[const SizedBox(height: 14), notice],
-                    // A viewer's account feeds nothing, so it has no Feed to press.
-                    if (!controller.state.viewer) ...[
-                      const SizedBox(height: Space.s4),
-                      FilledButton(
-                        onPressed: controller.state.canFeed ? () => feedNow(context, controller) : null,
-                        child: const Text('Feed now'),
-                      ),
-                    ],
+                    const SizedBox(height: Space.s4),
+                    FilledButton(
+                      onPressed: controller.state.canFeed ? () => feedNow(context, controller) : null,
+                      child: const Text('Feed now'),
+                    ),
                     if (controller.state.feed is! FeedIdle) ...[
                       const SizedBox(height: Space.s1),
                       TextButton(
@@ -319,7 +314,7 @@ String blockedWords(Blocked reason) => switch (reason) {
 };
 
 /// Which side to update while the feeder runs another revision of the device
-/// API than this app, or than the owner's server: `null` while they match.
+/// API than this app: `null` while they match.
 /// Everything both sides know still works, so this is advice, never a block,
 /// and a newer feeder is never offered this app's older firmware.
 String? skewWords(FeederState state) {
@@ -328,18 +323,16 @@ String? skewWords(FeederState state) {
     final ClientRole role => mayAsk(role, Ask.offerUpdate),
     null => false,
   };
-  return switch ((state.skew, state.serverSkew)) {
-    (Skew.feederAhead, _) => 'Update this app: the feeder runs newer firmware',
+  return switch (state.skew) {
+    Skew.feederAhead => 'Update this app: the feeder runs newer firmware',
     // A pre-revision build takes nothing but an update from this app.
-    (Skew.legacy, _) || (null, Skew.legacy) when updates => 'Update the feeder: its firmware is too old for this app',
-    (Skew.legacy, _) || (null, Skew.legacy) => 'The feeder needs an update from its owner',
-    (Skew.feederBehind, _) ||
-    (null, Skew.feederBehind) when updates => 'Update the feeder: it runs older firmware than this app',
-    (Skew.feederBehind, _) || (null, Skew.feederBehind) => 'The feeder runs older firmware: its owner can update it',
-    (_, Skew.feederAhead) => 'Update the Wellfed server: the feeder runs newer firmware',
+    Skew.legacy when updates => 'Update the feeder: its firmware is too old for this app',
+    Skew.legacy => 'The feeder needs an update from its owner',
+    Skew.feederBehind when updates => 'Update the feeder: it runs older firmware than this app',
+    Skew.feederBehind => 'The feeder runs older firmware: its owner can update it',
     // A revision this app cannot name came from a newer build.
-    (Skew.unknown, _) || (_, Skew.unknown) => 'Update this app: something it talks to is newer',
-    _ => null,
+    Skew.unknown => 'Update this app: the feeder is newer',
+    Skew.same || null => null,
   };
 }
 

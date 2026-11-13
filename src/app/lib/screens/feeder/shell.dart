@@ -5,25 +5,20 @@ import 'package:wellfed/screens/feeder/schedule.dart';
 import 'package:wellfed/screens/feeder/settings_tab.dart';
 import 'package:wellfed/screens/feeder/today.dart';
 import 'package:wellfed/screens/feeder/unconfirmed.dart';
-import 'package:wellfed/screens/server/server_screens.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/fleet/fleet.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 
-/// One feeder: its name and the tabs (board 7).
-///
-/// With the owner's server, the name has the way a request goes under it,
-/// the food view is one tap away, and History reaches what the server kept.
+/// One feeder: its name and the tabs.
 class FeederShell extends StatelessWidget {
-  const FeederShell({super.key, required this.feeder, this.initialTab = 0, this.server, this.openAlerts});
+  const FeederShell({super.key, required this.feeder, this.initialTab = 0, this.openAlerts});
 
   /// The feeder `identity` of `fleet`, or a plain way back if it is gone: a
   /// link can outlive a feeder this phone has forgotten.
   final FeederController feeder;
   final int initialTab;
-  final ServerScreens? server;
 
   /// Opens this feeder's alerts on this phone, where it watches for them.
   final void Function(BuildContext context, String identity)? openAlerts;
@@ -55,19 +50,11 @@ class FeederShell extends StatelessWidget {
           // The name changes from Settings, so the title follows it.
           title: ListenableBuilder(
             listenable: feeder,
-            builder: (context, _) => Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  feeder.state.known.name,
-                  style: isDesktop
-                      ? TextStyle(fontSize: 24, fontWeight: Fonts.display, letterSpacing: -0.4, color: c.text)
-                      : TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
-                ),
-                // With no server there is one way, and nothing to say.
-                if (server != null && feeder.state.serverId != null) PathLine(path: feeder.state.path),
-              ],
+            builder: (context, _) => Text(
+              feeder.state.known.name,
+              style: isDesktop
+                  ? TextStyle(fontSize: 24, fontWeight: Fonts.display, letterSpacing: -0.4, color: c.text)
+                  : TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
             ),
           ),
           actions: [
@@ -76,17 +63,6 @@ class FeederShell extends StatelessWidget {
                 tooltip: 'Alerts',
                 icon: Icon(Icons.notifications_outlined, color: c.text),
                 onPressed: () => open(context, feeder.state.known.identity),
-              ),
-            if (server case final ServerScreens screens?)
-              ListenableBuilder(
-                listenable: feeder,
-                builder: (context, _) => feeder.state.serverId == null
-                    ? const SizedBox.shrink()
-                    : IconButton(
-                        tooltip: 'Food',
-                        icon: Icon(Icons.inventory_2_outlined, color: c.text),
-                        onPressed: () => screens.openFood(context, feeder),
-                      ),
               ),
           ],
           bottom: TabBar(
@@ -122,13 +98,7 @@ class FeederShell extends StatelessWidget {
                 children: [
                   TodayTab(feeder: feeder),
                   ScheduleTab(feeder: feeder),
-                  HistoryTab(
-                    feeder: feeder,
-                    longHistory: switch (server) {
-                      final ServerScreens screens? => () => screens.openHistory(context, feeder),
-                      null => null,
-                    },
-                  ),
+                  HistoryTab(feeder: feeder),
                   SettingsTab(feeder: feeder),
                 ],
               ),
@@ -152,19 +122,11 @@ class _Gone extends StatelessWidget {
 
 /// The feeder a route names, or a screen that says it is gone.
 class FeederRoute extends StatelessWidget {
-  const FeederRoute({
-    super.key,
-    required this.fleet,
-    required this.identity,
-    this.initialTab = 0,
-    this.server,
-    this.openAlerts,
-  });
+  const FeederRoute({super.key, required this.fleet, required this.identity, this.initialTab = 0, this.openAlerts});
 
   final FeederFleet fleet;
   final String identity;
   final int initialTab;
-  final ServerScreens? server;
   final void Function(BuildContext context, String identity)? openAlerts;
 
   /// Follows the fleet, so a feeder forgotten while its page shows gives way
@@ -176,7 +138,7 @@ class FeederRoute extends StatelessWidget {
       final FeederController? feeder = fleet[identity];
       return feeder == null
           ? const _Gone()
-          : FeederShell(feeder: feeder, initialTab: initialTab, server: server, openAlerts: openAlerts);
+          : FeederShell(feeder: feeder, initialTab: initialTab, openAlerts: openAlerts);
     },
   );
 }

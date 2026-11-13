@@ -7,10 +7,9 @@ The full rules for every Rust crate in the workspace, why each exists, and what 
 | Folder | Holds |
 | --- | --- |
 | `src/sdk/` | The SDK every firmware builds on |
-| `src/product/` | Product policy shared by the firmware and the server |
+| `src/product/` | Product policy shared by the firmware and the simulators |
 | `src/client/` | The device API values, the sans-IO client and the tokio connector every host client shares, and the libraries host programs share: the installer, the shared file formats (`wellfed-formats`), image checks (`wellfed-image`), update signing (`wellfed-signing`) and stock's protocol (`wellfed-stock`) |
-| `src/server/` | The owner's server |
-| `src/sim/` | The simulated devices ([simulators](../../src/tools/README.md#simulators)), which only the tools, the server's test kit and tests link |
+| `src/sim/` | The simulated devices ([simulators](../../src/tools/README.md#simulators)), which only the tools and tests link |
 | `src/tools/wellfed-*`, `src/tools/xtask` | Host tools ([inventory](../../src/tools/README.md)), which no crate outside `src/tools/` links |
 | `src/firmware/wellfed/` | One `no_std` staticlib per firmware ([firmware guide](../../src/firmware/wellfed/README.md)) |
 
@@ -31,7 +30,7 @@ Every crate sets `license.workspace = true` and `publish.workspace = true`, and 
 | **Enums, not strings or flags.** Closed sets are enums (`clap::ValueEnum` for CLI options), and prefer a two-variant enum to a `bool` whose meaning isn't clear at the call site. Firmware states and faults are enums with fixed discriminants, not integer wrappers: `code()`, and `from_byte` where flash bytes are decoded. | The compiler checks every match when a variant is added. | Review |
 | **Errors.** See [Errors](#errors) below. | Callers can match on what went wrong, and the operator reads a chain of context. | Review |
 | **One helper, one place.** Search before writing hex, hashing, HMAC, report-writing or serial helpers. | The workspace already has them, and a second copy diverges. | Review |
-| **`unsafe` at the edge only.** Host crates (under `src/server/`, `src/client/`, `src/tools/`, `src/sim/` and Home Assistant's bridge) forbid `unsafe` at each library and binary root (tests and build scripts exempt), except the virtual feeder worker, which runs the firmware's ports on the fake SDK, and the bridge's PyO3 build, whose macros expand to `unsafe`. Firmware permits it only at the C ABI and MMIO boundary, each block with a `// SAFETY:` comment. `unsafe_op_in_unsafe_fn` is denied everywhere. Between Rust crates an interface is a trait, never an `extern "C"` table with a context pointer. | Every unsafe operation is visible and justified where it happens. A direct call between Rust crates lets the stack audit follow it, since it refuses a Rust indirect call outside `core::fmt`. | `#![forbid(unsafe_code)]` in host crates, which `cargo xtask check-repository` requires at each root; `[workspace.lints]` (`unsafe_op_in_unsafe_fn`, `clippy::undocumented_unsafe_blocks`) |
+| **`unsafe` at the edge only.** Host crates (under `src/client/`, `src/tools/`, `src/sim/` and Home Assistant's bridge) forbid `unsafe` at each library and binary root (tests and build scripts exempt), except the virtual feeder worker, which runs the firmware's ports on the fake SDK, and the bridge's PyO3 build, whose macros expand to `unsafe`. Firmware permits it only at the C ABI and MMIO boundary, each block with a `// SAFETY:` comment. `unsafe_op_in_unsafe_fn` is denied everywhere. Between Rust crates an interface is a trait, never an `extern "C"` table with a context pointer. | Every unsafe operation is visible and justified where it happens. A direct call between Rust crates lets the stack audit follow it, since it refuses a Rust indirect call outside `core::fmt`. | `#![forbid(unsafe_code)]` in host crates, which `cargo xtask check-repository` requires at each root; `[workspace.lints]` (`unsafe_op_in_unsafe_fn`, `clippy::undocumented_unsafe_blocks`) |
 | **Audited binaries.** Changing `repr(C)` types, `#[no_mangle]` symbols, the park/hook RAM code or flash record layouts reruns the link, RAM-park and stack audits and keeps their pins. | The pinned recovery path depends on them. | The image build's audits |
 | **Readable code.** Blank lines between a function's logical steps; comments and `//!` docs explain why (invariants, hardware or protocol constraints, ordering), not what the next line does. | The reader is usually debugging a bench run. | `cargo fmt` for layout; review for the rest |
 
@@ -84,12 +83,8 @@ Some crates may not be linked at all. cargo-deny cannot ban every dependent with
 
 `cargo xtask check-repository` also checks the crate layering from `cargo metadata`:
 
-- Only `wellfed-store` depends on sqlx.
-- Nothing below `wellfed-server` links axum.
-- Each server crate takes only the workspace crates its arrows name.
-- `wellfed-api` keeps to an allow-list, so it builds for Android ([server design](../server/design.md#allowed-dependencies)).
-- No crate outside `src/tools/` links a crate under it (tests may), so what the app, the server and the firmware build on is a library in its own layer.
-- Outside `src/tools/` and `src/sim/`, only `wellfed-server-testkit`, which serves the server's tests the simulated feeder, links a simulator, and only that one; other crates take one for their tests, so no crate that ships carries a simulated device.
+- No crate outside `src/tools/` links a crate under it (tests may), so what the app, Home Assistant and the firmware build on is a library in its own layer.
+- Outside `src/tools/` and `src/sim/`, no crate links a simulator; other crates take one for their tests, so no crate that ships carries a simulated device.
 - The SDK's device-neutral crates link no device kind's own crate by any path.
 
 ### The fuzz crate

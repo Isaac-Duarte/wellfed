@@ -4,7 +4,7 @@ Wellfed began as a curated copy of first-party code from a private PLAF103 resea
 
 ## What came across
 
-- The Rust server and firmware workspace, and their tests.
+- The Rust firmware, client and tools workspace, and their tests.
 - SDK pins, hooks and build audits.
 - Simulator scenarios.
 - Stock marker and probe preparation.

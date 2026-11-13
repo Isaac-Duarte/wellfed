@@ -111,15 +111,15 @@ The feeder doesn't refuse a feed for low food, so a beam stuck on "no food" does
 
 The motor turning past a mark counts as a portion whether or not food fell. In one test on a nearly empty hopper, eight 1-portion feeds dropped 1.7, 11.4, 6.5, 7.0, 6.0, 3.0, 1.9 and 0 g, against a usual 7 g. So a portion can also run well over. Tap a feed in History to see whether the food read low, and treat that as your warning.
 
-## Meals with no server
+## Meals with nothing else on
 
-The plans and their marks live on the feeder. It works out each meal once a minute and runs it itself, so no phone, server or internet is involved. It does need the clock. With no valid clock, it holds meals rather than guess.
+The plans and their marks live on the feeder. It works out each meal once a minute and runs it itself, so no phone, computer or internet is involved. It does need the clock. With no valid clock, it holds meals rather than guess.
 
 Once time returns, a meal up to 15 minutes late runs once, and a later one is recorded as missed. A backward clock jump or a restart doesn't repeat one. [The system at a glance](system.md#what-keeps-working) follows what happens during an outage.
 
 ## What this doesn't protect against
 
-- **A pet going hungry.** Meals can be missed through a long outage, a power cut, a fault or an empty hopper. The feeder opens alerts, such as a failed or missed meal, low food or a feeder that can't feed, and the app notifies it, but only while it can reach the feeder: at home, or away through your own server. A feeder that's off or off your network can't report anything, and the app can only say it can't reach it. Alerts have run in simulation only ([roadmap](../../roadmap.md)).
+- **A pet going hungry.** Meals can be missed through a long outage, a power cut, a fault or an empty hopper. The feeder opens alerts, such as a failed or missed meal, low food or a feeder that can't feed, and the app notifies it, but only while it can reach the feeder, on your home network. A feeder that's off or off your network can't report anything, and the app can only say it can't reach it. Alerts have run in simulation only ([roadmap](../../roadmap.md)).
 - **A real jam.** Kibble pressed into the rotor by hand didn't jam it, so the jam handling has run only on simulated current readings. Whether 1 second of reversing frees a real jam is unknown. The limit of 300 came from empty and lightly filled drives. Four full-hopper feeds later peaked at 236 to 283 and one feed on batteries at 268, on the feeder's own scale, but a real stall's current hasn't been measured, so the margin to a real jam is unknown.
 - **Food stuck above the rotor.** Food bridging in the hopper still counts as portions.
 - **A stuck-clear outlet beam.** The feeder doesn't check that the beam really responds, so a blocked outlet could read as clear. A jam would still end the drive.

@@ -203,7 +203,7 @@ pub async fn run(
     run_linked(None, keys, feeder, address, sync_clock, commands, update).await;
 }
 
-/// [`run`], telling `link` (the path router's view of this session) as it
+/// [`run`], telling `link` (the router's view of this session) as it
 /// opens, reads the history and ends.
 pub(crate) async fn run_linked(
     link: Option<&DirectLink>,
@@ -227,9 +227,6 @@ pub(crate) async fn run_linked(
     )
     .await
     .err();
-    if let Some(link) = link {
-        link.closed();
-    }
 
     // A session that ends answers nothing still outstanding, and each of
     // those writes may have run: say so before the end.
@@ -344,9 +341,6 @@ async fn serve(
         skew: connection.skew(),
     }) {
         return Ok(());
-    }
-    if let Some(link) = link {
-        link.opened();
     }
     if connection.skew() == Skew::Legacy {
         return serve_legacy(&mut connection, commands).await;

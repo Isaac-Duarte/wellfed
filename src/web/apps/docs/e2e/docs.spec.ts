@@ -215,7 +215,7 @@ test("serves each page's Markdown beside it", async ({ request }) => {
 });
 
 test("never scrolls sideways", async ({ page }) => {
-  for (const path of ["/", "/install", "/roadmap", "/server/running", "/devices"]) {
+  for (const path of ["/", "/install", "/roadmap", "/glossary", "/devices"]) {
     await page.goto(path);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow, path).toBeLessThanOrEqual(0);

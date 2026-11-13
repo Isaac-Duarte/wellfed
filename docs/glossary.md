@@ -38,11 +38,11 @@ The words the rest of the docs use without stopping to explain them.
 
 **Journal.** The feeder's record of feeds, kept in flash. Writing a feed down before turning the motor means a power cut can never make the feeder repeat a feed. Instead the feed is reported as *uncertain*.
 
-**Device API.** The encrypted interface the feeder serves on your network. The CLI, the app and the server all speak it. See [device API](firmware/device-api.md).
+**Device API.** The encrypted interface the feeder serves on your network. The CLI, the app and Home Assistant all speak it. See [device API](firmware/device-api.md).
 
 **Noise.** The [Noise Protocol Framework](https://noiseprotocol.org/), which the device API uses for encryption and to check who is talking.
 
-**Owner and member.** The roles a person's paired client can have. An owner can do everything, including updates and adding others. A member is invited by an owner and can do less. A feeder also lists two roles that aren't people: `Server`, for the optional server, and `UpdateSigner`, for a key that only signs updates.
+**Owner and member.** The roles a person's paired client can have. An owner can do everything, including updates and adding others. A member is invited by an owner and can do less. A feeder also lists two roles that aren't people: `Server`, a role kept from a removed optional server that no Wellfed client uses, and `UpdateSigner`, for a key that only signs updates.
 
 **Pairing.** How a phone or computer first gets its key onto the feeder, over Bluetooth, while you are standing next to it. See [pairing](firmware/pairing.md).
 
@@ -50,9 +50,7 @@ The words the rest of the docs use without stopping to explain them.
 
 **Generation.** The counter on the feeder's settings, plans and calibration. A change names the generation it was based on, and is refused as stale if the store has moved since. See [device API](firmware/device-api.md#writes-roles-and-generations).
 
-**The server.** The optional self-hosted Wellfed server. It keeps long history and serves several feeders and people. The feeder works without it. See [the server](server/README.md).
-
-**Uncertain write.** A request whose answer was lost, so nobody knows whether the feeder ran it. It is settled from the feeder's history or the server's journal, and never sent again on another path. See [two paths, one feed](server/README.md#two-paths-one-feed).
+**Uncertain write.** A request whose answer was lost, so nobody knows whether the feeder ran it. It is settled from the feeder's history, and never sent again. See [device API](firmware/device-api.md#feeds).
 
 **Bench.** Our test rig: a host computer and the Wellfed Bench board, which powers the feeder, holds its loader strap and bridges its UART. See [bench hardware](development/bench-hardware.md) and [the relay bench](devices/plaf103/bench.md).
 

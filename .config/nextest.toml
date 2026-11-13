@@ -21,20 +21,14 @@ test-group = 'app-install-broker'
 
 # The longest tests start first. Each waits out the simulator's pace or a
 # real window, so it takes as long on any machine; started last, one would
-# run on alone after the rest of the suite had finished (the suite took
-# 27.5 s rather than 22 s). Add a test here when it takes more than about
-# 8 s:
-# - the stock read and restore moves a whole bank a page at a time, each
-#   page a pass of the simulator, which paces itself as the firmware does;
+# run on alone after the rest of the suite had finished. Add a test here
+# when it takes more than about 8 s:
 # - an update key's enrollment is held past the session's real 10 s answer
 #   window, the window the test is about;
-# - two power samples come 5 s apart, as the simulator samples its supply;
 # - the settings model walks every sequence to depth 6, about 30 s unoptimized.
 [[profile.default.overrides]]
 filter = '''
     (package(wellfed-device) & test(=no_generation_names_two_settings))
-    | (package(wellfed-server) & test(=bank_1_read_from_bank_0_is_kept_exported_and_restored_after_promotion))
-    | (package(wellfed-server) & test(=samples_read_raw_in_pages_and_by_the_hour))
     | (package(wellfed-bench) & test(/an_enrollment_answered_by_a_late_press_comes_back_through_the_server/))
 '''
 priority = 100

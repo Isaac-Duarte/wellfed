@@ -43,17 +43,17 @@ class SetAsideScreen extends StatelessWidget {
   );
 
   static String _lead(StoreKind kind) => switch (kind) {
-    StoreKind.app => 'Your feeders and server.',
+    StoreKind.app => 'Your feeders.',
     StoreKind.pending => 'Feeding is paused.',
     StoreKind.alerts => 'Alerts.',
   };
 
   static String _words(StoreKind kind) => switch (kind) {
     StoreKind.app =>
-      "This $deviceName's list of feeders and its server login start empty, but your feeders still know "
+      "This $deviceName's list of feeders starts empty, but your feeders still know "
           'this $deviceName. To put one back on the list, stand at the feeder and use Add a feeder, then '
           'Recover a feeder. Or ask someone '
-          'who uses the feeder for an invite. If you use a home server, log in to it again.',
+          'who uses the feeder for an invite.',
     StoreKind.pending =>
       "The record of feeds and changes that hadn't been confirmed is gone, so a feed sent "
           "just before may have run. Look in every feeder's bowl before you feed again.",

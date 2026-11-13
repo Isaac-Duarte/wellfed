@@ -1,19 +1,9 @@
 part of 'feeder.dart';
 
 /// Changes other than a feed that went out and never said how they ended: a
-/// setting, a schedule, a call. The router holds each on its own path; a
-/// check only reads that path, and nothing here sends one again. The banner
-/// shows them until a check settles them or the owner puts them away.
+/// setting, a schedule, a call. The router holds each; nothing here sends
+/// one again. The banner shows them until the owner puts them away.
 extension FeederWrites on FeederController {
-  /// Ask the path `key` went on what became of it. This only reads.
-  Future<void> checkWrite(String key) async {
-    final PathRouter? router = _ports.router;
-    if (router == null) return;
-    await router.retry(key: key);
-    if (_disposed) return;
-    _readUnconfirmed();
-  }
-
   /// The owner has looked, and puts `key` away.
   void putAwayWrite(String key) {
     try {

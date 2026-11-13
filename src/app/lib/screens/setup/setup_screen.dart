@@ -170,8 +170,7 @@ class _Permissions extends StatelessWidget {
       ],
       actions: [
         Text(
-          'Nothing you do in Wellfed leaves your home network unless you '
-          'add a server yourself.',
+          'Nothing you do in Wellfed leaves your home network.',
           style: TextStyle(fontSize: Sizes.sm, height: 1.5, color: c.textMuted),
         ),
         FilledButton(onPressed: onContinue, child: const Text('Continue')),

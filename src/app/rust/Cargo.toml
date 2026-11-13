@@ -4,7 +4,7 @@ name = "wellfed-app-bridge"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
-description = "The app's Rust half over flutter_rust_bridge: the client key, BLE setup and LAN recovery, LAN discovery on the desktops, device API sessions through wellfed-connect, and the owner's server through wellfed-server-client"
+description = "The app's Rust half over flutter_rust_bridge: the client key, BLE setup and LAN recovery, LAN discovery on the desktops, device API sessions through wellfed-connect, and the install"
 publish.workspace = true
 
 [lib]
@@ -23,41 +23,29 @@ subtle.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt", "sync", "time"] }
 uuid = { workspace = true, features = ["serde", "v4"] }
-wellfed-api.workspace = true
 wellfed-client.workspace = true
 wellfed-connect.workspace = true
 wellfed-formats.workspace = true
 wellfed-install.workspace = true
 wellfed-model.workspace = true
-wellfed-server-client.workspace = true
 wellfed-session.workspace = true
 
 [dev-dependencies]
+# Stock's own times and its MQTT broker, in the install and restore tests.
 chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
 proptest.workspace = true
 rumqttc = { version = "0.25.1", default-features = false }
 tempfile.workspace = true
-utoipa.workspace = true
 uuid.workspace = true
 wellfed-signed.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "test-util"] }
 wellfed-feeder-sim = { workspace = true, features = ["harness"] }
 wellfed-install = { workspace = true, features = ["fixtures"] }
 wellfed-signing.workspace = true
-wellfed-server-testkit.workspace = true
-wellfed-service.workspace = true
 
 [lints]
 workspace = true
 
-# reqwest's rustls checks a server's certificate with the platform verifier,
-# which on Android calls the system's trust store over JNI: `android.rs` hands
-# it the app's context once at startup. The same versions as reqwest's, so
-# both name one verifier.
+# The JNI hook Kotlin calls (`android.rs`).
 [target.'cfg(target_os = "android")'.dependencies]
 jni = { version = "0.22.4", default-features = false }
-rustls-platform-verifier = "0.7.1"
-# The `addrinfo` and socket address types the relay's network-bound DNS
-# lookup reads (`relay.rs`).
-libc = "0.2.191"
-

@@ -10,8 +10,8 @@
 //! scale (the feeder's volume setting then decides how loud it plays), and
 //! encoded as 4-bit IMA ADPCM with the feeder's own encoder
 //! (`wellfed_core::clip`). Other formats are converted to WAV first, for
-//! example with `ffmpeg -i call.m4a call.wav`. The owner's server converts
-//! nothing: it takes the stream a client converted ([`Clip::from_stream`]).
+//! example with `ffmpeg -i call.m4a call.wav`. [`Clip::from_stream`] takes
+//! a stream a client already converted.
 //!
 //! **Upload.** [`Clip::start`] erases the feeder's clip and announces the
 //! new one's length and CRC; [`Clip::chunk`] sends the stream a chunk at a

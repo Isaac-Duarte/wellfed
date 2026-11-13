@@ -7,8 +7,6 @@ class _HistoryList extends StatelessWidget {
     required this.days,
     required this.filter,
     required this.choose,
-    required this.longHistory,
-    required this.empty,
     required this.open,
     required this.toggle,
     required this.shown,
@@ -19,10 +17,6 @@ class _HistoryList extends StatelessWidget {
   final List<_Day> days;
   final _Filter filter;
   final void Function(_Filter filter) choose;
-  final VoidCallback? longHistory;
-
-  /// What an empty list says, in place of the feeder's own words.
-  final String? empty;
   final Set<BigInt> open;
   final void Function(BigInt seq) toggle;
 
@@ -33,7 +27,6 @@ class _HistoryList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final VoidCallback? longHistory = this.longHistory;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -56,7 +49,6 @@ class _HistoryList extends StatelessWidget {
                 ),
                 const SizedBox(width: Space.s2),
               ],
-              if (longHistory != null) TextButton(onPressed: longHistory, child: const Text('Full history')),
             ],
           ),
         ),
@@ -64,12 +56,11 @@ class _HistoryList extends StatelessWidget {
           child: days.isEmpty
               ? Center(
                   child: Text(
-                    empty ??
-                        (feeder.state.historyRead
-                            ? 'Nothing here yet.'
-                            : feeder.state.connection == Connection.online
-                            ? 'Reading the history…'
-                            : "Can't read the history right now."),
+                    feeder.state.historyRead
+                        ? 'Nothing here yet.'
+                        : feeder.state.connection == Connection.online
+                        ? 'Reading the history…'
+                        : "Can't read the history right now.",
                     style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
                   ),
                 )

@@ -4,7 +4,7 @@ name = "wellfed-model"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
-description = "Owned device API values (status, settings, events, requests and answers) shared by every client and the owner's server, and their conversion from the wire"
+description = "Owned device API values (status, settings, events, requests and answers) shared by every client, and their conversion from the wire"
 publish.workspace = true
 
 [dependencies]
@@ -13,7 +13,6 @@ wellfed-proto.workspace = true
 wellfed-session.workspace = true
 serde.workspace = true
 thiserror.workspace = true
-utoipa = { workspace = true, features = ["jiff_0_2"] }
 
 [dev-dependencies]
 serde_json.workspace = true

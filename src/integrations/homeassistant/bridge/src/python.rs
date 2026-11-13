@@ -12,11 +12,9 @@ use pyo3::types::PyTuple;
 use crate::Error;
 use wellfed_model::FeederSettingsPatch;
 
-use crate::api::{JoinProblem, Pending, Role, ServerProblem, Tune, Update, Written};
+use crate::api::{JoinProblem, Pending, Tune, Update, Written};
 use crate::feeder::{self, Carried, Clocks, Target};
 use crate::key::{self, ClientKey, Joined, bytes32};
-use crate::server::{self, Login, ServerFeeder};
-use crate::writes;
 
 /// A call into the Wellfed bridge failed.
 ///
@@ -36,29 +34,6 @@ impl WellfedError {
 impl From<Error> for PyErr {
     fn from(error: Error) -> Self {
         PyErr::new::<WellfedError, _>(error.to_string())
-    }
-}
-
-/// The owner's server refused a setup call, or could not be reached;
-/// `problem` says how, as the setup flow words it.
-#[pyclass(extends = WellfedError, frozen, module = "wellfed_homeassistant")]
-struct ServerRefused {
-    #[pyo3(get)]
-    problem: ServerProblem,
-}
-
-#[pymethods]
-impl ServerRefused {
-    #[new]
-    #[pyo3(signature = (problem, *_args))]
-    fn new(problem: &ServerProblem, _args: &Bound<'_, PyTuple>) -> PyClassInitializer<Self> {
-        PyClassInitializer::from(WellfedError).add_subclass(Self { problem: *problem })
-    }
-}
-
-impl From<server::Refused> for PyErr {
-    fn from(refused: server::Refused) -> Self {
-        PyErr::new::<ServerRefused, _>((refused.problem(), refused.to_string()))
     }
 }
 
@@ -162,13 +137,6 @@ where
     Ok(runtime.block_on(future)?)
 }
 
-/// Whether `role` may make every write the integration offers, by the
-/// feeder's own matrix: its write entities show only then.
-#[pyfunction]
-fn role_writes(role: &Bound<'_, Role>) -> bool {
-    writes::writes_all(*role.get())
-}
-
 /// The public key of `secret`, as the feeder lists this client.
 #[pyfunction]
 fn public_key(secret: &[u8]) -> PyResult<Vec<u8>> {
@@ -208,91 +176,12 @@ fn redeem(
     })
 }
 
-/// Whether the feeder `identity` still lists the client key `key`, as the
-/// key `secret` reads its clients now; `None` when no session could ask.
-#[pyfunction]
-#[pyo3(signature = (secret, identity, key, address=None))]
-fn client_listed(
-    py: Python<'_>,
-    secret: &[u8],
-    identity: &[u8],
-    key: &[u8],
-    address: Option<&str>,
-) -> PyResult<Option<bool>> {
-    let client = ClientKey::restore(secret)?;
-    let identity = bytes32(identity, Error::IdentityLength)?;
-    let listed = bytes32(key, Error::KeyLength)?;
-    Ok(py.detach(|| {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .ok()?;
-        runtime.block_on(key::client_listed(&client, &identity, address, listed))
-    }))
-}
-
-/// Sign in to the owner's server at `url` as `name`, and create a token
-/// labelled `label` for Home Assistant. The password is used for this alone
-/// and not kept; an account that may change nothing is refused.
-#[pyfunction]
-fn server_login(
-    py: Python<'_>,
-    url: &str,
-    name: &str,
-    password: &str,
-    label: &str,
-) -> PyResult<Login> {
-    py.detach(|| block_on(server::login(url, name, password, label)))
-}
-
-/// The feeders the server at `url` holds, as `token` sees them.
-#[pyfunction]
-fn server_feeders(py: Python<'_>, url: &str, token: &str) -> PyResult<Vec<ServerFeeder>> {
-    py.detach(|| block_on(server::feeders(url, token)))
-}
-
-/// Remove the client key `key` from the feeder `feeder_id` through the
-/// server; whether it was done. Sent once: `False` when it was refused, or
-/// may not have run.
-#[pyfunction]
-fn server_revoke_client(
-    py: Python<'_>,
-    url: &str,
-    token: &str,
-    feeder_id: &str,
-    key: &[u8],
-) -> PyResult<bool> {
-    let key = bytes32(key, Error::KeyLength)?;
-    Ok(py.detach(|| block_on(server::revoke_client(url, token, feeder_id, key)).is_ok()))
-}
-
-/// Whether the feeder `feeder_id` still lists the client key `key`, as the
-/// server reads it now; `None` when the server cannot say (the feeder is
-/// offline, or the account may not list its clients).
-#[pyfunction]
-fn server_client_listed(
-    py: Python<'_>,
-    url: &str,
-    token: &str,
-    feeder_id: &str,
-    key: &[u8],
-) -> PyResult<Option<bool>> {
-    let key = bytes32(key, Error::KeyLength)?;
-    Ok(py.detach(|| block_on(server::client_listed(url, token, feeder_id, key)).ok()))
-}
-
-/// Revoke the token `token_id` with itself.
-#[pyfunction]
-fn server_revoke_token(py: Python<'_>, url: &str, token: &str, token_id: &str) -> PyResult<()> {
-    py.detach(|| block_on(server::revoke_token(url, token, token_id)))
-}
-
 #[pymethods]
 impl Pending {
     /// A pending feed as the integration kept it, to hand back to a new
     /// session.
     #[new]
-    #[pyo3(signature = (id, portions, sent_ms, after, reported, released_ms, token_id))]
+    #[pyo3(signature = (id, portions, sent_ms, after, reported, released_ms))]
     fn new(
         id: String,
         portions: u8,
@@ -300,7 +189,6 @@ impl Pending {
         after: Option<u64>,
         reported: bool,
         released_ms: Option<i64>,
-        token_id: Option<String>,
     ) -> Self {
         Self {
             id,
@@ -309,7 +197,6 @@ impl Pending {
             after,
             reported,
             released_ms,
-            token_id,
         }
     }
 }
@@ -320,11 +207,11 @@ struct Feeder(feeder::Feeder);
 
 #[pymethods]
 impl Feeder {
-    /// `pending` and `answered` are what the last run left: the feeds
-    /// still unsettled, on either route, and the feed numbers the last
-    /// `Answered` update listed. `unread` says the integration's store did
-    /// not read, and the owner has not yet checked the bowls: every feed
-    /// waits until `bowls_checked`.
+    /// `pending` and `answered` are what the last run left: the feeds still
+    /// unsettled, and the feed numbers the last `Answered` update listed.
+    /// `unread` says the integration's store did not read, and the owner
+    /// has not yet checked the bowls: every feed waits until
+    /// `bowls_checked`.
     #[new]
     #[pyo3(signature = (
         secret, identity, address=None, pending=Vec::new(), answered=Vec::new(), unread=false
@@ -348,42 +235,6 @@ impl Feeder {
             key,
             Target { identity, address },
             Clocks::DEFAULT,
-            carried,
-        )?))
-    }
-
-    /// The session to the feeder `feeder_id` on the owner's server at
-    /// `url`, signed in with `token`; `identity` is the feeder's, and a
-    /// feeder under that id with another one is never served as this one.
-    /// `token_id` is the token's id, which each feed sent under it records.
-    /// `pending` is what the last run left unsettled, on either route, and
-    /// `unread` as for a direct session.
-    #[staticmethod]
-    #[pyo3(signature = (url, token, token_id, feeder_id, identity, pending=Vec::new(), unread=false))]
-    fn server(
-        url: &str,
-        token: String,
-        token_id: String,
-        feeder_id: &str,
-        identity: &[u8],
-        pending: Vec<Pending>,
-        unread: bool,
-    ) -> PyResult<Self> {
-        let target = server::Target {
-            url: server::address(url)?,
-            token,
-            token_id,
-            feeder: server::feeder(feeder_id)?,
-            identity: bytes32(identity, Error::IdentityLength)?,
-        };
-        let carried = Carried {
-            pending,
-            unread,
-            ..Carried::default()
-        };
-        Ok(Self(feeder::Feeder::start_server(
-            target,
-            server::Clocks::DEFAULT,
             carried,
         )?))
     }
@@ -490,21 +341,17 @@ impl Feeder {
 mod wellfed_homeassistant {
     #[pymodule_export]
     use super::{
-        Feeder, HeldKey, JoinFailed, Redeemed, ServerRefused, WellfedError, client_listed,
-        invite_feeder, public_key, redeem, role_writes, server_client_listed, server_feeders,
-        server_login, server_revoke_client, server_revoke_token,
+        Feeder, HeldKey, JoinFailed, Redeemed, WellfedError, invite_feeder, public_key, redeem,
     };
     #[pymodule_export]
     use crate::api::{
-        AccountRole, Alert, AlertKind, AlertLevel, Alerts, By, Capabilities, Event, EventKind,
-        Feed, FeedFault, FeedOutcome, FeedReason, FoodLevel, JoinProblem, NextMeal, NotSent,
-        Pending, Plan, PortionsToday, Readiness, RefusalKind, Role, ServerProblem, Settings, Skew,
-        State, Status, Tune, Update, UpdateKind, WriteResult, Written,
+        Alert, AlertKind, AlertLevel, Alerts, By, Capabilities, Event, EventKind, Feed, FeedFault,
+        FeedOutcome, FeedReason, FoodLevel, JoinProblem, NextMeal, NotSent, Pending, Plan,
+        PortionsToday, Readiness, RefusalKind, Role, Settings, Skew, State, Status, Tune, Update,
+        UpdateKind, WriteResult, Written,
     };
     #[pymodule_export]
     use crate::key::Joined;
-    #[pymodule_export]
-    use crate::server::{Login, ServerFeeder};
 
     // The feeder's limits, from the model the bridge checks writes against,
     // so the integration's entities and service schema never hold a copy.

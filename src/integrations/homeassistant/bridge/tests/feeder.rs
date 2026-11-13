@@ -795,7 +795,6 @@ fn a_lost_feed_a_week_old_is_forgotten() {
         after: Some(1),
         reported: true,
         released_ms: Some(i64::try_from(now_ms).unwrap() - week - 1000),
-        token_id: None,
     };
     let carried = Carried {
         pending: vec![old.clone()],
@@ -1063,7 +1062,6 @@ fn a_lost_feed_holds_feeds_past_the_report_window_until_released() {
         after: Some(1),
         reported: true,
         released_ms: None,
-        token_id: None,
     };
     let carried = Carried {
         pending: vec![lost.clone()],

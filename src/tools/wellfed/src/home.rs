@@ -1,6 +1,6 @@
 //! Where the CLI keeps the owner's files by default: the owner's client key
-//! (`wellfed-owner.json`), the stock backups (`stock-backups/`) and the
-//! server login (`wellfed-server.json`), all in one directory.
+//! (`wellfed-owner.json`) and the stock backups (`stock-backups/`), in one
+//! directory.
 //!
 //! That directory is `WELLFED_HOME` when it is set, and otherwise the
 //! platform's data directory for the app: `$XDG_DATA_HOME/wellfed` (or
@@ -10,7 +10,7 @@
 //! Windows side). It never depends
 //! on the working directory, so a command run from anywhere finds the same
 //! key. Each file's flag (`--keys`,
-//! `--backups`, `--token-file`) still names another path. The names inside
+//! `--backups`) still names another path. The names inside
 //! are the ones `private/` has always used, so `WELLFED_HOME=private` in a
 //! checkout keeps the bench's layout.
 
@@ -58,10 +58,6 @@ impl Home {
     pub(crate) fn backups(&self) -> PathBuf {
         self.0.join("stock-backups")
     }
-
-    pub(crate) fn server_token(&self) -> PathBuf {
-        self.0.join("wellfed-server.json")
-    }
 }
 
 fn platform() -> Result<PathBuf, HomeError> {
@@ -100,10 +96,6 @@ mod tests {
         let set = Home::from(Some("/elsewhere".into()), || unreachable!()).unwrap();
         assert_eq!(set.owner_key(), Path::new("/elsewhere/wellfed-owner.json"));
         assert_eq!(set.backups(), Path::new("/elsewhere/stock-backups"));
-        assert_eq!(
-            set.server_token(),
-            Path::new("/elsewhere/wellfed-server.json")
-        );
 
         for unset in [None, Some(OsString::new())] {
             assert_eq!(
@@ -118,10 +110,6 @@ mod tests {
         let home = Home::from(Some("private".into()), || unreachable!()).unwrap();
         assert_eq!(home.owner_key(), Path::new("private/wellfed-owner.json"));
         assert_eq!(home.backups(), Path::new("private/stock-backups"));
-        assert_eq!(
-            home.server_token(),
-            Path::new("private/wellfed-server.json")
-        );
     }
 
     #[test]

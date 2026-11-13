@@ -40,7 +40,7 @@ async def _flushed(hass: HomeAssistant) -> None:
 
 def _a_pending() -> bridge.Pending:
     return bridge.Pending(
-        "01a0c450-6c00-7000-8000-000000000003", 3, 1790000002000, None, False, None, None
+        "01a0c450-6c00-7000-8000-000000000003", 3, 1790000002000, None, False, None
     )
 
 
@@ -52,8 +52,7 @@ async def test_version_1_reads_as_its_sample(
     await store.load()
 
     pending = [
-        (p.id, p.portions, p.sent_ms, p.after, p.reported, p.released_ms, p.token_id)
-        for p in store.pending
+        (p.id, p.portions, p.sent_ms, p.after, p.reported, p.released_ms) for p in store.pending
     ]
     assert pending == [
         (
@@ -63,12 +62,10 @@ async def test_version_1_reads_as_its_sample(
             41,
             True,
             1790000900000,
-            "01a0c450-6c00-7000-8000-0000000000aa",
         ),
-        ("01a0c450-6c00-7000-8000-000000000002", 1, 1790000001000, None, False, None, None),
+        ("01a0c450-6c00-7000-8000-000000000002", 1, 1790000001000, None, False, None),
     ]
     assert store.answered == [41, 9]
-    assert store.leftover_keys == [bytes([1] * 32), bytes([2] * 32)]
     assert not store.unread
 
 
@@ -149,8 +146,6 @@ def _with_pending(**changes: Any) -> dict[str, Any]:
         },
         {**SAMPLE["data"], "answered": [-1]},
         {**SAMPLE["data"], "answered": [2**32]},
-        _with_pending(token_id=7),
-        {**SAMPLE["data"], "leftover_keys": ["not a key"]},
         {**SAMPLE["data"], "unread": "no"},
     ],
 )
@@ -164,7 +159,7 @@ async def test_a_value_the_bridge_would_refuse_reads_as_another_shape(
     store = kept(hass, ENTRY)
     await store.load()
 
-    assert store.pending == [] and store.answered == [] and store.leftover_keys == []
+    assert store.pending == [] and store.answered == []
     assert "not in the shape it writes" in caplog.text
     # A lost feed it held went with it: every feed waits.
     assert store.unread

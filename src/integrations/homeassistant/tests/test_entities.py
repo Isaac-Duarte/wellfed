@@ -32,9 +32,6 @@ async def _until(hass: HomeAssistant, condition: Callable[[], bool]) -> None:
 async def _pair(hass: HomeAssistant, simulator: Simulator) -> ConfigEntry:
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "direct"}
-    )
-    result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
         {CONF_INVITE: simulator.invite(), CONF_ADDRESS: simulator.address},
     )

@@ -8,8 +8,6 @@ import 'error.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-import 'server_views.dart';
-
 // These functions are ignored because they are not marked as `pub`: `carry_set_aside`, `file`, `update_store`, `writing`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `AppFile`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
@@ -76,24 +74,17 @@ class AppStore {
   final List<KnownFeeder> feeders;
   final Appearance appearance;
 
-  /// The owner's server this phone logged in to, if any, with the
-  /// feeders it last listed. Its token's secret is in secure storage, as
-  /// the client secret is.
-  final KnownServer? server;
-
   const AppStore({
     required this.label,
     required this.feeders,
     required this.appearance,
-    this.server,
   });
 
   static Future<AppStore> default_() =>
       RustLib.instance.api.crateApiStoreAppStoreDefault();
 
   @override
-  int get hashCode =>
-      label.hashCode ^ feeders.hashCode ^ appearance.hashCode ^ server.hashCode;
+  int get hashCode => label.hashCode ^ feeders.hashCode ^ appearance.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -102,8 +93,7 @@ class AppStore {
           runtimeType == other.runtimeType &&
           label == other.label &&
           feeders == other.feeders &&
-          appearance == other.appearance &&
-          server == other.server;
+          appearance == other.appearance;
 }
 
 /// Which theme the app draws.
@@ -220,7 +210,7 @@ class SetAside {
 
 /// Which of the app's files was set aside.
 enum StoreKind {
-  /// `wellfed.json`: the feeders this phone knows and its server.
+  /// `wellfed.json`: the feeders this phone knows.
   app,
 
   /// `pending.json`: the writes that may have run.

@@ -1,20 +1,17 @@
 //! What a session makes of its feeder's alert tables, by the phone's own
 //! rules: `wellfed_client::alerts::Watch` decides what opened and what
-//! cleared, under the same keys the app and the server use, so Home
-//! Assistant, the phone and the server's webhook never disagree about one
-//! alert.
+//! cleared, under the same keys the app uses, so Home Assistant and the
+//! phone never disagree about one alert.
 //!
 //! The tracker lives as long as the integration's session handle, across
 //! reconnects. Its first table seeds it: what is open then is shown, and
 //! fires no event, so a restart of Home Assistant doesn't announce every
 //! alert again. An alert that opened and cleared while Home Assistant was
-//! down fires nothing; the server's webhook is the route that never misses
-//! one.
+//! down fires nothing.
 
 use jiff::Timestamp;
 use wellfed_client::alerts::{Change, Context, Cursor, FeederClock, Mutes, Tracked, Watch};
 use wellfed_model::{AlertsView, Hex};
-use wellfed_server_client::api::FeederAlerts;
 
 use crate::api::{Alert, Alerts, Update};
 
@@ -22,18 +19,10 @@ use crate::api::{Alert, Alerts, Update};
 pub(crate) struct Tracker {
     watch: Watch,
     /// This client's fingerprint: its own joining shows, but fires nothing.
-    /// Through the owner's server there is none of its own, and the
-    /// server's joining fires as any other client's.
     own: Hex<4>,
     seeded: bool,
     /// The alerts last shown, so a clear names what it ends.
     shown: Vec<Tracked>,
-}
-
-impl Default for Tracker {
-    fn default() -> Self {
-        Self::new([0; 4])
-    }
 }
 
 impl Tracker {
@@ -74,44 +63,6 @@ impl Tracker {
         self.settle(unread)
     }
 
-    /// What the owner's server last read of the feeder, and whether it
-    /// reaches it.
-    pub(crate) fn relayed(&mut self, alerts: &FeederAlerts) -> Option<Update> {
-        let mutes = Mutes::default();
-        let clock = match alerts.read {
-            Some(read) if read.clock_valid => FeederClock::Known,
-            _ => FeederClock::Unknown,
-        };
-        let context = self.context(&mutes, clock);
-        if let Some(read) = alerts.read {
-            let cursor = Cursor {
-                epoch: read.epoch,
-                boot: read.boot,
-                generation: read.generation,
-            };
-            let view = AlertsView {
-                epoch: read.epoch,
-                generation: read.generation,
-                more: read.more,
-                settling: read.settling,
-                alerts: alerts.alerts.clone(),
-                unread: read.unread,
-            };
-            // Through the server, every table is the server's: there is
-            // no read of Home Assistant's own for a copy to lag behind, so
-            // any other cursor is news, a power loss's lower boot count
-            // included.
-            if self.watch.needs_read(cursor) {
-                self.watch.apply(cursor, &view, &context);
-            } else {
-                self.watch.lapse(&context);
-            }
-        }
-        self.watch.relayed_reach(alerts.unreachable, &context);
-        let unread = self.watch.unread;
-        self.settle(unread)
-    }
-
     fn context<'a>(&self, mutes: &'a Mutes, clock: FeederClock) -> Context<'a> {
         Context {
             now: Timestamp::now(),
@@ -141,9 +92,7 @@ impl Tracker {
         let open: Vec<Tracked> = self.watch.listed().copied().collect();
         let moved = open != self.shown;
         self.shown = open;
-        // The first table seeds the tracker. A server that has not read
-        // the feeder yet answers with no table, which seeds nothing: what
-        // its first table shows is still what was open at the start.
+        // The first table seeds the tracker.
         let first = !self.seeded;
         if self.watch.cursor.is_some() {
             self.seeded = true;
@@ -168,7 +117,6 @@ impl Tracker {
 #[cfg(test)]
 mod tests {
     use wellfed_model::{Alert as Wire, Generation, OpenAlert};
-    use wellfed_server_client::api::AlertsRead;
 
     use super::*;
     use crate::api::AlertKind;
@@ -177,13 +125,6 @@ mod tests {
         OpenAlert {
             at: None,
             alert: Wire::FoodLow,
-        }
-    }
-
-    fn battery_low() -> OpenAlert {
-        OpenAlert {
-            at: None,
-            alert: Wire::BatteryBelowFloor,
         }
     }
 
@@ -206,24 +147,6 @@ mod tests {
         }
     }
 
-    fn served(generation: Option<u32>, alerts: &[OpenAlert]) -> FeederAlerts {
-        FeederAlerts {
-            read: generation.map(|generation| AlertsRead {
-                epoch: 1,
-                boot: 1,
-                generation: Generation(generation),
-                more: false,
-                settling: false,
-                unread: 0,
-                clock_valid: true,
-                at: Timestamp::UNIX_EPOCH,
-                checked: Timestamp::UNIX_EPOCH,
-            }),
-            alerts: alerts.to_vec(),
-            unreachable: None,
-        }
-    }
-
     fn kinds(alerts: &[Alert]) -> Vec<AlertKind> {
         alerts.iter().map(|alert| alert.kind).collect()
     }
@@ -236,7 +159,7 @@ mod tests {
 
     #[test]
     fn the_first_table_is_shown_and_fires_nothing() {
-        let mut tracker = Tracker::default();
+        let mut tracker = Tracker::new([0; 4]);
 
         let first = alerts(tracker.table(cursor(1), &view(1, &[food_low()]), FeederClock::Known));
 
@@ -247,7 +170,7 @@ mod tests {
 
     #[test]
     fn a_new_alert_fires_opened_and_an_ended_one_cleared_under_one_key() {
-        let mut tracker = Tracker::default();
+        let mut tracker = Tracker::new([0; 4]);
         tracker.table(cursor(1), &view(1, &[]), FeederClock::Known);
 
         let opened = alerts(tracker.table(cursor(2), &view(2, &[food_low()]), FeederClock::Known));
@@ -264,41 +187,5 @@ mod tests {
             tracker.unchanged(FeederClock::Known).is_none(),
             "nothing moved, nothing to say"
         );
-    }
-
-    #[test]
-    fn a_server_with_no_table_yet_leaves_its_first_table_to_seed() {
-        let mut tracker = Tracker::default();
-
-        let empty = alerts(tracker.relayed(&served(None, &[])));
-        assert!(empty.open.is_empty());
-
-        // What was open before Home Assistant came is shown, not fired.
-        let first = alerts(tracker.relayed(&served(Some(4), &[food_low()])));
-        assert_eq!(kinds(&first.open), [AlertKind::FoodLow]);
-        assert!(first.opened.is_empty());
-
-        let next = alerts(tracker.relayed(&served(Some(5), &[food_low(), battery_low()])));
-        assert_eq!(kinds(&next.opened), [AlertKind::BatteryBelowFloor]);
-
-        // Unchanged, nothing to say.
-        assert!(
-            tracker
-                .relayed(&served(Some(5), &[food_low(), battery_low()]))
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn through_the_server_a_lower_boot_after_a_power_loss_is_applied() {
-        let mut tracker = Tracker::default();
-        tracker.relayed(&served(Some(9), &[]));
-
-        let mut lost = served(Some(1), &[food_low()]);
-        if let Some(read) = &mut lost.read {
-            read.boot = 0;
-        }
-        let after = alerts(tracker.relayed(&lost));
-        assert_eq!(kinds(&after.opened), [AlertKind::FoodLow]);
     }
 }

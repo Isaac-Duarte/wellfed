@@ -40,7 +40,7 @@
 //!   or retried.
 //! - [`SimFeeds::refuse`] makes the owner refuse every feed `Busy` once its
 //!   claim is taken, as an owner that lost a race does: the refusal after a
-//!   claim the device API and the server must handle.
+//!   claim the device API and its clients must handle.
 //! - A feed claims the outputs on the process's `INTERLOCK`, the one the
 //!   platform's `outputs_claimed` and the update stage read, as the
 //!   firmware's does: while it holds them the device API refuses a store

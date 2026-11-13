@@ -75,13 +75,10 @@ class TodayTab extends StatelessWidget {
           ),
         ],
       ];
-      // A viewer's account feeds nothing, so it has no Feed to press.
-      final Widget? feed = feeder.state.viewer
-          ? null
-          : FilledButton(
-              onPressed: feeder.state.canFeed ? () => feedNow(context, feeder) : null,
-              child: Text(stopped ? 'Feed now · unavailable until restart' : 'Feed now'),
-            );
+      final Widget feed = FilledButton(
+        onPressed: feeder.state.canFeed ? () => feedNow(context, feeder) : null,
+        child: Text(stopped ? 'Feed now · unavailable until restart' : 'Feed now'),
+      );
 
       // A desktop window is wide enough for the summary beside the facts,
       // with Feed now under the facts rather than across the whole window.
@@ -103,7 +100,8 @@ class TodayTab extends StatelessWidget {
                       child: ListView(
                         padding: const EdgeInsets.fromLTRB(Space.s3, Space.s5, Space.s5, Space.s5),
                         children: [
-                          if (feed != null) ...[feed, const SizedBox(height: Space.s5)],
+                          feed,
+                          const SizedBox(height: Space.s5),
                           ...facts,
                         ],
                       ),
@@ -128,7 +126,7 @@ class _OneColumn extends StatelessWidget {
 
   final FeederController feeder;
   final List<Widget> facts;
-  final Widget? feed;
+  final Widget feed;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -145,7 +143,8 @@ class _OneColumn extends StatelessWidget {
             ],
           ),
         ),
-        if (feed case final feed?) ...[const SizedBox(height: Space.s3), feed],
+        const SizedBox(height: Space.s3),
+        feed,
       ],
     ),
   );

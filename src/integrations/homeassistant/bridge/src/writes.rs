@@ -13,17 +13,12 @@
 
 use std::ops::RangeInclusive;
 
+use crate::api::{NotSent, Tune};
 use wellfed_client::plans::{self, Edit};
 use wellfed_model::{
     Answer, Calibration, CalibrationView, ClientRole, DeviceKind, FeederSettingsPatch, Generation,
     Op, Refusal,
 };
-#[cfg(any(feature = "python", test))]
-use wellfed_model::{Bowl, PLANS};
-
-#[cfg(any(feature = "python", test))]
-use crate::api::Role;
-use crate::api::{NotSent, Tune};
 
 /// The feeder's limits on a portion's weight, in milligrams.
 const PORTION_MG: RangeInclusive<u32> =
@@ -47,71 +42,6 @@ pub(crate) enum Write {
     Settings(FeederSettingsPatch),
     PlanEnabled { slot: u8, enabled: bool },
     PortionWeight { mg: u32 },
-}
-
-// Only the Python module asks whether a role writes everything.
-#[cfg(any(feature = "python", test))]
-impl Write {
-    /// One write of each kind, to ask the feeder's matrix about a role as a
-    /// whole.
-    fn every() -> [Self; 8] {
-        [
-            Self::Feed { portions: 1 },
-            Self::CancelFeed { feed: 0 },
-            Self::SetLock { locked: true },
-            Self::ResetDesiccant,
-            Self::Play { tune: Tune::Chime },
-            Self::Settings(FeederSettingsPatch::default()),
-            Self::PlanEnabled {
-                slot: 0,
-                enabled: true,
-            },
-            Self::PortionWeight { mg: 0 },
-        ]
-    }
-
-    /// The kind of op the write becomes, on no particular base: all the
-    /// matrix reads.
-    fn kind(&self) -> Op {
-        let base = Generation(0);
-        match *self {
-            Self::Feed { portions } => Op::Feed { portions },
-            Self::CancelFeed { feed } => Op::CancelFeed { feed },
-            Self::SetLock { locked } => Op::SetLock { locked },
-            Self::ResetDesiccant => Op::ResetDesiccant,
-            Self::Play { tune } => Op::Play { tune: tune.into() },
-            Self::Settings(changes) => Op::PutSettings { base, changes },
-            Self::PlanEnabled { .. } => Op::PutPlans {
-                base,
-                plans: [None; PLANS],
-            },
-            Self::PortionWeight { mg } => Op::PutCalibration {
-                base,
-                calibration: Calibration {
-                    portion_mg: Some(mg),
-                    bowl: Bowl::Single,
-                },
-            },
-        }
-    }
-}
-
-/// Whether `role` may make every write Home Assistant offers, by the
-/// feeder's own matrix: its write entities show only then. A viewer's
-/// account and a role a newer build added write nothing, and the server's
-/// key, which may not set the portion weight, is not one it joins with.
-#[cfg(any(feature = "python", test))]
-pub(crate) fn writes_all(role: Role) -> bool {
-    let role = match role {
-        Role::Owner => ClientRole::Owner,
-        Role::Member => ClientRole::Member,
-        Role::Server => ClientRole::Server,
-        Role::UpdateSigner => ClientRole::UpdateSigner,
-        Role::Viewer | Role::NewerBuild => ClientRole::Unknown,
-    };
-    Write::every()
-        .iter()
-        .all(|write| write.kind().allowed(role))
 }
 
 /// A store whose writes name the generation they were made on.
@@ -151,12 +81,6 @@ pub(crate) struct Read<'a> {
 /// role a newer build added grants nothing here. An op holding a value
 /// only a newer build names has no wire form for the matrix to class; the
 /// connection refuses it `Invalid` before a byte goes out.
-///
-/// Through the owner's server, `role` is the account's, read as the
-/// feeder's owner or member: the gate asks what that person may do, but
-/// the server sends with its own key, whose role the feeder checks. So a
-/// write the gate lets through, such as the portion weight, which the
-/// server's key may not set, can still come back refused.
 pub(crate) fn gate(role: ClientRole, op: &Op) -> Result<(), NotSent> {
     let unsendable = op.to_proto().is_err();
     wellfed_formats::require(unsendable || op.allowed(role), || NotSent::Forbidden)
@@ -249,7 +173,7 @@ pub(crate) fn landed(answer: Option<&Answer>, base: Generation) -> Landed {
 
 #[cfg(test)]
 mod tests {
-    use wellfed_model::{Plan, Plans, Weekdays};
+    use wellfed_model::{Bowl, PLANS, Plan, Plans, Weekdays};
 
     use super::*;
 
@@ -319,49 +243,6 @@ mod tests {
                 assert_eq!(gate(role, &op), want, "{role:?} {write:?}");
             }
         }
-    }
-
-    /// Home Assistant shows its write entities to an owner and a member: the
-    /// roles that may make every write it offers.
-    #[test]
-    fn only_an_owner_or_a_member_writes_everything() {
-        let roles = [
-            (Role::Owner, true),
-            (Role::Member, true),
-            (Role::Server, false),
-            (Role::UpdateSigner, false),
-            (Role::Viewer, false),
-            (Role::NewerBuild, false),
-        ];
-        for (role, writes) in roles {
-            assert_eq!(writes_all(role), writes, "{role:?}");
-        }
-    }
-
-    /// `every` holds one write of each kind: `index` numbers every variant
-    /// with no wildcard, so a new write fails to compile here until it has
-    /// a number, and the test fails until `every` holds it.
-    #[test]
-    fn every_kind_of_write_is_asked_about() {
-        const KINDS: usize = 8;
-        const fn index(write: &Write) -> usize {
-            match write {
-                Write::Feed { .. } => 0,
-                Write::CancelFeed { .. } => 1,
-                Write::SetLock { .. } => 2,
-                Write::ResetDesiccant => 3,
-                Write::Play { .. } => 4,
-                Write::Settings(_) => 5,
-                Write::PlanEnabled { .. } => 6,
-                Write::PortionWeight { .. } => 7,
-            }
-        }
-
-        let mut seen = [false; KINDS];
-        for write in Write::every() {
-            seen[index(&write)] = true;
-        }
-        assert!(seen.iter().all(|&seen| seen));
     }
 
     /// A write's op goes only to a device whose kind serves it, as the op

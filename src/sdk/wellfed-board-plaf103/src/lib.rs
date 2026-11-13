@@ -183,7 +183,7 @@ pub mod storage {
         count: 1,
     };
 
-    /// Reserved for the uplink store, the owner's server link. No build
+    /// Reserved for an uplink store. No build
     /// writes it yet; the factory reset and the handover from stock both
     /// clear it, as every sector off their keep lists, so a bank 0 built
     /// before the store clears it too.

@@ -6,7 +6,6 @@ use std::str::FromStr;
 
 use jiff::Timestamp;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use utoipa::ToSchema;
 
 use crate::Generation;
 use crate::status::{WindowError, minute};
@@ -29,25 +28,19 @@ pub const PORTIONS_MAX: u8 = 48;
 /// With no valid clock, plans hold; an occurrence more than 15 minutes
 /// late (the feeder off, without the time, or busy) never runs, and the
 /// history records it missed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Plan {
     /// 0-1439.
-    #[schema(maximum = 1439)]
     pub minute: u16,
     /// 1 to [`PORTIONS_MAX`].
-    // utoipa takes only literals: the test `schema_limits_are_the_constants`
-    // pins these to `PORTIONS_MAX` and `CALL_PLAYS_MAX`.
-    #[schema(minimum = 1, maximum = 48)]
     pub portions: u8,
     /// The weekdays it runs on; none runs it once.
-    #[schema(value_type = Vec<Weekday>)]
     pub days: Weekdays,
     pub enabled: bool,
     /// How many times the meal call plays before the feed, 0 to
     /// [`CALL_PLAYS_MAX`](crate::CALL_PLAYS_MAX); 0 plays none. It plays
     /// only with a clip stored and sound allowed, ending as the meal is
     /// due, and never delays it.
-    #[schema(maximum = 5)]
     pub call: u8,
 }
 
@@ -62,17 +55,15 @@ impl Plan {
 
 /// The plans as the feeder holds them. Its `generation` goes back as the
 /// `base` of a change.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Plans {
     pub generation: Generation,
     /// Whether the plans store can take a write now.
     pub writable: bool,
     /// The plan in each slot, all ten; `null` is an empty one.
-    #[schema(min_items = 10, max_items = 10)]
     pub plans: [Option<Plan>; PLANS],
     /// Each slot's skipped meal, while its skip stands: the instant the
     /// meal is due. `null` with none, all ten.
-    #[schema(value_type = Vec<Option<String>>, min_items = 10, max_items = 10)]
     pub skipped: SkippedMeals,
 }
 
@@ -123,7 +114,7 @@ impl<'de> Deserialize<'de> for SkippedMeals {
 /// The plans' next meal: the earliest occurrence of any enabled plan, in
 /// the feeder's zone. Plans due at the same instant run one after another,
 /// the lowest slot first, which is the one named.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NextMeal {
     pub at: Timestamp,
     /// The plan's slot.
@@ -132,7 +123,7 @@ pub struct NextMeal {
 }
 
 /// A day of the week.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Weekday {
     Mon,
@@ -319,13 +310,6 @@ mod tests {
             serde_json::from_str::<Weekdays>("[]").unwrap(),
             Weekdays::ONCE
         );
-    }
-
-    /// The schema's literal limits are the feeder's.
-    #[test]
-    fn schema_limits_are_the_constants() {
-        assert_eq!(crate::PORTIONS_MAX, 48);
-        assert_eq!(crate::CALL_PLAYS_MAX, 5);
     }
 
     #[test]

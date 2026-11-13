@@ -308,11 +308,6 @@ class _Progress extends StatelessWidget {
           final FeedState feed = feeder.state.feed;
           final String why = switch (feed) {
             FeedRefused(:final FeedRefusal refusal) => _refusal(refusal),
-            FeedNotSent(why: NotSentWhy.signedOut) =>
-              "The server no longer takes this $deviceName's login, so nothing goes to "
-                  'the feeder. Log in again, or remove the server to use this '
-                  "$deviceName's own key.",
-            FeedNotSent(why: NotSentWhy.forbidden) => 'This account may not feed.',
             FeedNotSent(why: NotSentWhy.notPinned) =>
               "This $deviceName couldn't write the feed down before sending it, so it "
                   "didn't send it.",
@@ -382,7 +377,7 @@ class _Progress extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(
-                      // Only reads what the feeder or the server recorded.
+                      // Only reads what the feeder recorded.
                       child: OutlinedButton(onPressed: feeder.checkFeed, child: const Text('Check again')),
                     ),
                     const SizedBox(width: Space.s3),

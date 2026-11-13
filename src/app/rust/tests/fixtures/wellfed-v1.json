@@ -11,28 +11,7 @@
           "manual_address": "10.8.0.7:4747"
         }
       ],
-      "appearance": "dark",
-      "server": {
-        "link": {
-          "url": "https://192.0.2.9:8443/",
-          "key": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
-          "user": "ada",
-          "token_id": "01920000-0000-7000-8000-000000000001"
-        },
-        "feeders": [
-          {
-            "id": "01920000-0000-7000-8000-000000000002",
-            "identity": "abababababababababababababababababababababababababababababababab",
-            "name": "kitchen"
-          }
-        ],
-        "account": {
-          "id": "01920000-0000-7000-8000-000000000003",
-          "name": "ada",
-          "role": "member",
-          "expires_ms": 6000
-        }
-      }
+      "appearance": "dark"
     },
     "set_aside": {
       "kind": "app",

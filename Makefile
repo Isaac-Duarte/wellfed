@@ -1,4 +1,4 @@
-.PHONY: help check check-rust check-deps check-fuzz check-cross check-bench-board check-virtual-feeder check-docs check-fixtures check-web check-app check-homeassistant homeassistant-wheels app-release-apk app-goldens guide-screenshots app-installer-input sqlx-prepare server-dist server-image check-server-release
+.PHONY: help check check-rust check-deps check-fuzz check-cross check-bench-board check-virtual-feeder check-docs check-fixtures check-web check-app check-homeassistant homeassistant-wheels app-release-apk app-goldens guide-screenshots app-installer-input
 
 help:
 	@echo "check: formatting, Clippy, Rust tests, cross-builds, simulator, repository checks"
@@ -7,15 +7,12 @@ help:
 	@echo "check-fixtures: optional reference-binary/SDK evidence; fails if unavailable"
 	@echo "check-web: the site and docs site: lint, format, licenses, types, unit tests, build, then Playwright (needs Node and pnpm)"
 	@echo "check-app: the Android app's bindings, tokens, limits and roles unchanged, format, lint plugin, analysis, widget, accessibility, golden and smoke tests, a debug APK, and on Linux or macOS that desktop's app (needs the pinned Flutter)"
-	@echo "check-homeassistant: the Home Assistant integration: its bridge's Clippy with the Python module, its committed stub unchanged, Ruff, mypy strict, and its tests against the simulator and the server with 95% coverage, on Home Assistant 2026.10 and Python 3.14 (needs uv)"
+	@echo "check-homeassistant: the Home Assistant integration: its bridge's Clippy with the Python module, its committed stub unchanged, Ruff, mypy strict, and its tests against the simulator with 95% coverage, on Home Assistant 2026.10 and Python 3.14 (needs uv)"
 	@echo "homeassistant-wheels: the Home Assistant bridge's release wheels, cross-built for musllinux and manylinux (aarch64, x86_64, armv7 musl), and its sdist (needs uv; adds Rust targets)"
 	@echo "app-goldens: the app's golden tests on Linux, in a container on any other host; UPDATE=1 writes new images back for review"
 	@echo "guide-screenshots: redraw the owner guide's app screenshots in docs/guide/ from the app's test fixtures"
 	@echo "app-installer-input: copy a review and its signed manifest in as the image the APK installs, and print its pin"
 	@echo "app-release-apk: the release APK, signed with the owner's keystore named by WELLFED_ANDROID_KEY_PROPERTIES (never in the repository)"
-	@echo "sqlx-prepare: regenerate the server store's query metadata (.sqlx/) after changing a query or migration"
-	@echo "server-dist / server-image: the server's static release binaries in dist/server/ and its container image (docker or podman)"
-	@echo "check-server-release: the release check against dist/server/ and the image"
 	@echo "Checks do not open serial ports, change routing, or send device commands."
 
 check: check-rust check-deps check-fuzz check-cross check-docs
@@ -160,20 +157,12 @@ check-app:
 	cd $(APP) && TZ=America/Denver WELLFED_SMOKE_TARGET=$(TARGET)/debug flutter test
 	@if [ "$$(uname)" != Linux ]; then $(MAKE) app-goldens; fi
 	cd $(APP) && flutter build apk --debug --target-platform android-arm64,android-x64
-	@# The https verifier needs both halves on the phone: the JNI hook in the
-	@# bridge and its Kotlin package, or the first https login panics. A
-	@# missing hold-clearing hook would crash the service when a task is swiped,
-	@# and a missing uplink hook the app at its start.
+	@# A missing hold-clearing hook would crash the service when a task is
+	@# swiped.
 	@for abi in arm64-v8a x86_64; do \
-		unzip -p $(APP_APK) lib/$$abi/libwellfed_app_bridge.so | grep -aq Java_io_github_isaacduarte_wellfed_TlsVerifier_start || \
-			{ echo "the APK's $$abi bridge lacks the TLS verifier's JNI hook"; exit 1; }; \
 		unzip -p $(APP_APK) lib/$$abi/libwellfed_app_bridge.so | grep -aq Java_io_github_isaacduarte_wellfed_RustHolds_clear || \
 			{ echo "the APK's $$abi bridge lacks the hold-clearing JNI hook"; exit 1; }; \
-		unzip -p $(APP_APK) lib/$$abi/libwellfed_app_bridge.so | grep -aq Java_io_github_isaacduarte_wellfed_Uplink_set || \
-			{ echo "the APK's $$abi bridge lacks the uplink's JNI hook"; exit 1; }; \
 	done
-	@unzip -p $(APP_APK) 'classes*.dex' | grep -aq 'Lorg/rustls/platformverifier/CertificateVerifier' || \
-		{ echo "the APK lacks rustls-platform-verifier's Kotlin half"; exit 1; }
 	@if [ "$$(uname)" = Linux ]; then cd $(APP) && flutter build linux --debug; fi
 	@if [ "$$(uname)" = Darwin ]; then cd $(APP) && LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 flutter build macos --debug; fi
 
@@ -206,7 +195,9 @@ APP_INSTALLER = $(APP)/assets/installer
 # sources as a tar, so the checkout gets back only the images: new ones with
 # UPDATE=1, and a failed run's diffs in test/golden/failures/. The owner
 # guide's screenshots are goldens too (test/guide/), kept in docs/guide/,
-# which the container mounts where the test looks for it.
+# which the container mounts where the test looks for it (docker, or
+# CONTAINER=podman).
+CONTAINER ?= docker
 GOLDENS_IMAGE = wellfed-app-goldens:$(FLUTTER_VERSION)
 GOLDENS_DIR = $(CURDIR)/$(APP)/test/golden
 GOLDENS_TESTS = test/golden test/guide
@@ -246,40 +237,6 @@ app-installer-input:
 	cp $(MANIFEST) $(APP_INSTALLER)/update.manifest
 	@echo "WELLFED_INSTALLER_PIN=$$(sha256sum $(APP_INSTALLER)/review.json | cut -d' ' -f1):$$(sha256sum $(APP_INSTALLER)/update.manifest | cut -d' ' -f1):<the manifest's version>"
 
-# The server store's queries are checked at build time against committed
-# metadata, so no build needs a database. After changing a query or a
-# migration, this rebuilds the metadata from a scratch database that the
-# sqlite3 command line applies the migrations to.
-STORE = src/server/wellfed-store
-STORE_DB = $(CURDIR)/target/sqlx-prepare.db
-sqlx-prepare:
-	rm -rf $(STORE)/.sqlx $(STORE_DB)
-	mkdir -p $(STORE)/.sqlx $(dir $(STORE_DB))
-	cat $(STORE)/migrations/*.sql | sqlite3 $(STORE_DB)
-	touch $(STORE)/src/lib.rs
-	DATABASE_URL=sqlite://$(STORE_DB) SQLX_OFFLINE_DIR=$(CURDIR)/$(STORE)/.sqlx cargo check --locked -p wellfed-store
-	rm -f $(STORE_DB)
-
-# The server's release: static musl binaries for x86_64 and aarch64 in
-# dist/server/, and the container image, both built in a container so the
-# host needs only docker or podman (CONTAINER=podman). Never part of
-# `check`. check-server-release runs the release check against this host's
-# binary from dist/server/ and against the image; `check` already runs it
-# against the debug build. docs/server/running.md#packaging.
-CONTAINER ?= docker
-SERVER_CONTAINERFILE = src/server/wellfed-server/packaging/Containerfile
-SERVER_DIST = dist/server
-SERVER_IMAGE ?= wellfed-server
-server-dist:
-	$(CONTAINER) build -f $(SERVER_CONTAINERFILE) --target dist --output type=local,dest=$(SERVER_DIST) .
-
-server-image:
-	$(CONTAINER) build -f $(SERVER_CONTAINERFILE) -t $(SERVER_IMAGE) .
-
-check-server-release:
-	WELLFED_RELEASE_SERVER=$(CURDIR)/$(SERVER_DIST)/wellfed-server-$$(uname -m)-unknown-linux-musl cargo nextest run --locked -p wellfed-server --test release
-	WELLFED_RELEASE_IMAGE=$(SERVER_IMAGE) WELLFED_RELEASE_RUNTIME=$(CONTAINER) cargo nextest run --locked -p wellfed-server --test release --run-ignored only
-
 # The Home Assistant integration (src/integrations/homeassistant/). Its Rust
 # bridge's own tests run in `check-rust`, without the PyO3 module; this lints
 # the module, builds the wheel into a venv of pinned test dependencies, and
@@ -298,7 +255,7 @@ HA_WHEEL = target/homeassistant-wheels/check
 # PyO3 builds against the venv's Python 3.14, never whatever `python3` the
 # host has on its path, so the gate passes or fails alike on every host.
 HA_PYO3 = PYO3_PYTHON=$(CURDIR)/$(HA_VENV)/bin/python
-# Where `cargo build` put the simulator, the CLI and the server.
+# Where `cargo build` put the simulator and the CLI.
 HA_BIN = $(TARGET)/debug
 check-homeassistant:
 	$(HA_VENV)/bin/python -c 'import sys; sys.exit(sys.version_info[:2] != (3, 14))' 2>/dev/null || uv venv --clear --python 3.14 $(HA_VENV)
@@ -311,7 +268,7 @@ check-homeassistant:
 	$(HA_VENV)/bin/maturin generate-stubs --locked -q -i $(HA_VENV)/bin/python -m $(HA)/bridge/Cargo.toml --out $(HA_STUBS)
 	@diff -u $(HA_STUB) $(HA_STUBS)/wellfed_homeassistant/__init__.pyi || \
 		{ echo "the bridge's stub is stale: copy the generated one over $(HA_STUB)"; exit 1; }
-	cargo build --locked -p wellfed -p wellfed-feeder-sim -p wellfed-server
+	cargo build --locked -p wellfed -p wellfed-feeder-sim
 	rm -rf $(HA_WHEEL)
 	$(HA_VENV)/bin/maturin build --locked --release -i $(HA_VENV)/bin/python -m $(HA)/bridge/Cargo.toml -o $(HA_WHEEL)
 	VIRTUAL_ENV=$(CURDIR)/$(HA_VENV) uv pip install --reinstall $(HA_WHEEL)/*.whl

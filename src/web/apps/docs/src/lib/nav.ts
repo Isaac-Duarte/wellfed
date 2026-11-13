@@ -53,7 +53,6 @@ export const NAV: NavGroup[] = [
     entries: [
       { file: "devices/README.md", label: "Supported devices" },
       { file: "roadmap.md", label: "Roadmap" },
-      { file: "server/running.md", label: "Running the server" },
       { file: "glossary.md", label: "Glossary" },
     ],
   },

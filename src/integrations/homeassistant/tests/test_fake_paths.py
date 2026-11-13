@@ -1,11 +1,9 @@
-"""Paths the simulator and the server cannot reach from Python, on a
-scripted bridge: a feed whose answer was lost opens a repair that its
-settlement clears, and is kept across a reload; a revoked key or token, a
-feeder of another build, a server that lost its feeder or a silent feeder
-at setup, an entry of a newer integration or from before the routes,
-diagnostics, stale devices, write entities hidden from a role that writes
-nothing, the repairs a token or key left behind, and the frozen unique ids
-on both routes."""
+"""Paths the simulator cannot reach from Python, on a scripted bridge: a feed
+whose answer was lost opens a repair that its settlement clears, and is kept
+across a reload; a revoked key, a feeder of another build or a silent feeder
+at setup, an entry of a newer integration, from an early test build or left
+from the retired server route, diagnostics, stale devices, and the frozen
+unique ids."""
 
 from __future__ import annotations
 
@@ -43,19 +41,10 @@ from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 from custom_components.wellfed import async_remove_config_entry_device
 from custom_components.wellfed.const import (
     CONF_ADDRESS,
-    CONF_FEEDER_ID,
     CONF_IDENTITY,
-    CONF_ROUTE,
     CONF_SECRET,
-    CONF_TOKEN,
-    CONF_TOKEN_ID,
-    CONF_URL,
     DOMAIN,
-    ROUTE_DIRECT,
-    ROUTE_SERVER,
 )
-from custom_components.wellfed.kept import kept
-from custom_components.wellfed.session import key_left, leftover_issue
 import wellfed_homeassistant as bridge
 
 from . import fake
@@ -64,11 +53,10 @@ WAIT = 10
 
 
 class _Make:
-    """Stands in for the bridge's `Feeder` class: either route's session is the scripted one."""
+    """Stands in for the bridge's `Feeder` class: every session is the scripted one."""
 
     def __init__(self, scripted: fake.FakeFeeder) -> None:
         self.scripted = scripted
-        self.routes: list[str] = []
         # What each session was handed of the last run's unsettled feeds.
         self.handed: list[tuple[list[str], list[int]]] = []
         # Whether each session was handed an unread store.
@@ -84,23 +72,7 @@ class _Make:
         unread: bool = False,
     ) -> fake.FakeFeeder:
         self.unread.append(unread)
-        self.routes.append(ROUTE_DIRECT)
         self.handed.append(([p.id for p in pending], answered))
-        return self.scripted
-
-    def server(
-        self,
-        url: str,
-        token: str,
-        token_id: str,
-        feeder_id: str,
-        identity: bytes,
-        pending: list[bridge.Pending],
-        unread: bool = False,
-    ) -> fake.FakeFeeder:
-        self.unread.append(unread)
-        self.routes.append(ROUTE_SERVER)
-        self.handed.append(([p.id for p in pending], []))
         return self.scripted
 
 
@@ -119,20 +91,21 @@ async def _until(hass: HomeAssistant, condition: Callable[[], bool]) -> None:
             await hass.async_block_till_done()
 
 
-# Version 2 of an entry's data, on either route.
+# Version 2 of an entry's data.
 DIRECT_DATA = {
-    CONF_ROUTE: ROUTE_DIRECT,
     CONF_SECRET: fake.SECRET.hex(),
     CONF_IDENTITY: fake.IDENTITY.hex(),
     CONF_ADDRESS: "192.0.2.1:4747",
 }
-SERVER_DATA = {
-    CONF_ROUTE: ROUTE_SERVER,
+# A version 2 entry an earlier build made for the owner's server, which
+# Wellfed no longer has: it holds no client key.
+SERVER_ROUTE_DATA = {
+    "route": "server",
     CONF_IDENTITY: fake.IDENTITY.hex(),
-    CONF_URL: "http://192.0.2.2:8080",
-    CONF_TOKEN: "a-token-secret",
-    CONF_TOKEN_ID: "01a0c450-6c00-7db9-b536-8a8beb004413",
-    CONF_FEEDER_ID: "01a0c450-6c00-7b52-8b49-e2dbe147dc4a",
+    "url": "http://192.0.2.2:8080",
+    "token": "a-token-secret",
+    "token_id": "01a0c450-6c00-7db9-b536-8a8beb004413",
+    "feeder_id": "01a0c450-6c00-7b52-8b49-e2dbe147dc4a",
 }
 
 
@@ -242,7 +215,7 @@ async def test_a_lost_feed_is_kept_across_a_reload_and_settled_by_the_next_sessi
     # The bridge announces again a lost feed that still holds feeds back.
     feeder.push(fake.update(bridge.UpdateKind.Pending, pending=lost))
     await _until(hass, lambda: _issue(hass, "uncertain_feed") is not None)
-    feeder.push(fake.update(bridge.UpdateKind.SettledUnfed, pending=lost))
+    feeder.push(fake.update(bridge.UpdateKind.Settled, feed=fake.feed(10), pending=lost))
     await _until(hass, lambda: _issue(hass, "uncertain_feed") is None)
     assert entry.runtime_data.kept.pending == []
     assert entry.runtime_data.kept.answered == [41, 9]
@@ -255,11 +228,11 @@ async def test_a_lost_feed_settled_before_its_write_returns_is_not_kept(
     entry = await _ready(hass, feeder)
     session = entry.runtime_data
     lost = fake.pending()
-    # The bridge announces it and the journal settles it before the write's
+    # The bridge announces it and its `Fed` settles it before the write's
     # own answer reaches the event loop.
     feeder.push(
         fake.update(bridge.UpdateKind.Pending, pending=lost),
-        fake.update(bridge.UpdateKind.SettledUnfed, pending=lost),
+        fake.update(bridge.UpdateKind.Settled, feed=fake.feed(10), pending=lost),
     )
     await _until(hass, lambda: feeder.updates.empty())
     await hass.async_block_till_done()
@@ -512,7 +485,7 @@ async def test_the_repair_releases_a_lost_feed_and_says_it_may_have_run(
 
     # The bridge confirms it: kept released, so the next session does not
     # hold on it, and still waited on for its record.
-    released = bridge.Pending(lost.id, 2, lost.sent_ms, None, True, 1_793_794_000_000, None)
+    released = bridge.Pending(lost.id, 2, lost.sent_ms, None, True, 1_793_794_000_000)
     feeder.push(fake.update(bridge.UpdateKind.Released, portions=2, pending=released))
     await _until(hass, lambda: [p.released_ms for p in session.kept.pending] == [1_793_794_000_000])
     assert _issue(hass, "unknown_feed") is None
@@ -540,27 +513,6 @@ async def test_the_repair_on_an_unloaded_entry_releases_nothing(
     assert done["type"] == FlowResultType.ABORT
     assert done["reason"] == "not_loaded"
     assert ("release", (lost.id,)) not in feeder.calls
-
-
-async def test_through_the_server_a_lost_feed_holds_until_released_too(
-    hass: HomeAssistant, feeder: fake.FakeFeeder
-) -> None:
-    entry = await _ready(hass, feeder, SERVER_DATA)
-    lost = fake.pending(portions=2)
-    feeder.push(
-        fake.update(bridge.UpdateKind.Pending, pending=lost),
-        fake.update(bridge.UpdateKind.StillUnknown, portions=2, pending=lost),
-    )
-    await _until(hass, lambda: _issue(hass, "unknown_feed") is not None)
-    unknown = _issue(hass, "unknown_feed")
-    assert unknown is not None and unknown.is_fixable
-    assert await async_setup_component(hass, "repairs", {})
-    flows = hass.data["repairs"]["flow_manager"]
-    shown = await flows.async_init(DOMAIN, context={"issue_id": unknown.issue_id})
-    done = await flows.async_configure(shown["flow_id"], {})
-    assert done["type"] == FlowResultType.CREATE_ENTRY
-    assert ("release", (lost.id,)) in feeder.calls
-    assert await hass.config_entries.async_unload(entry.entry_id)
 
 
 async def test_deleting_an_entry_that_holds_feeds_says_the_hold_went(
@@ -813,66 +765,10 @@ async def test_the_cancel_action_stops_a_named_feed(
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
-async def test_a_token_refused_before_setup_asks_to_sign_in_again(
-    hass: HomeAssistant, feeder: fake.FakeFeeder
-) -> None:
-    feeder.push(fake.update(bridge.UpdateKind.TokenRefused))
-    entry = _entry(hass, SERVER_DATA)
-    assert not await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    assert entry.state is ConfigEntryState.SETUP_ERROR
-    flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
-    assert [flow["context"]["source"] for flow in flows] == ["reauth"]
-    assert flows[0]["step_id"] == "reauth_server"
-
-
-async def test_a_server_that_lost_its_feeder_opens_a_repair_until_it_reaches_it(
-    hass: HomeAssistant, feeder: fake.FakeFeeder
-) -> None:
-    entry = await _ready(hass, feeder, SERVER_DATA)
-    feeder.push(fake.update(bridge.UpdateKind.ServerLostFeeder, reason="removed"))
-    await _until(hass, lambda: _issue(hass, "server_lost_feeder") is not None)
-    assert not entry.runtime_data.connected
-
-    feeder.push(fake.connected())
-    await _until(hass, lambda: _issue(hass, "server_lost_feeder") is None)
-    assert await hass.config_entries.async_unload(entry.entry_id)
-
-
-async def test_an_older_server_names_the_server_and_a_newer_one_this_integration(
-    hass: HomeAssistant, feeder: fake.FakeFeeder
-) -> None:
-    entry = await _ready(hass, feeder, SERVER_DATA)
-    feeder.push(fake.connected(skew=bridge.Skew.ServerBehind))
-    await _until(hass, lambda: _issue(hass, "update_server") is not None)
-
-    feeder.push(fake.connected(skew=bridge.Skew.ServerAhead))
-    await _until(hass, lambda: _issue(hass, "update_integration") is not None)
-    assert _issue(hass, "update_server") is None
-    assert await hass.config_entries.async_unload(entry.entry_id)
-
-
-async def test_a_lost_feed_refused_after_all_clears_its_repair(
-    hass: HomeAssistant, feeder: fake.FakeFeeder
-) -> None:
-    entry = await _ready(hass, feeder, SERVER_DATA)
-    lost = fake.pending()
-    feeder.feed_result = fake.uncertain(lost)
-    with pytest.raises(HomeAssistantError):
-        await entry.runtime_data.feed(1)
-    await _until(hass, lambda: _issue(hass, "uncertain_feed") is not None)
-
-    # The server's journal found the feeder refused it: nothing ran.
-    feeder.push(fake.update(bridge.UpdateKind.SettledUnfed, pending=lost))
-    await _until(hass, lambda: _issue(hass, "uncertain_feed") is None)
-    assert _issue(hass, "unknown_feed") is None
-    assert await hass.config_entries.async_unload(entry.entry_id)
-
-
 async def test_a_write_to_a_pre_revision_feeder_says_to_update_it(
     hass: HomeAssistant, feeder: fake.FakeFeeder
 ) -> None:
-    entry = await _ready(hass, feeder, SERVER_DATA)
+    entry = await _ready(hass, feeder)
     feeder.feed_result = fake.written(bridge.WriteResult.NotSent, not_sent=bridge.NotSent.Legacy)
     with pytest.raises(HomeAssistantError) as raised:
         await entry.runtime_data.feed(1)
@@ -910,12 +806,10 @@ async def test_an_entry_of_a_newer_minor_is_read_as_it_is(
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
-async def test_an_entry_from_before_the_routes_fails_to_migrate_and_deletes_cleanly(
+async def test_an_entry_from_an_early_test_build_fails_to_migrate_and_deletes_cleanly(
     hass: HomeAssistant, feeder: fake.FakeFeeder
 ) -> None:
-    # Version 1: a direct entry with no route.
-    old = {key: value for key, value in DIRECT_DATA.items() if key != CONF_ROUTE}
-    entry = _entry(hass, old, version=1)
+    entry = _entry(hass, DIRECT_DATA, version=1)
     assert not await hass.config_entries.async_setup(entry.entry_id)
     assert entry.state is ConfigEntryState.MIGRATION_ERROR
 
@@ -928,19 +822,28 @@ async def test_an_entry_from_before_the_routes_fails_to_migrate_and_deletes_clea
     assert await hass.config_entries.async_remove(entry.entry_id)
 
 
-async def test_diagnostics_redact_the_token(
-    hass: HomeAssistant, feeder: fake.FakeFeeder, hass_client: ClientSessionGenerator
+async def test_an_entry_left_from_the_server_route_fails_setup_and_deletes_cleanly(
+    hass: HomeAssistant, feeder: fake.FakeFeeder
 ) -> None:
-    entry = await _ready(hass, feeder, SERVER_DATA)
-    diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, entry)
-    assert diagnostics["entry"][CONF_TOKEN] == "**REDACTED**"
-    assert "a-token-secret" not in str(diagnostics)
-    assert await hass.config_entries.async_unload(entry.entry_id)
+    entry = _entry(hass, SERVER_ROUTE_DATA)
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    assert entry.error_reason_translation_key == "no_client_key"
+    # No session was started for it.
+    assert cast(_Make, bridge.Feeder).handed == []
+
+    for source in (SOURCE_RECONFIGURE, SOURCE_REAUTH):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": source, "entry_id": entry.entry_id}, data=entry.data
+        )
+        assert result["type"] is FlowResultType.ABORT
+        assert result["reason"] == "pair_again"
+    assert await hass.config_entries.async_remove(entry.entry_id)
 
 
 # Every entity and device id a feeder has ever had, with `{identity}` for
 # its identity key. Ids are frozen: an entity's history and its automations
-# hang on them, on either route. A new entity appends its id here; none is
+# hang on them. A new entity appends its id here; none is
 # ever renamed or removed.
 UNIQUE_IDS = Path(__file__).with_name("fixtures") / "unique_ids.json"
 
@@ -959,12 +862,9 @@ def _ids(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, list[str]]:
     }
 
 
-@pytest.mark.parametrize("data", [DIRECT_DATA, SERVER_DATA], ids=["direct", "server"])
-async def test_the_unique_ids_are_frozen_and_the_same_on_both_routes(
-    hass: HomeAssistant, feeder: fake.FakeFeeder, data: dict[str, Any]
-) -> None:
+async def test_the_unique_ids_are_frozen(hass: HomeAssistant, feeder: fake.FakeFeeder) -> None:
     plans = [fake.plan(slot) for slot in (0, 9)]
-    entry = await _ready(hass, feeder, data, fake.state(plans=plans))
+    entry = await _ready(hass, feeder, state=fake.state(plans=plans))
     current = _ids(hass, entry)
     frozen: dict[str, list[str]] = json.loads(UNIQUE_IDS.read_text())
 
@@ -982,152 +882,6 @@ async def test_the_unique_ids_are_frozen_and_the_same_on_both_routes(
             assert not added, f"new {kind}: bless them with WELLFED_BLESS=1: {added}"
     if blessing:
         UNIQUE_IDS.write_text(json.dumps(frozen, indent=2) + "\n")
-    assert await hass.config_entries.async_unload(entry.entry_id)
-
-
-async def test_deleting_a_server_entry_revokes_its_token(
-    hass: HomeAssistant, feeder: fake.FakeFeeder, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    revoked: list[tuple[str, str, str]] = []
-    monkeypatch.setattr(
-        bridge,
-        "server_revoke_token",
-        lambda url, token, token_id: revoked.append((url, token, token_id)),
-    )
-    entry = await _ready(hass, feeder, SERVER_DATA)
-    assert await hass.config_entries.async_remove(entry.entry_id)
-    assert revoked == [(SERVER_DATA[CONF_URL], SERVER_DATA[CONF_TOKEN], SERVER_DATA[CONF_TOKEN_ID])]
-
-
-async def test_a_token_the_server_could_not_revoke_is_named_in_a_repair(
-    hass: HomeAssistant, feeder: fake.FakeFeeder, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def unreachable(url: str, token: str, token_id: str) -> None:
-        raise bridge.WellfedError("the server cannot be reached")
-
-    monkeypatch.setattr(bridge, "server_revoke_token", unreachable)
-    entry = await _ready(hass, feeder, SERVER_DATA)
-    assert await hass.config_entries.async_remove(entry.entry_id)
-
-    token_id = SERVER_DATA[CONF_TOKEN_ID]
-    issue = ir.async_get(hass).async_get_issue(DOMAIN, f"token_left_{token_id}")
-    assert issue is not None and issue.is_persistent
-    # Named by its id, never by its secret.
-    assert issue.translation_placeholders == {"url": SERVER_DATA[CONF_URL], "token_id": token_id}
-
-
-def _leftover(hass: HomeAssistant, key: bytes) -> ir.IssueEntry | None:
-    return ir.async_get(hass).async_get_issue(DOMAIN, leftover_issue(fake.IDENTITY, key))
-
-
-async def test_each_leftover_key_keeps_its_own_repair_until_it_is_gone(
-    hass: HomeAssistant, feeder: fake.FakeFeeder, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    first, second = bytes(32), bytes([5] * 32)
-    still = {first, second}
-    monkeypatch.setattr(
-        bridge, "server_client_listed", lambda url, token, feeder_id, key: key in still
-    )
-    monkeypatch.setattr(bridge, "server_revoke_token", lambda url, token, token_id: None)
-
-    # Two moves to the server each left a key: neither replaces the other.
-    entry = _entry(hass, SERVER_DATA)
-    store = kept(hass, entry.entry_id)
-    await store.load()
-    for key in (first, second):
-        store.add_leftover_key(key)
-        key_left(hass, fake.IDENTITY, key)
-    feeder.push(fake.connected(), fake.update(bridge.UpdateKind.State, state=fake.state()))
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    assert _leftover(hass, first) is not None and _leftover(hass, second) is not None
-
-    still.discard(first)
-    feeder.push(fake.connected())
-    await _until(hass, lambda: _leftover(hass, first) is None)
-    assert store.leftover_keys == [second]
-    assert _leftover(hass, second) is not None
-
-    # Deleted while the second may still be listed: its repair stays,
-    # worded for no entry to check it.
-    assert await hass.config_entries.async_remove(entry.entry_id)
-    left = _leftover(hass, second)
-    assert left is not None and left.translation_key == "leftover_key_left"
-    assert _leftover(hass, first) is None
-
-
-async def test_a_leftover_key_is_checked_directly_and_outlives_its_entry(
-    hass: HomeAssistant, feeder: fake.FakeFeeder, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    listed = [True]
-    asked: list[tuple[bytes, bytes, bytes, str | None]] = []
-
-    def client_listed(
-        secret: bytes, identity: bytes, key: bytes, address: str | None = None
-    ) -> bool:
-        asked.append((secret, identity, key, address))
-        return listed[0]
-
-    monkeypatch.setattr(bridge, "client_listed", client_listed)
-    old = bytes([9] * 32)
-    entry = _entry(hass, DIRECT_DATA)
-    store = kept(hass, entry.entry_id)
-    await store.load()
-    store.add_leftover_key(old)
-    key_left(hass, fake.IDENTITY, old)
-    feeder.push(fake.connected(), fake.update(bridge.UpdateKind.State, state=fake.state()))
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await _until(hass, lambda: len(asked) == 1)
-    # Asked with the key in use now, about the one left over.
-    assert asked[0] == (fake.SECRET, fake.IDENTITY, old, DIRECT_DATA[CONF_ADDRESS])
-    assert _leftover(hass, old) is not None
-
-    # Deleted while the feeder may still list it: the repair stays, worded
-    # for no entry to check it.
-    assert await hass.config_entries.async_remove(entry.entry_id)
-    issue = _leftover(hass, old)
-    assert issue is not None and issue.is_persistent
-    assert issue.translation_key == "leftover_key_left"
-    assert issue.translation_placeholders == {
-        "feeder": fake.IDENTITY.hex()[:8],
-        "key": old.hex()[:8],
-    }
-
-
-async def test_write_entities_are_hidden_while_the_role_writes_nothing(
-    hass: HomeAssistant, feeder: fake.FakeFeeder
-) -> None:
-    entry = await _ready(hass, feeder, SERVER_DATA)
-    registry = er.async_get(hass)
-    identity = fake.IDENTITY.hex()
-
-    def hidden(domain: str, key: str) -> er.RegistryEntryHider | None:
-        entity_id = registry.async_get_entity_id(domain, DOMAIN, f"{identity}-{key}")
-        assert entity_id is not None
-        found = registry.async_get(entity_id)
-        assert found is not None
-        return found.hidden_by
-
-    writes = [("button", "feed"), ("switch", "child_lock"), ("number", "volume")]
-    assert all(hidden(*entity) is None for entity in writes)
-
-    # The account was demoted to a viewer while the session was away.
-    feeder.push(fake.connected(role=bridge.Role.Viewer))
-    integration = er.RegistryEntryHider.INTEGRATION
-    await _until(hass, lambda: all(hidden(*entity) is integration for entity in writes))
-    assert hidden("sensor", "food") is None
-    feed = registry.async_get_entity_id("button", DOMAIN, f"{identity}-feed")
-    assert feed is not None
-    feed_state = hass.states.get(feed)
-    assert feed_state is not None and feed_state.state == "unavailable"
-
-    # A hide the user chose stays theirs.
-    volume = registry.async_get_entity_id("number", DOMAIN, f"{identity}-volume")
-    assert volume is not None
-    registry.async_update_entity(volume, hidden_by=er.RegistryEntryHider.USER)
-    feeder.push(fake.connected(role=bridge.Role.Owner))
-    await _until(hass, lambda: hidden("button", "feed") is None)
-    assert hidden("number", "volume") is er.RegistryEntryHider.USER
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 

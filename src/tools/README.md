@@ -13,7 +13,7 @@ Build them with `cargo build --locked --release`, and run the binaries from `tar
 
 | Tool | What it does | Touches hardware? |
 | --- | --- | --- |
-| [wellfed](wellfed) | The owner's command line, through `wellfed-client` and `wellfed-connect`. `setup` pairs this computer with a feeder in BLE setup mode and gives it Wi-Fi ([Bluetooth](../../docs/firmware/bluetooth.md#setup-exchange)). While a bench server runs for this user (found by its pointer in `$XDG_RUNTIME_DIR` or `~/.local/state/wellfed`), the device commands go through its session and every direct session is refused ([bench](../../docs/devices/plaf103/bench-server.md#the-feeder-session)). On the [device API](../../docs/firmware/device-api.md): `status`, `settings`, `plans`, `call`, `desiccant`, `lock`, `play`, `wifi`, `time`, `events`, `feeds`, `logs`, `invite`, `join`, `clients`, `revoke`, `update-key`, `feed`, `cancel-feed`, `reboot`, `stats`, `trace`, `calibrate` and `recover`. Keeping stock and going back: `backup` and `restore-stock`. Installing from stock is the [Android app's](../app/README.md#the-install). `server` talks to the owner's server over its HTTP API | Yes (Bluetooth, for `setup`) |
+| [wellfed](wellfed) | The owner's command line, through `wellfed-client` and `wellfed-connect`. `setup` pairs this computer with a feeder in BLE setup mode and gives it Wi-Fi ([Bluetooth](../../docs/firmware/bluetooth.md#setup-exchange)). While a bench server runs for this user (found by its pointer in `$XDG_RUNTIME_DIR` or `~/.local/state/wellfed`), the device commands go through its session and every direct session is refused ([bench](../../docs/devices/plaf103/bench-server.md#the-feeder-session)). On the [device API](../../docs/firmware/device-api.md): `status`, `settings`, `plans`, `call`, `desiccant`, `lock`, `play`, `wifi`, `time`, `events`, `feeds`, `logs`, `invite`, `join`, `clients`, `revoke`, `update-key`, `feed`, `cancel-feed`, `reboot`, `stats`, `trace`, `calibrate` and `recover`. Keeping stock and going back: `backup` and `restore-stock`. Installing from stock is the [Android app's](../app/README.md#the-install). | Yes (Bluetooth, for `setup`) |
 | [wellfed-flash](wellfed-flash) | The UART flash client: restricted reads, region-scoped development updates, give-ways and original-stock recovery, each as inspect, prepare, execute ([guide](../../docs/development/rust-flash.md)). No crate links it: every read and write runs it as a process | Yes (serial) |
 | [wellfed-bench](wellfed-bench) | The relay bench's binary. `serve` runs the bench server in the foreground, printing its console as lines: it holds the bench lease, the relay board, the owner's one device API session and a receive-only UART capture, runs one job at a time on the rig, the suite or a tool of its own (`wellfed restore-stock`, whose questions it holds in the live state until answered), keeps the bank ledger and the operator's notes (settling their timers as what they expect arrives), and answers on `private/bench.sock`. `note` records the operator's steps, timers and evidence on it, and `mcp` serves its tools to an agent over the Model Context Protocol. Every hardware command (power and the loader strap, chained `wellfed-flash` sessions, the over-the-air loop, the suite's `itest`, and `wellfed restore-stock` as the `restore-stock` job) is its client, and `answer` answers a job's question. ([guide](../../docs/devices/plaf103/bench.md)) | Yes (relays, serial, network) |
 | [wellfed-rig](wellfed-rig) | The bench's operator sequences, and the power, capture, server and device API steps the suite builds on. The bench's command line runs them | Yes (relays, serial) |
@@ -23,11 +23,9 @@ Build them with `cargo build --locked --release`, and run the binaries from `tar
 | [wellfed-build](wellfed-build) | SDK firmware builds and their linked-image audits. `review` freezes a reviewed build or the stock OTA for `wellfed-flash`. `keygen` and `sign` sign a frozen review as an update ([firmware builds](../../docs/development/firmware-builds.md), [development updates](../../docs/development/uart-development.md)) | No |
 | [wellfed-audit](wellfed-audit) | Offline audits of finalized receive-only captures (startup, the QA self-test, driver transients), and full-flash backup comparison | No |
 | [wellfed-emu](wellfed-emu) | The vendor factory loader (mapping and bank selection) and UART flash helper, executed under Unicorn on supplied state. Backs the review's mapping check, the OTA marker fixtures and `wellfed-flash`'s emulated sessions | No |
-| [xtask](xtask) | `cargo xtask check-repository`: documentation links and anchors, the commands, make targets and paths the docs name, status words and time-bound wording ([rules](../../docs/development/writing.md#what-the-checks-refuse)), portability, no Python under `src/`, transport isolation and the server's crate layering. `cargo xtask fuzz <target>`: one bounded cargo-fuzz run ([fuzzing](../../docs/development/README.md#fuzzing)) | No |
+| [xtask](xtask) | `cargo xtask check-repository`: documentation links and anchors, the commands, make targets and paths the docs name, status words and time-bound wording ([rules](../../docs/development/writing.md#what-the-checks-refuse)), portability, no Python under `src/`, transport isolation and the crate layering. `cargo xtask fuzz <target>`: one bounded cargo-fuzz run ([fuzzing](../../docs/development/README.md#fuzzing)) | No |
 
-Outside `src/tools/`, the owner's server is `wellfed-server` (in `src/server/`).
-
-The libraries the tools share with the app, the server and the installer live in `src/client/`, since no crate outside `src/tools/` may link a tool's crate (`cargo xtask check-repository` refuses it):
+The libraries the tools share with the app, Home Assistant and the installer live in `src/client/`, since no crate outside `src/tools/` may link a tool's crate (`cargo xtask check-repository` refuses it):
 
 | Library | What it holds |
 | --- | --- |
@@ -38,7 +36,7 @@ The libraries the tools share with the app, the server and the installer live in
 
 ## Simulators
 
-The simulated devices live in `src/sim/`, a layer of their own: the tools run them, and so do the server's test kit and other crates' tests, but no crate that ships links one (`cargo xtask check-repository` refuses it). None touches hardware; `wellfed-feeder-sim` uses the network, opening the device API's sockets and announcing itself over mDNS when asked to.
+The simulated devices live in `src/sim/`, a layer of their own: the tools run them, and so do other crates' tests, but no crate that ships links one (`cargo xtask check-repository` refuses it). None touches hardware; `wellfed-feeder-sim` uses the network, opening the device API's sockets and announcing itself over mDNS when asked to.
 
 | Simulator | What it does |
 | --- | --- |
@@ -48,7 +46,7 @@ The simulated devices live in `src/sim/`, a layer of their own: the tools run th
 
 ## The `wellfed` command line
 
-`wellfed` is the owner's command-line client, beside the app. Every command below speaks the [device API](../../docs/firmware/device-api.md) through `wellfed-client`, as the app does, except `setup` (Bluetooth) and `server`. Each takes `--keys`, `--feeder` when the key file knows more than one feeder, and `--address` to skip mDNS. The key (`wellfed-owner.json`), the stock backups (`stock-backups/`) and the server login (`wellfed-server.json`) default to one directory: `WELLFED_HOME` when set, otherwise the platform's data directory (`$XDG_DATA_HOME/wellfed` or `~/.local/share/wellfed` on Linux, `~/Library/Application Support/io.github.isaacduarte.wellfed` on macOS, the two systems it builds for), never the working directory. Only `setup`, `recover` and `join` with `--create-key` make a key; any other command refuses a missing one, naming the path it looked at. In a checkout, `WELLFED_HOME=private` keeps the bench's layout, and the bench server's jobs set it so. The key file's version is checked in one reader (`wellfed_formats::owner::read`), where a later build keeps the previous version's reader. `wellfed <command> --help` has the rest.
+`wellfed` is the owner's command-line client, beside the app. Every command below speaks the [device API](../../docs/firmware/device-api.md) through `wellfed-client`, as the app does, except `setup` (Bluetooth). Each takes `--keys`, `--feeder` when the key file knows more than one feeder, and `--address` to skip mDNS. The key (`wellfed-owner.json`) and the stock backups (`stock-backups/`) default to one directory: `WELLFED_HOME` when set, otherwise the platform's data directory (`$XDG_DATA_HOME/wellfed` or `~/.local/share/wellfed` on Linux, `~/Library/Application Support/io.github.isaacduarte.wellfed` on macOS, the two systems it builds for), never the working directory. Only `setup`, `recover` and `join` with `--create-key` make a key; any other command refuses a missing one, naming the path it looked at. In a checkout, `WELLFED_HOME=private` keeps the bench's layout, and the bench server's jobs set it so. The key file's version is checked in one reader (`wellfed_formats::owner::read`), where a later build keeps the previous version's reader. `wellfed <command> --help` has the rest.
 
 | Command | What it does |
 | --- | --- |
@@ -71,7 +69,6 @@ The simulated devices live in `src/sim/`, a layer of their own: the tools run th
 | `calibrate`, `stats`, `trace FEED`, `logs` | Portion weight, statistics, one feed's drive trace and the debug log |
 | `reboot` | Restart the feeder |
 | `backup`, `restore-stock` | Keep stock's image, and go back to it ([consumer installation](../../docs/firmware/consumer-installation.md#rollback)) |
-| `server …` | The same reads and writes through the owner's server, with its history |
 
 `status`, `settings`, `plans list`, `events`, `feeds` and `desiccant` print text for a person, and `--json` prints the feeder's values as the wire spells them, for scripts. The other commands print the feeder's answer as JSON.
 
@@ -81,13 +78,12 @@ Each crate does one job, with one-way dependencies:
 
 ```text
 wellfed-client   lib, sans-IO   device API sessions and pairing; the installer's steps
-wellfed-model    lib            the device API's values, owned, as the CLI, the app and the server share them
+wellfed-model    lib            the device API's values, owned, as the CLI, the app and Home Assistant share them
 wellfed-stock    lib            the stock 1.1.15 protocol, only what install and rollback need:
                                  the legacy MQTT 3.1 broker, OTA_UPGRADE and its trial ledger,
                                  the setup frame
 wellfed-stock-server  binary    `wellfed-stock`, the bench's stock server over that library
 wellfed          CLI            the owner's command line
-wellfed-server   binary         the owner's optional server, and its installs of releases
 wellfed-build    CLI            builds, reviews, and update signing (keygen, sign)
 wellfed-signing  lib            update signing behind a frozen review, for the builder's
                                  commands, the bench and the CLI
@@ -108,7 +104,7 @@ wellfed-flash    CLI            every bench write goes through it as a process
 
 - **The relay board has a successor.** The [Wellfed Bench board](../hardware/bench/README.md) answers the same `AT+CHn` lines on one USB cable, with the UART bridge beside them. The owner ordered assembled boards in October 2026. No tool here drives one yet: `wellfed-relay`'s `Board` trait is where it plugs in.
 - **Shared files live in `wellfed-formats`**, since one crate writes each and another reads it ([conventions](../../AGENTS.md#rust-conventions)). Under `stock`: the stock server's config, status document and image lease.
-- **The bench's protocol lives in `wellfed-bench-formats`**, beside the tools that speak it, so no library the app, the server or a firmware builds on links it. A job's questions are the installer's (`wellfed_install::prompt`), since the phone asks the same ones; the flash client and stock's server take only the lease, so they build it without the `live` feature and without the installer.
+- **The bench's protocol lives in `wellfed-bench-formats`**, beside the tools that speak it, so no library the app, Home Assistant or a firmware builds on links it. A job's questions are the installer's (`wellfed_install::prompt`), since the phone asks the same ones; the flash client and stock's server take only the lease, so they build it without the `live` feature and without the installer.
 - **One server holds the bench.** `wellfed-bench serve --device plaf103` takes the lease and the relay board for its life, so a command is a job it runs, never a second process racing for the port. The relay board sits behind `wellfed-relay`'s `Board` trait, so another board can take its place.
 - **`wellfed-flash` stays a child process** for every read and write. It is the audited writer, with its own journals, reports and no-retry stops, and a fault in the bench must never take a write down with it. `cargo xtask check-repository` refuses any manifest under `src/` that names `wellfed-flash` or `wellfed-stock`, but for each crate's own. `wellfed-install`, the driver the app runs, may also name `wellfed-stock`, since it runs stock's server in-process, and so may `wellfed-stock-server`, the binary over it.
 - **The suite links the rig, not the bench.** So the server links the suite and runs `itest` in its own process.

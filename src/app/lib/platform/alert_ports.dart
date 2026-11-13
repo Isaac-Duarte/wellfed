@@ -4,12 +4,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:wellfed/platform/discovery.dart';
 import 'package:wellfed/platform/notices.dart';
 import 'package:wellfed/platform/run_holds.dart';
-import 'package:wellfed/platform/secure_storage.dart';
-import 'package:wellfed/platform/server_ports.dart';
 import 'package:wellfed/src/rust/api/alerts.dart';
 import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
-import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 
 /// What the alert screens reach outside Dart.
@@ -74,23 +71,6 @@ PhoneNetwork phoneNetwork(Map<Object?, Object?>? found) => switch (found) {
 /// long enough to hear it, short enough for a background job.
 const _locateWait = Duration(seconds: 6);
 
-/// The owner's server this phone is logged in to, for catch-ups away from
-/// home: `null` with none, or with no token kept, or with one secure storage
-/// failed to read this time. The round still reaches the feeders at home,
-/// and the token, left where it is, is read again next round.
-Future<AlertServer?> alertServer(String dir) async {
-  final KnownServer? server = (await loadStore(path: '$dir/wellfed.json')).server;
-  if (server == null) return null;
-  final String? secret;
-  try {
-    secret = await secureStorage.read(key: serverSecretName);
-  } on Object catch (error) {
-    debugPrint('the server token could not be read for this round: $error');
-    return null;
-  }
-  return secret == null ? null : AlertServer(server: server, secret: secret);
-}
-
 /// What a round does with a feeder's failed catch-up, once every other
 /// feeder has had its turn.
 enum RoundFailures {
@@ -102,9 +82,8 @@ enum RoundFailures {
 }
 
 /// One round of catch-ups with `feeders`, as `key`, with the app's files in
-/// `dir`, on the network `network` says the phone is on. Away from home, a
-/// feeder `server` holds is read through it. Each feeder's changes are
-/// posted and confirmed before the next, and one that fails leaves the
+/// `dir`, on the network `network` says the phone is on. Each feeder's
+/// changes are posted and confirmed before the next, and one that fails leaves the
 /// others their turn ([feederRound]).
 Future<void> catchUpRound({
   required ClientKey key,
@@ -112,7 +91,6 @@ Future<void> catchUpRound({
   required List<KnownFeeder> feeders,
   required Future<PhoneNetwork> Function() network,
   required RoundFailures failures,
-  AlertServer? server,
 }) async {
   await Notices.sweep(dir);
   final PhoneNetwork here = await network();
@@ -125,7 +103,6 @@ Future<void> catchUpRound({
       known: feeder.address,
       attempt: attempt,
       network: here,
-      server: server,
     );
     CatchUp done = await attempt(const Attempt.first());
     if (done.end == CatchUpEnd.unanswered) {
@@ -136,20 +113,7 @@ Future<void> catchUpRound({
       done = await attempt(Attempt.last(located: located));
     }
     await Notices.deliver(dir: dir, identity: feeder.identity, name: feeder.name, changes: done.changes);
-    // Every round goes the same way until the owner acts, so the one who
-    // asked for the check hears it; a background round logs it.
-    if (done.end == CatchUpEnd.serverRefused) throw const ServerTurnedAway();
   });
-}
-
-/// The owner's server turned this phone away from a feeder's alerts: its
-/// login no longer holds, or the server no longer has the feeder.
-final class ServerTurnedAway implements Exception {
-  /// The one there is.
-  const ServerTurnedAway();
-
-  @override
-  String toString() => 'the server turned this phone away';
 }
 
 /// Run `one` for each of `feeders` in turn. One that throws (the bridge's
@@ -201,7 +165,6 @@ class AppAlertPorts implements AlertPorts {
       feeders: feeders,
       network: () async => phoneNetwork(await alertsChannel.invokeMapMethod<Object?, Object?>('network')),
       failures: RoundFailures.thrown,
-      server: await alertServer(dir),
     );
   }
 

@@ -21,7 +21,7 @@ flowchart TD
 - **No account.** Your phone talks directly to the feeder over your network, encrypted, and nothing goes to a cloud.
 - **Feeding you can check.** Each feed stops on time, a power cut never makes it feed twice, and a jam we injected ended the feed by name in the history. A real jam hasn't happened on our bench.
 - **A way back.** The install saves a checked copy of the vendor's firmware to your phone, and you can put it back over the air.
-- **Something to build on.** An Android app, a command-line client and an encrypted local API all do the same things. An optional server is a proof of concept.
+- **Something to build on.** An Android app, Home Assistant, a command-line client and an encrypted local API all do the same things.
 
 ## What you give up
 
@@ -48,7 +48,6 @@ Not yet, as an owner: there's nothing public to install. Follow the [roadmap](..
 | Know who can reach your feeder | [Who can talk to your feeder](how-it-works/access.md) |
 | See what we did to the feeder, and what broke | [The test log](how-it-works/testing.md) |
 | See what works and what doesn't | [Roadmap](../roadmap.md) |
-| Run the optional server | [Running the server](../server/running.md) |
 | Help build it | [Development guide](../development/README.md) |
 
 ## Evidence

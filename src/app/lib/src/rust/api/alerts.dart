@@ -11,12 +11,11 @@ import 'model.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 
-import 'server_views.dart';
 import 'store.dart';
 part 'alerts.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `current_form`, `detail`, `fingerprint`, `identity_of`, `posts`, `server_route`, `toggle`, `view`, `views`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `cmp`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `partial_cmp`
+// These functions are ignored because they are not marked as `pub`: `detail`, `fingerprint`, `identity_of`, `posts`, `toggle`, `view`, `views`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `cmp`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `partial_cmp`
 
 /// Keep catch-ups off while `run` goes (`held`), or let go. A hold lapses by
 /// itself after two hours unrenewed.
@@ -26,7 +25,6 @@ void holdAlerts({required AlertHold run, required bool held}) =>
 /// One catch-up with the feeder `identity` (hex), as this phone's `key`, with
 /// its files in `dir`. `manual` is where the owner said to dial it and `known`
 /// where the app last reached it; `attempt` says which try of a round this is.
-/// Away from home, a feeder `server` holds is read through it instead.
 Future<CatchUp> catchUpWith({
   required String dir,
   required ClientKey key,
@@ -35,7 +33,6 @@ Future<CatchUp> catchUpWith({
   String? known,
   required Attempt attempt,
   required PhoneNetwork network,
-  AlertServer? server,
 }) => RustLib.instance.api.crateApiAlertsCatchUpWith(
   dir: dir,
   key: key,
@@ -44,7 +41,6 @@ Future<CatchUp> catchUpWith({
   known: known,
   attempt: attempt,
   network: network,
-  server: server,
 );
 
 /// The changes Dart made: each notice posted and each removed one's id. A
@@ -179,27 +175,6 @@ Future<void> alertsNoticeRead({required String dir}) =>
 /// install may hold the feeder's own network.
 enum AlertHold { install, restore, update }
 
-/// The owner's server this phone is logged in to, for a catch-up away from
-/// home: the server's link and the feeders it last listed, and the phone
-/// token's secret.
-class AlertServer {
-  final KnownServer server;
-  final String secret;
-
-  const AlertServer({required this.server, required this.secret});
-
-  @override
-  int get hashCode => server.hashCode ^ secret.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is AlertServer &&
-          runtimeType == other.runtimeType &&
-          server == other.server &&
-          secret == other.secret;
-}
-
 /// This phone's choices for alerts.
 class AlertSettingsView {
   final bool instant;
@@ -288,25 +263,9 @@ enum CatchUpEnd {
   /// Nothing answered the first try: look for the feeder and try again.
   unanswered,
 
-  /// Nothing answered the last try, and no owner's server answered for
-  /// the feeder: none holds it, or it was down or turned this phone away.
-  /// On the feeder's home network that counts towards unreachable;
-  /// anywhere else it counts for nothing.
+  /// Nothing answered the last try. On the feeder's home network that
+  /// counts towards unreachable; anywhere else it counts for nothing.
   failed,
-
-  /// Away from home: it read what the owner's server last read of the
-  /// feeder, and applied it.
-  server,
-
-  /// Away from home, and the owner's server did not answer: nothing is
-  /// judged.
-  serverUnanswered,
-
-  /// Away from home, and the owner's server turned this phone away: its
-  /// token no longer holds, its account may not read the feeder, or the
-  /// server no longer has it. Nothing is judged, and nothing comes through
-  /// that server until the owner logs in again or adds the feeder back.
-  serverRefused,
 }
 
 /// A feeder's alerts as this phone lists them.

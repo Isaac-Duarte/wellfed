@@ -65,7 +65,7 @@ The Stock column summarizes [stock 1.1.15](stock/README.md), and the [roadmap](.
 | Buttons and child lock | Yes ([stock](stock/README.md#panel-buttons-and-child-lock)) | The reset button clears clients, Wi-Fi, settings, plans, history and statistics. |
 | Indicators | Yes | Which states show is not settled. |
 | Speaker | Yes | Which sounds play when is not settled. |
-| Schedules | Yes ([stock](stock/README.md#clock-and-schedules)) | Up to ten plans, run on the feeder with no server. |
+| Schedules | Yes ([stock](stock/README.md#clock-and-schedules)) | Up to ten plans, run on the feeder with no phone or computer on. |
 | Home Assistant | Through the vendor cloud | Direct over the LAN, with no server; tested in simulation only. |
 
 ## Notes

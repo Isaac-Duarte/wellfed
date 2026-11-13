@@ -38,7 +38,6 @@ The firmware docs describe Wellfed's own replacement, which isn't tied to one de
 | [Device layer](firmware/device-layer.md) | Where the board's assumptions live, so a second model can be added |
 | [Device kinds and models](firmware/device-kinds.md) | How the code splits by chip, board, kind and model, and how a fountain would slot in |
 | [Bring-up probes](firmware/bring-up-probes.md) | The bounded tests that first brought each piece of hardware up |
-| [The server](server/README.md) | What the optional server adds, [running it](server/running.md), and [how it's built](server/design.md) |
 | [well-fed.dev](web/site.md) | The project's landing page |
 | [docs.well-fed.dev](web/docs-site.md) | This documentation as a website |
 

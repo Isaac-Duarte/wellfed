@@ -244,11 +244,6 @@ impl Relay {
         self.hold.passed.load(Ordering::SeqCst)
     }
 
-    /// Whether the device's answers are held back now.
-    pub fn holding_answers(&self) -> bool {
-        *self.to_client.borrow()
-    }
-
     /// Whether bytes a client sent wait in the relay for the device. While
     /// paused, that is a request the client has sent and the device has
     /// not seen: it has left the client, so the client cannot take it back.

@@ -37,7 +37,7 @@ The SysTimer itself has measured 2 ppm on one NTP poll and 8 to 18 ppm over the 
 **The cadence this gives:**
 
 - **With NTP** (the gateway by default) nothing is needed. Polls every 17 minutes keep the reading, and at each expiry the next answer (within 64 s) re-sets it inside the old interval, so the clock reads invalid for up to a minute each time.
-- **Without NTP,** the app or the server must sync it about every 6 h until an owner's syncs have taught the rate, then at least weekly. A home without a router that answers NTP can set a public pool's address (`wellfed time --ntp IP[:PORT]`; hostnames are not resolved yet). The app and the server should sync on every connection, and warn when the time view says the clock needs the time.
+- **Without NTP,** the app, the CLI or Home Assistant must sync it about every 6 h until an owner's syncs have taught the rate, then at least weekly. A home without a router that answers NTP can set a public pool's address (`wellfed time --ntp IP[:PORT]`; hostnames are not resolved yet). The app and the server should sync on every connection, and warn when the time view says the clock needs the time.
 
 **Drift learning** comes from owners' syncs only:
 

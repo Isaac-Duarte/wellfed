@@ -198,7 +198,7 @@ fn a_session_still_reading_the_backlog_and_two_caught_up_each_get_the_feed() {
         let mut third = rig.owner(0xa2).await;
         third.subscribe(None, Samples::Off).await.unwrap();
         // New events keep coming meanwhile, so the two caught up ask after
-        // each one, as a server following a busy feeder does.
+        // each one, as a client following a busy feeder does.
         rig.fill_backlog(&mut owner).await;
         rig.feed(&mut owner).await;
 

@@ -147,6 +147,5 @@ void main() {
 
   test("a refused feed's size names the portions asked only when they came back", () {
     expect(refusalWords(const FeederRefusal.portions(asked: 9)), endsWith('portions, not 9.'));
-    expect(refusalWords(const FeederRefusal.portions()), endsWith('portions.'));
   });
 }

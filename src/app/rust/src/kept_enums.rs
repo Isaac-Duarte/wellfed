@@ -19,8 +19,7 @@ use wellfed_model::{
 };
 
 use crate::alerts::AlertState;
-use crate::api::router::{RoutePath, WriteKind};
-use crate::api::server_views::ServerRole;
+use crate::api::router::WriteKind;
 use crate::api::store::{AppFile, Appearance, StoreKind};
 use crate::route::pins::{PinFile, PinState, PinnedWrite};
 use crate::stored::Versioned;
@@ -61,16 +60,11 @@ fn now() -> Vec<String> {
     let store_kind = ("StoreKind", variants::<StoreKind>());
     let mut lines = file::<AppFile>(
         "wellfed.json",
-        &[
-            ("Appearance", variants::<Appearance>()),
-            ("ServerRole", variants::<ServerRole>()),
-            store_kind.clone(),
-        ],
+        &[("Appearance", variants::<Appearance>()), store_kind.clone()],
     );
     lines.extend(file::<PinFile>(
         "pending.json",
         &[
-            ("RoutePath", variants::<RoutePath>()),
             ("WriteKind", variants::<WriteKind>()),
             ("PinState", variants::<PinState>()),
             ("PinnedWrite", variants::<PinnedWrite>()),

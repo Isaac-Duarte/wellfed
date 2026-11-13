@@ -774,7 +774,6 @@ fn the_store_round_trips_and_starts_empty() {
             address: Some("192.168.1.20:4747".into()),
             manual_address: Some("100.101.102.103:4747".into()),
         }],
-        server: None,
     };
     assert!(swap_store(path, &AppStore::default(), &store).unwrap());
     assert_eq!(load_store(path).unwrap(), store);
@@ -794,7 +793,7 @@ fn the_store_round_trips_and_starts_empty() {
 fn a_store_that_does_not_read_is_set_aside_at_the_start() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("wellfed.json");
-    let unversioned = br#"{"label": "", "feeders": [], "appearance": "system", "server": null}"#;
+    let unversioned = br#"{"label": "", "feeders": [], "appearance": "system"}"#;
     std::fs::write(&path, unversioned).unwrap();
     let path = path.to_str().unwrap();
 
@@ -1257,7 +1256,6 @@ fn a_write_whose_answer_never_comes_says_so_and_a_request_after_the_end_went_now
             reply,
             FeederReply::NotSent {
                 reason: NotSentReason::Session,
-                server: None
             }
         );
         sim.stop().await;

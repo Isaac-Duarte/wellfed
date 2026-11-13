@@ -13,526 +13,6 @@ part of 'router.dart';
 // dart format off
 T _$identity<T>(T value) => value;
 /// @nodoc
-mixin _$Adoption {
-
-
-
-
-
-@override
-bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is Adoption);
-}
-
-
-@override
-int get hashCode => runtimeType.hashCode;
-
-@override
-String toString() {
-    return 'Adoption()';
-}
-
-
-}
-
-/// @nodoc
-class $AdoptionCopyWith<$Res>  {
-$AdoptionCopyWith(Adoption _, $Res Function(Adoption) __);
-}
-
-
-/// Adds pattern-matching-related methods to [Adoption].
-extension AdoptionPatterns on Adoption {
-/// A variant of `map` that fallback to returning `orElse`.
-///
-/// It is equivalent to doing:
-/// ```dart
-/// switch (sealedClass) {
-///   case final Subclass value:
-///     return ...;
-///   case _:
-///     return orElse();
-/// }
-/// ```
-
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( Adoption_Adopted value)?  adopted,TResult Function( Adoption_Unclaimed value)?  unclaimed,TResult Function( Adoption_Unsettled value)?  unsettled,TResult Function( Adoption_NoInvite value)?  noInvite,TResult Function( Adoption_Failed value)?  failed,required TResult orElse(),}){
-final _that = this;
-switch (_that) {
-case Adoption_Adopted() when adopted != null:
-return adopted(_that);case Adoption_Unclaimed() when unclaimed != null:
-return unclaimed(_that);case Adoption_Unsettled() when unsettled != null:
-return unsettled(_that);case Adoption_NoInvite() when noInvite != null:
-return noInvite(_that);case Adoption_Failed() when failed != null:
-return failed(_that);case _:
-  return orElse();
-
-}
-}
-/// A `switch`-like method, using callbacks.
-///
-/// Callbacks receives the raw object, upcasted.
-/// It is equivalent to doing:
-/// ```dart
-/// switch (sealedClass) {
-///   case final Subclass value:
-///     return ...;
-///   case final Subclass2 value:
-///     return ...;
-/// }
-/// ```
-
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( Adoption_Adopted value)  adopted,required TResult Function( Adoption_Unclaimed value)  unclaimed,required TResult Function( Adoption_Unsettled value)  unsettled,required TResult Function( Adoption_NoInvite value)  noInvite,required TResult Function( Adoption_Failed value)  failed,}){
-final _that = this;
-switch (_that) {
-case Adoption_Adopted():
-return adopted(_that);case Adoption_Unclaimed():
-return unclaimed(_that);case Adoption_Unsettled():
-return unsettled(_that);case Adoption_NoInvite():
-return noInvite(_that);case Adoption_Failed():
-return failed(_that);}
-}
-/// A variant of `map` that fallback to returning `null`.
-///
-/// It is equivalent to doing:
-/// ```dart
-/// switch (sealedClass) {
-///   case final Subclass value:
-///     return ...;
-///   case _:
-///     return null;
-/// }
-/// ```
-
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( Adoption_Adopted value)?  adopted,TResult? Function( Adoption_Unclaimed value)?  unclaimed,TResult? Function( Adoption_Unsettled value)?  unsettled,TResult? Function( Adoption_NoInvite value)?  noInvite,TResult? Function( Adoption_Failed value)?  failed,}){
-final _that = this;
-switch (_that) {
-case Adoption_Adopted() when adopted != null:
-return adopted(_that);case Adoption_Unclaimed() when unclaimed != null:
-return unclaimed(_that);case Adoption_Unsettled() when unsettled != null:
-return unsettled(_that);case Adoption_NoInvite() when noInvite != null:
-return noInvite(_that);case Adoption_Failed() when failed != null:
-return failed(_that);case _:
-  return null;
-
-}
-}
-/// A variant of `when` that fallback to an `orElse` callback.
-///
-/// It is equivalent to doing:
-/// ```dart
-/// switch (sealedClass) {
-///   case Subclass(:final field):
-///     return ...;
-///   case _:
-///     return orElse();
-/// }
-/// ```
-
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( ServerFeeder feeder)?  adopted,TResult Function( ServerFeeder feeder,  ServerError error)?  unclaimed,TResult Function( ServerError error)?  unsettled,TResult Function( RoutedReply reply)?  noInvite,TResult Function( ServerError error)?  failed,required TResult orElse(),}) {final _that = this;
-switch (_that) {
-case Adoption_Adopted() when adopted != null:
-return adopted(_that.feeder);case Adoption_Unclaimed() when unclaimed != null:
-return unclaimed(_that.feeder,_that.error);case Adoption_Unsettled() when unsettled != null:
-return unsettled(_that.error);case Adoption_NoInvite() when noInvite != null:
-return noInvite(_that.reply);case Adoption_Failed() when failed != null:
-return failed(_that.error);case _:
-  return orElse();
-
-}
-}
-/// A `switch`-like method, using callbacks.
-///
-/// As opposed to `map`, this offers destructuring.
-/// It is equivalent to doing:
-/// ```dart
-/// switch (sealedClass) {
-///   case Subclass(:final field):
-///     return ...;
-///   case Subclass2(:final field2):
-///     return ...;
-/// }
-/// ```
-
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( ServerFeeder feeder)  adopted,required TResult Function( ServerFeeder feeder,  ServerError error)  unclaimed,required TResult Function( ServerError error)  unsettled,required TResult Function( RoutedReply reply)  noInvite,required TResult Function( ServerError error)  failed,}) {final _that = this;
-switch (_that) {
-case Adoption_Adopted():
-return adopted(_that.feeder);case Adoption_Unclaimed():
-return unclaimed(_that.feeder,_that.error);case Adoption_Unsettled():
-return unsettled(_that.error);case Adoption_NoInvite():
-return noInvite(_that.reply);case Adoption_Failed():
-return failed(_that.error);}
-}
-/// A variant of `when` that fallback to returning `null`
-///
-/// It is equivalent to doing:
-/// ```dart
-/// switch (sealedClass) {
-///   case Subclass(:final field):
-///     return ...;
-///   case _:
-///     return null;
-/// }
-/// ```
-
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( ServerFeeder feeder)?  adopted,TResult? Function( ServerFeeder feeder,  ServerError error)?  unclaimed,TResult? Function( ServerError error)?  unsettled,TResult? Function( RoutedReply reply)?  noInvite,TResult? Function( ServerError error)?  failed,}) {final _that = this;
-switch (_that) {
-case Adoption_Adopted() when adopted != null:
-return adopted(_that.feeder);case Adoption_Unclaimed() when unclaimed != null:
-return unclaimed(_that.feeder,_that.error);case Adoption_Unsettled() when unsettled != null:
-return unsettled(_that.error);case Adoption_NoInvite() when noInvite != null:
-return noInvite(_that.reply);case Adoption_Failed() when failed != null:
-return failed(_that.error);case _:
-  return null;
-
-}
-}
-
-}
-
-/// @nodoc
-
-
-class Adoption_Adopted extends Adoption {
-  const Adoption_Adopted({required this.feeder}): super._();
-  
-
- final  ServerFeeder feeder;
-
-/// Create a copy of Adoption
-/// with the given fields replaced by the non-null parameter values.
-@JsonKey(includeFromJson: false, includeToJson: false)
-@pragma('vm:prefer-inline')
-$Adoption_AdoptedCopyWith<Adoption_Adopted> get copyWith => _$Adoption_AdoptedCopyWithImpl<Adoption_Adopted>(this, _$identity);
-
-
-
-@override
-bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is Adoption_Adopted&&(identical(other.feeder, feeder) || other.feeder == feeder));
-}
-
-
-@override
-int get hashCode {
-    return Object.hash(runtimeType,feeder);
-}
-
-@override
-String toString() {
-    return 'Adoption.adopted(feeder: $feeder)';
-}
-
-
-}
-
-/// @nodoc
-abstract mixin class $Adoption_AdoptedCopyWith<$Res> implements $AdoptionCopyWith<$Res> {
-  factory $Adoption_AdoptedCopyWith(Adoption_Adopted value, $Res Function(Adoption_Adopted) _then) = _$Adoption_AdoptedCopyWithImpl;
-@useResult
-$Res call({
- ServerFeeder feeder
-});
-
-
-
-
-}
-/// @nodoc
-class _$Adoption_AdoptedCopyWithImpl<$Res>
-    implements $Adoption_AdoptedCopyWith<$Res> {
-  _$Adoption_AdoptedCopyWithImpl(this._self, this._then);
-
-  final Adoption_Adopted _self;
-  final $Res Function(Adoption_Adopted) _then;
-
-/// Create a copy of Adoption
-/// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? feeder = null,}) {
-  return _then(Adoption_Adopted(
-feeder: null == feeder ? _self.feeder : feeder // ignore: cast_nullable_to_non_nullable
-as ServerFeeder,
-  ));
-}
-
-
-}
-
-/// @nodoc
-
-
-class Adoption_Unclaimed extends Adoption {
-  const Adoption_Unclaimed({required this.feeder, required this.error}): super._();
-  
-
- final  ServerFeeder feeder;
- final  ServerError error;
-
-/// Create a copy of Adoption
-/// with the given fields replaced by the non-null parameter values.
-@JsonKey(includeFromJson: false, includeToJson: false)
-@pragma('vm:prefer-inline')
-$Adoption_UnclaimedCopyWith<Adoption_Unclaimed> get copyWith => _$Adoption_UnclaimedCopyWithImpl<Adoption_Unclaimed>(this, _$identity);
-
-
-
-@override
-bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is Adoption_Unclaimed&&(identical(other.feeder, feeder) || other.feeder == feeder)&&(identical(other.error, error) || other.error == error));
-}
-
-
-@override
-int get hashCode {
-    return Object.hash(runtimeType,feeder,error);
-}
-
-@override
-String toString() {
-    return 'Adoption.unclaimed(feeder: $feeder, error: $error)';
-}
-
-
-}
-
-/// @nodoc
-abstract mixin class $Adoption_UnclaimedCopyWith<$Res> implements $AdoptionCopyWith<$Res> {
-  factory $Adoption_UnclaimedCopyWith(Adoption_Unclaimed value, $Res Function(Adoption_Unclaimed) _then) = _$Adoption_UnclaimedCopyWithImpl;
-@useResult
-$Res call({
- ServerFeeder feeder, ServerError error
-});
-
-
-
-
-}
-/// @nodoc
-class _$Adoption_UnclaimedCopyWithImpl<$Res>
-    implements $Adoption_UnclaimedCopyWith<$Res> {
-  _$Adoption_UnclaimedCopyWithImpl(this._self, this._then);
-
-  final Adoption_Unclaimed _self;
-  final $Res Function(Adoption_Unclaimed) _then;
-
-/// Create a copy of Adoption
-/// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? feeder = null,Object? error = null,}) {
-  return _then(Adoption_Unclaimed(
-feeder: null == feeder ? _self.feeder : feeder // ignore: cast_nullable_to_non_nullable
-as ServerFeeder,error: null == error ? _self.error : error // ignore: cast_nullable_to_non_nullable
-as ServerError,
-  ));
-}
-
-
-}
-
-/// @nodoc
-
-
-class Adoption_Unsettled extends Adoption {
-  const Adoption_Unsettled({required this.error}): super._();
-  
-
- final  ServerError error;
-
-/// Create a copy of Adoption
-/// with the given fields replaced by the non-null parameter values.
-@JsonKey(includeFromJson: false, includeToJson: false)
-@pragma('vm:prefer-inline')
-$Adoption_UnsettledCopyWith<Adoption_Unsettled> get copyWith => _$Adoption_UnsettledCopyWithImpl<Adoption_Unsettled>(this, _$identity);
-
-
-
-@override
-bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is Adoption_Unsettled&&(identical(other.error, error) || other.error == error));
-}
-
-
-@override
-int get hashCode {
-    return Object.hash(runtimeType,error);
-}
-
-@override
-String toString() {
-    return 'Adoption.unsettled(error: $error)';
-}
-
-
-}
-
-/// @nodoc
-abstract mixin class $Adoption_UnsettledCopyWith<$Res> implements $AdoptionCopyWith<$Res> {
-  factory $Adoption_UnsettledCopyWith(Adoption_Unsettled value, $Res Function(Adoption_Unsettled) _then) = _$Adoption_UnsettledCopyWithImpl;
-@useResult
-$Res call({
- ServerError error
-});
-
-
-
-
-}
-/// @nodoc
-class _$Adoption_UnsettledCopyWithImpl<$Res>
-    implements $Adoption_UnsettledCopyWith<$Res> {
-  _$Adoption_UnsettledCopyWithImpl(this._self, this._then);
-
-  final Adoption_Unsettled _self;
-  final $Res Function(Adoption_Unsettled) _then;
-
-/// Create a copy of Adoption
-/// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? error = null,}) {
-  return _then(Adoption_Unsettled(
-error: null == error ? _self.error : error // ignore: cast_nullable_to_non_nullable
-as ServerError,
-  ));
-}
-
-
-}
-
-/// @nodoc
-
-
-class Adoption_NoInvite extends Adoption {
-  const Adoption_NoInvite({required this.reply}): super._();
-  
-
- final  RoutedReply reply;
-
-/// Create a copy of Adoption
-/// with the given fields replaced by the non-null parameter values.
-@JsonKey(includeFromJson: false, includeToJson: false)
-@pragma('vm:prefer-inline')
-$Adoption_NoInviteCopyWith<Adoption_NoInvite> get copyWith => _$Adoption_NoInviteCopyWithImpl<Adoption_NoInvite>(this, _$identity);
-
-
-
-@override
-bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is Adoption_NoInvite&&(identical(other.reply, reply) || other.reply == reply));
-}
-
-
-@override
-int get hashCode {
-    return Object.hash(runtimeType,reply);
-}
-
-@override
-String toString() {
-    return 'Adoption.noInvite(reply: $reply)';
-}
-
-
-}
-
-/// @nodoc
-abstract mixin class $Adoption_NoInviteCopyWith<$Res> implements $AdoptionCopyWith<$Res> {
-  factory $Adoption_NoInviteCopyWith(Adoption_NoInvite value, $Res Function(Adoption_NoInvite) _then) = _$Adoption_NoInviteCopyWithImpl;
-@useResult
-$Res call({
- RoutedReply reply
-});
-
-
-
-
-}
-/// @nodoc
-class _$Adoption_NoInviteCopyWithImpl<$Res>
-    implements $Adoption_NoInviteCopyWith<$Res> {
-  _$Adoption_NoInviteCopyWithImpl(this._self, this._then);
-
-  final Adoption_NoInvite _self;
-  final $Res Function(Adoption_NoInvite) _then;
-
-/// Create a copy of Adoption
-/// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? reply = null,}) {
-  return _then(Adoption_NoInvite(
-reply: null == reply ? _self.reply : reply // ignore: cast_nullable_to_non_nullable
-as RoutedReply,
-  ));
-}
-
-
-}
-
-/// @nodoc
-
-
-class Adoption_Failed extends Adoption {
-  const Adoption_Failed({required this.error}): super._();
-  
-
- final  ServerError error;
-
-/// Create a copy of Adoption
-/// with the given fields replaced by the non-null parameter values.
-@JsonKey(includeFromJson: false, includeToJson: false)
-@pragma('vm:prefer-inline')
-$Adoption_FailedCopyWith<Adoption_Failed> get copyWith => _$Adoption_FailedCopyWithImpl<Adoption_Failed>(this, _$identity);
-
-
-
-@override
-bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is Adoption_Failed&&(identical(other.error, error) || other.error == error));
-}
-
-
-@override
-int get hashCode {
-    return Object.hash(runtimeType,error);
-}
-
-@override
-String toString() {
-    return 'Adoption.failed(error: $error)';
-}
-
-
-}
-
-/// @nodoc
-abstract mixin class $Adoption_FailedCopyWith<$Res> implements $AdoptionCopyWith<$Res> {
-  factory $Adoption_FailedCopyWith(Adoption_Failed value, $Res Function(Adoption_Failed) _then) = _$Adoption_FailedCopyWithImpl;
-@useResult
-$Res call({
- ServerError error
-});
-
-
-
-
-}
-/// @nodoc
-class _$Adoption_FailedCopyWithImpl<$Res>
-    implements $Adoption_FailedCopyWith<$Res> {
-  _$Adoption_FailedCopyWithImpl(this._self, this._then);
-
-  final Adoption_Failed _self;
-  final $Res Function(Adoption_Failed) _then;
-
-/// Create a copy of Adoption
-/// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? error = null,}) {
-  return _then(Adoption_Failed(
-error: null == error ? _self.error : error // ignore: cast_nullable_to_non_nullable
-as ServerError,
-  ));
-}
-
-
-}
-
-/// @nodoc
 mixin _$RetryOutcome {
 
 
@@ -921,14 +401,13 @@ extension RoutedFeedPatterns on RoutedFeed {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( RoutedFeed_Started value)?  started,TResult Function( RoutedFeed_Refused value)?  refused,TResult Function( RoutedFeed_Uncertain value)?  uncertain,TResult Function( RoutedFeed_Settled value)?  settled,TResult Function( RoutedFeed_NotSent value)?  notSent,TResult Function( RoutedFeed_Held value)?  held,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( RoutedFeed_Started value)?  started,TResult Function( RoutedFeed_Refused value)?  refused,TResult Function( RoutedFeed_Uncertain value)?  uncertain,TResult Function( RoutedFeed_NotSent value)?  notSent,TResult Function( RoutedFeed_Held value)?  held,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case RoutedFeed_Started() when started != null:
 return started(_that);case RoutedFeed_Refused() when refused != null:
 return refused(_that);case RoutedFeed_Uncertain() when uncertain != null:
-return uncertain(_that);case RoutedFeed_Settled() when settled != null:
-return settled(_that);case RoutedFeed_NotSent() when notSent != null:
+return uncertain(_that);case RoutedFeed_NotSent() when notSent != null:
 return notSent(_that);case RoutedFeed_Held() when held != null:
 return held(_that);case _:
   return orElse();
@@ -948,14 +427,13 @@ return held(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( RoutedFeed_Started value)  started,required TResult Function( RoutedFeed_Refused value)  refused,required TResult Function( RoutedFeed_Uncertain value)  uncertain,required TResult Function( RoutedFeed_Settled value)  settled,required TResult Function( RoutedFeed_NotSent value)  notSent,required TResult Function( RoutedFeed_Held value)  held,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( RoutedFeed_Started value)  started,required TResult Function( RoutedFeed_Refused value)  refused,required TResult Function( RoutedFeed_Uncertain value)  uncertain,required TResult Function( RoutedFeed_NotSent value)  notSent,required TResult Function( RoutedFeed_Held value)  held,}){
 final _that = this;
 switch (_that) {
 case RoutedFeed_Started():
 return started(_that);case RoutedFeed_Refused():
 return refused(_that);case RoutedFeed_Uncertain():
-return uncertain(_that);case RoutedFeed_Settled():
-return settled(_that);case RoutedFeed_NotSent():
+return uncertain(_that);case RoutedFeed_NotSent():
 return notSent(_that);case RoutedFeed_Held():
 return held(_that);}
 }
@@ -971,14 +449,13 @@ return held(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( RoutedFeed_Started value)?  started,TResult? Function( RoutedFeed_Refused value)?  refused,TResult? Function( RoutedFeed_Uncertain value)?  uncertain,TResult? Function( RoutedFeed_Settled value)?  settled,TResult? Function( RoutedFeed_NotSent value)?  notSent,TResult? Function( RoutedFeed_Held value)?  held,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( RoutedFeed_Started value)?  started,TResult? Function( RoutedFeed_Refused value)?  refused,TResult? Function( RoutedFeed_Uncertain value)?  uncertain,TResult? Function( RoutedFeed_NotSent value)?  notSent,TResult? Function( RoutedFeed_Held value)?  held,}){
 final _that = this;
 switch (_that) {
 case RoutedFeed_Started() when started != null:
 return started(_that);case RoutedFeed_Refused() when refused != null:
 return refused(_that);case RoutedFeed_Uncertain() when uncertain != null:
-return uncertain(_that);case RoutedFeed_Settled() when settled != null:
-return settled(_that);case RoutedFeed_NotSent() when notSent != null:
+return uncertain(_that);case RoutedFeed_NotSent() when notSent != null:
 return notSent(_that);case RoutedFeed_Held() when held != null:
 return held(_that);case _:
   return null;
@@ -997,14 +474,13 @@ return held(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String key,  RoutePath path,  int feed,  int portions,  int dueSeconds)?  started,TResult Function( String key,  RoutePath path,  FeedRefusal refusal)?  refused,TResult Function( PendingWrite pending)?  uncertain,TResult Function( PendingWrite pending,  Settlement settlement)?  settled,TResult Function( NotSentReason reason,  ServerError? error)?  notSent,TResult Function( PendingWrite pending)?  held,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String key,  int feed,  int portions,  int dueSeconds)?  started,TResult Function( String key,  FeedRefusal refusal)?  refused,TResult Function( PendingWrite pending)?  uncertain,TResult Function( NotSentReason reason)?  notSent,TResult Function( PendingWrite pending)?  held,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case RoutedFeed_Started() when started != null:
-return started(_that.key,_that.path,_that.feed,_that.portions,_that.dueSeconds);case RoutedFeed_Refused() when refused != null:
-return refused(_that.key,_that.path,_that.refusal);case RoutedFeed_Uncertain() when uncertain != null:
-return uncertain(_that.pending);case RoutedFeed_Settled() when settled != null:
-return settled(_that.pending,_that.settlement);case RoutedFeed_NotSent() when notSent != null:
-return notSent(_that.reason,_that.error);case RoutedFeed_Held() when held != null:
+return started(_that.key,_that.feed,_that.portions,_that.dueSeconds);case RoutedFeed_Refused() when refused != null:
+return refused(_that.key,_that.refusal);case RoutedFeed_Uncertain() when uncertain != null:
+return uncertain(_that.pending);case RoutedFeed_NotSent() when notSent != null:
+return notSent(_that.reason);case RoutedFeed_Held() when held != null:
 return held(_that.pending);case _:
   return orElse();
 
@@ -1023,14 +499,13 @@ return held(_that.pending);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String key,  RoutePath path,  int feed,  int portions,  int dueSeconds)  started,required TResult Function( String key,  RoutePath path,  FeedRefusal refusal)  refused,required TResult Function( PendingWrite pending)  uncertain,required TResult Function( PendingWrite pending,  Settlement settlement)  settled,required TResult Function( NotSentReason reason,  ServerError? error)  notSent,required TResult Function( PendingWrite pending)  held,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String key,  int feed,  int portions,  int dueSeconds)  started,required TResult Function( String key,  FeedRefusal refusal)  refused,required TResult Function( PendingWrite pending)  uncertain,required TResult Function( NotSentReason reason)  notSent,required TResult Function( PendingWrite pending)  held,}) {final _that = this;
 switch (_that) {
 case RoutedFeed_Started():
-return started(_that.key,_that.path,_that.feed,_that.portions,_that.dueSeconds);case RoutedFeed_Refused():
-return refused(_that.key,_that.path,_that.refusal);case RoutedFeed_Uncertain():
-return uncertain(_that.pending);case RoutedFeed_Settled():
-return settled(_that.pending,_that.settlement);case RoutedFeed_NotSent():
-return notSent(_that.reason,_that.error);case RoutedFeed_Held():
+return started(_that.key,_that.feed,_that.portions,_that.dueSeconds);case RoutedFeed_Refused():
+return refused(_that.key,_that.refusal);case RoutedFeed_Uncertain():
+return uncertain(_that.pending);case RoutedFeed_NotSent():
+return notSent(_that.reason);case RoutedFeed_Held():
 return held(_that.pending);}
 }
 /// A variant of `when` that fallback to returning `null`
@@ -1045,14 +520,13 @@ return held(_that.pending);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String key,  RoutePath path,  int feed,  int portions,  int dueSeconds)?  started,TResult? Function( String key,  RoutePath path,  FeedRefusal refusal)?  refused,TResult? Function( PendingWrite pending)?  uncertain,TResult? Function( PendingWrite pending,  Settlement settlement)?  settled,TResult? Function( NotSentReason reason,  ServerError? error)?  notSent,TResult? Function( PendingWrite pending)?  held,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String key,  int feed,  int portions,  int dueSeconds)?  started,TResult? Function( String key,  FeedRefusal refusal)?  refused,TResult? Function( PendingWrite pending)?  uncertain,TResult? Function( NotSentReason reason)?  notSent,TResult? Function( PendingWrite pending)?  held,}) {final _that = this;
 switch (_that) {
 case RoutedFeed_Started() when started != null:
-return started(_that.key,_that.path,_that.feed,_that.portions,_that.dueSeconds);case RoutedFeed_Refused() when refused != null:
-return refused(_that.key,_that.path,_that.refusal);case RoutedFeed_Uncertain() when uncertain != null:
-return uncertain(_that.pending);case RoutedFeed_Settled() when settled != null:
-return settled(_that.pending,_that.settlement);case RoutedFeed_NotSent() when notSent != null:
-return notSent(_that.reason,_that.error);case RoutedFeed_Held() when held != null:
+return started(_that.key,_that.feed,_that.portions,_that.dueSeconds);case RoutedFeed_Refused() when refused != null:
+return refused(_that.key,_that.refusal);case RoutedFeed_Uncertain() when uncertain != null:
+return uncertain(_that.pending);case RoutedFeed_NotSent() when notSent != null:
+return notSent(_that.reason);case RoutedFeed_Held() when held != null:
 return held(_that.pending);case _:
   return null;
 
@@ -1065,11 +539,10 @@ return held(_that.pending);case _:
 
 
 class RoutedFeed_Started extends RoutedFeed {
-  const RoutedFeed_Started({required this.key, required this.path, required this.feed, required this.portions, required this.dueSeconds}): super._();
+  const RoutedFeed_Started({required this.key, required this.feed, required this.portions, required this.dueSeconds}): super._();
   
 
  final  String key;
- final  RoutePath path;
  final  int feed;
  final  int portions;
 /// Past this a feeder that stayed on has ended it itself.
@@ -1085,18 +558,18 @@ $RoutedFeed_StartedCopyWith<RoutedFeed_Started> get copyWith => _$RoutedFeed_Sta
 
 @override
 bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is RoutedFeed_Started&&(identical(other.key, key) || other.key == key)&&(identical(other.path, path) || other.path == path)&&(identical(other.feed, feed) || other.feed == feed)&&(identical(other.portions, portions) || other.portions == portions)&&(identical(other.dueSeconds, dueSeconds) || other.dueSeconds == dueSeconds));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is RoutedFeed_Started&&(identical(other.key, key) || other.key == key)&&(identical(other.feed, feed) || other.feed == feed)&&(identical(other.portions, portions) || other.portions == portions)&&(identical(other.dueSeconds, dueSeconds) || other.dueSeconds == dueSeconds));
 }
 
 
 @override
 int get hashCode {
-    return Object.hash(runtimeType,key,path,feed,portions,dueSeconds);
+    return Object.hash(runtimeType,key,feed,portions,dueSeconds);
 }
 
 @override
 String toString() {
-    return 'RoutedFeed.started(key: $key, path: $path, feed: $feed, portions: $portions, dueSeconds: $dueSeconds)';
+    return 'RoutedFeed.started(key: $key, feed: $feed, portions: $portions, dueSeconds: $dueSeconds)';
 }
 
 
@@ -1107,7 +580,7 @@ abstract mixin class $RoutedFeed_StartedCopyWith<$Res> implements $RoutedFeedCop
   factory $RoutedFeed_StartedCopyWith(RoutedFeed_Started value, $Res Function(RoutedFeed_Started) _then) = _$RoutedFeed_StartedCopyWithImpl;
 @useResult
 $Res call({
- String key, RoutePath path, int feed, int portions, int dueSeconds
+ String key, int feed, int portions, int dueSeconds
 });
 
 
@@ -1124,11 +597,10 @@ class _$RoutedFeed_StartedCopyWithImpl<$Res>
 
 /// Create a copy of RoutedFeed
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? key = null,Object? path = null,Object? feed = null,Object? portions = null,Object? dueSeconds = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? key = null,Object? feed = null,Object? portions = null,Object? dueSeconds = null,}) {
   return _then(RoutedFeed_Started(
 key: null == key ? _self.key : key // ignore: cast_nullable_to_non_nullable
-as String,path: null == path ? _self.path : path // ignore: cast_nullable_to_non_nullable
-as RoutePath,feed: null == feed ? _self.feed : feed // ignore: cast_nullable_to_non_nullable
+as String,feed: null == feed ? _self.feed : feed // ignore: cast_nullable_to_non_nullable
 as int,portions: null == portions ? _self.portions : portions // ignore: cast_nullable_to_non_nullable
 as int,dueSeconds: null == dueSeconds ? _self.dueSeconds : dueSeconds // ignore: cast_nullable_to_non_nullable
 as int,
@@ -1142,11 +614,10 @@ as int,
 
 
 class RoutedFeed_Refused extends RoutedFeed {
-  const RoutedFeed_Refused({required this.key, required this.path, required this.refusal}): super._();
+  const RoutedFeed_Refused({required this.key, required this.refusal}): super._();
   
 
  final  String key;
- final  RoutePath path;
  final  FeedRefusal refusal;
 
 /// Create a copy of RoutedFeed
@@ -1159,18 +630,18 @@ $RoutedFeed_RefusedCopyWith<RoutedFeed_Refused> get copyWith => _$RoutedFeed_Ref
 
 @override
 bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is RoutedFeed_Refused&&(identical(other.key, key) || other.key == key)&&(identical(other.path, path) || other.path == path)&&(identical(other.refusal, refusal) || other.refusal == refusal));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is RoutedFeed_Refused&&(identical(other.key, key) || other.key == key)&&(identical(other.refusal, refusal) || other.refusal == refusal));
 }
 
 
 @override
 int get hashCode {
-    return Object.hash(runtimeType,key,path,refusal);
+    return Object.hash(runtimeType,key,refusal);
 }
 
 @override
 String toString() {
-    return 'RoutedFeed.refused(key: $key, path: $path, refusal: $refusal)';
+    return 'RoutedFeed.refused(key: $key, refusal: $refusal)';
 }
 
 
@@ -1181,7 +652,7 @@ abstract mixin class $RoutedFeed_RefusedCopyWith<$Res> implements $RoutedFeedCop
   factory $RoutedFeed_RefusedCopyWith(RoutedFeed_Refused value, $Res Function(RoutedFeed_Refused) _then) = _$RoutedFeed_RefusedCopyWithImpl;
 @useResult
 $Res call({
- String key, RoutePath path, FeedRefusal refusal
+ String key, FeedRefusal refusal
 });
 
 
@@ -1198,11 +669,10 @@ class _$RoutedFeed_RefusedCopyWithImpl<$Res>
 
 /// Create a copy of RoutedFeed
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? key = null,Object? path = null,Object? refusal = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? key = null,Object? refusal = null,}) {
   return _then(RoutedFeed_Refused(
 key: null == key ? _self.key : key // ignore: cast_nullable_to_non_nullable
-as String,path: null == path ? _self.path : path // ignore: cast_nullable_to_non_nullable
-as RoutePath,refusal: null == refusal ? _self.refusal : refusal // ignore: cast_nullable_to_non_nullable
+as String,refusal: null == refusal ? _self.refusal : refusal // ignore: cast_nullable_to_non_nullable
 as FeedRefusal,
   ));
 }
@@ -1281,91 +751,11 @@ as PendingWrite,
 /// @nodoc
 
 
-class RoutedFeed_Settled extends RoutedFeed {
-  const RoutedFeed_Settled({required this.pending, required this.settlement}): super._();
-  
-
- final  PendingWrite pending;
- final  Settlement settlement;
-
-/// Create a copy of RoutedFeed
-/// with the given fields replaced by the non-null parameter values.
-@JsonKey(includeFromJson: false, includeToJson: false)
-@pragma('vm:prefer-inline')
-$RoutedFeed_SettledCopyWith<RoutedFeed_Settled> get copyWith => _$RoutedFeed_SettledCopyWithImpl<RoutedFeed_Settled>(this, _$identity);
-
-
-
-@override
-bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is RoutedFeed_Settled&&(identical(other.pending, pending) || other.pending == pending)&&(identical(other.settlement, settlement) || other.settlement == settlement));
-}
-
-
-@override
-int get hashCode {
-    return Object.hash(runtimeType,pending,settlement);
-}
-
-@override
-String toString() {
-    return 'RoutedFeed.settled(pending: $pending, settlement: $settlement)';
-}
-
-
-}
-
-/// @nodoc
-abstract mixin class $RoutedFeed_SettledCopyWith<$Res> implements $RoutedFeedCopyWith<$Res> {
-  factory $RoutedFeed_SettledCopyWith(RoutedFeed_Settled value, $Res Function(RoutedFeed_Settled) _then) = _$RoutedFeed_SettledCopyWithImpl;
-@useResult
-$Res call({
- PendingWrite pending, Settlement settlement
-});
-
-
-$SettlementCopyWith<$Res> get settlement;
-
-}
-/// @nodoc
-class _$RoutedFeed_SettledCopyWithImpl<$Res>
-    implements $RoutedFeed_SettledCopyWith<$Res> {
-  _$RoutedFeed_SettledCopyWithImpl(this._self, this._then);
-
-  final RoutedFeed_Settled _self;
-  final $Res Function(RoutedFeed_Settled) _then;
-
-/// Create a copy of RoutedFeed
-/// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? pending = null,Object? settlement = null,}) {
-  return _then(RoutedFeed_Settled(
-pending: null == pending ? _self.pending : pending // ignore: cast_nullable_to_non_nullable
-as PendingWrite,settlement: null == settlement ? _self.settlement : settlement // ignore: cast_nullable_to_non_nullable
-as Settlement,
-  ));
-}
-
-/// Create a copy of RoutedFeed
-/// with the given fields replaced by the non-null parameter values.
-@override
-@pragma('vm:prefer-inline')
-$SettlementCopyWith<$Res> get settlement {
-  
-  return $SettlementCopyWith<$Res>(_self.settlement, (value) {
-    return _then(_self.copyWith(settlement: value));
-  });
-}
-}
-
-/// @nodoc
-
-
 class RoutedFeed_NotSent extends RoutedFeed {
-  const RoutedFeed_NotSent({required this.reason, this.error}): super._();
+  const RoutedFeed_NotSent({required this.reason}): super._();
   
 
  final  NotSentReason reason;
- final  ServerError? error;
 
 /// Create a copy of RoutedFeed
 /// with the given fields replaced by the non-null parameter values.
@@ -1377,18 +767,18 @@ $RoutedFeed_NotSentCopyWith<RoutedFeed_NotSent> get copyWith => _$RoutedFeed_Not
 
 @override
 bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is RoutedFeed_NotSent&&(identical(other.reason, reason) || other.reason == reason)&&(identical(other.error, error) || other.error == error));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is RoutedFeed_NotSent&&(identical(other.reason, reason) || other.reason == reason));
 }
 
 
 @override
 int get hashCode {
-    return Object.hash(runtimeType,reason,error);
+    return Object.hash(runtimeType,reason);
 }
 
 @override
 String toString() {
-    return 'RoutedFeed.notSent(reason: $reason, error: $error)';
+    return 'RoutedFeed.notSent(reason: $reason)';
 }
 
 
@@ -1399,7 +789,7 @@ abstract mixin class $RoutedFeed_NotSentCopyWith<$Res> implements $RoutedFeedCop
   factory $RoutedFeed_NotSentCopyWith(RoutedFeed_NotSent value, $Res Function(RoutedFeed_NotSent) _then) = _$RoutedFeed_NotSentCopyWithImpl;
 @useResult
 $Res call({
- NotSentReason reason, ServerError? error
+ NotSentReason reason
 });
 
 
@@ -1416,11 +806,10 @@ class _$RoutedFeed_NotSentCopyWithImpl<$Res>
 
 /// Create a copy of RoutedFeed
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? reason = null,Object? error = freezed,}) {
+@pragma('vm:prefer-inline') $Res call({Object? reason = null,}) {
   return _then(RoutedFeed_NotSent(
 reason: null == reason ? _self.reason : reason // ignore: cast_nullable_to_non_nullable
-as NotSentReason,error: freezed == error ? _self.error : error // ignore: cast_nullable_to_non_nullable
-as ServerError?,
+as NotSentReason,
   ));
 }
 
@@ -1496,476 +885,6 @@ as PendingWrite,
 }
 
 /// @nodoc
-mixin _$RouterUpdate {
-
-
-
-
-
-@override
-bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is RouterUpdate);
-}
-
-
-@override
-int get hashCode => runtimeType.hashCode;
-
-@override
-String toString() {
-    return 'RouterUpdate()';
-}
-
-
-}
-
-/// @nodoc
-class $RouterUpdateCopyWith<$Res>  {
-$RouterUpdateCopyWith(RouterUpdate _, $Res Function(RouterUpdate) __);
-}
-
-
-/// Adds pattern-matching-related methods to [RouterUpdate].
-extension RouterUpdatePatterns on RouterUpdate {
-/// A variant of `map` that fallback to returning `orElse`.
-///
-/// It is equivalent to doing:
-/// ```dart
-/// switch (sealedClass) {
-///   case final Subclass value:
-///     return ...;
-///   case _:
-///     return orElse();
-/// }
-/// ```
-
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( RouterUpdate_Path value)?  path,TResult Function( RouterUpdate_Settled value)?  settled,TResult Function( RouterUpdate_Account value)?  account,TResult Function( RouterUpdate_FeedEnded value)?  feedEnded,required TResult orElse(),}){
-final _that = this;
-switch (_that) {
-case RouterUpdate_Path() when path != null:
-return path(_that);case RouterUpdate_Settled() when settled != null:
-return settled(_that);case RouterUpdate_Account() when account != null:
-return account(_that);case RouterUpdate_FeedEnded() when feedEnded != null:
-return feedEnded(_that);case _:
-  return orElse();
-
-}
-}
-/// A `switch`-like method, using callbacks.
-///
-/// Callbacks receives the raw object, upcasted.
-/// It is equivalent to doing:
-/// ```dart
-/// switch (sealedClass) {
-///   case final Subclass value:
-///     return ...;
-///   case final Subclass2 value:
-///     return ...;
-/// }
-/// ```
-
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( RouterUpdate_Path value)  path,required TResult Function( RouterUpdate_Settled value)  settled,required TResult Function( RouterUpdate_Account value)  account,required TResult Function( RouterUpdate_FeedEnded value)  feedEnded,}){
-final _that = this;
-switch (_that) {
-case RouterUpdate_Path():
-return path(_that);case RouterUpdate_Settled():
-return settled(_that);case RouterUpdate_Account():
-return account(_that);case RouterUpdate_FeedEnded():
-return feedEnded(_that);}
-}
-/// A variant of `map` that fallback to returning `null`.
-///
-/// It is equivalent to doing:
-/// ```dart
-/// switch (sealedClass) {
-///   case final Subclass value:
-///     return ...;
-///   case _:
-///     return null;
-/// }
-/// ```
-
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( RouterUpdate_Path value)?  path,TResult? Function( RouterUpdate_Settled value)?  settled,TResult? Function( RouterUpdate_Account value)?  account,TResult? Function( RouterUpdate_FeedEnded value)?  feedEnded,}){
-final _that = this;
-switch (_that) {
-case RouterUpdate_Path() when path != null:
-return path(_that);case RouterUpdate_Settled() when settled != null:
-return settled(_that);case RouterUpdate_Account() when account != null:
-return account(_that);case RouterUpdate_FeedEnded() when feedEnded != null:
-return feedEnded(_that);case _:
-  return null;
-
-}
-}
-/// A variant of `when` that fallback to an `orElse` callback.
-///
-/// It is equivalent to doing:
-/// ```dart
-/// switch (sealedClass) {
-///   case Subclass(:final field):
-///     return ...;
-///   case _:
-///     return orElse();
-/// }
-/// ```
-
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String feeder,  RoutePath? path)?  path,TResult Function( PendingWrite pending,  Settlement settlement)?  settled,TResult Function( ServerAccount account)?  account,TResult Function( String key,  String feeder,  Settlement settlement)?  feedEnded,required TResult orElse(),}) {final _that = this;
-switch (_that) {
-case RouterUpdate_Path() when path != null:
-return path(_that.feeder,_that.path);case RouterUpdate_Settled() when settled != null:
-return settled(_that.pending,_that.settlement);case RouterUpdate_Account() when account != null:
-return account(_that.account);case RouterUpdate_FeedEnded() when feedEnded != null:
-return feedEnded(_that.key,_that.feeder,_that.settlement);case _:
-  return orElse();
-
-}
-}
-/// A `switch`-like method, using callbacks.
-///
-/// As opposed to `map`, this offers destructuring.
-/// It is equivalent to doing:
-/// ```dart
-/// switch (sealedClass) {
-///   case Subclass(:final field):
-///     return ...;
-///   case Subclass2(:final field2):
-///     return ...;
-/// }
-/// ```
-
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String feeder,  RoutePath? path)  path,required TResult Function( PendingWrite pending,  Settlement settlement)  settled,required TResult Function( ServerAccount account)  account,required TResult Function( String key,  String feeder,  Settlement settlement)  feedEnded,}) {final _that = this;
-switch (_that) {
-case RouterUpdate_Path():
-return path(_that.feeder,_that.path);case RouterUpdate_Settled():
-return settled(_that.pending,_that.settlement);case RouterUpdate_Account():
-return account(_that.account);case RouterUpdate_FeedEnded():
-return feedEnded(_that.key,_that.feeder,_that.settlement);}
-}
-/// A variant of `when` that fallback to returning `null`
-///
-/// It is equivalent to doing:
-/// ```dart
-/// switch (sealedClass) {
-///   case Subclass(:final field):
-///     return ...;
-///   case _:
-///     return null;
-/// }
-/// ```
-
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String feeder,  RoutePath? path)?  path,TResult? Function( PendingWrite pending,  Settlement settlement)?  settled,TResult? Function( ServerAccount account)?  account,TResult? Function( String key,  String feeder,  Settlement settlement)?  feedEnded,}) {final _that = this;
-switch (_that) {
-case RouterUpdate_Path() when path != null:
-return path(_that.feeder,_that.path);case RouterUpdate_Settled() when settled != null:
-return settled(_that.pending,_that.settlement);case RouterUpdate_Account() when account != null:
-return account(_that.account);case RouterUpdate_FeedEnded() when feedEnded != null:
-return feedEnded(_that.key,_that.feeder,_that.settlement);case _:
-  return null;
-
-}
-}
-
-}
-
-/// @nodoc
-
-
-class RouterUpdate_Path extends RouterUpdate {
-  const RouterUpdate_Path({required this.feeder, this.path}): super._();
-  
-
- final  String feeder;
- final  RoutePath? path;
-
-/// Create a copy of RouterUpdate
-/// with the given fields replaced by the non-null parameter values.
-@JsonKey(includeFromJson: false, includeToJson: false)
-@pragma('vm:prefer-inline')
-$RouterUpdate_PathCopyWith<RouterUpdate_Path> get copyWith => _$RouterUpdate_PathCopyWithImpl<RouterUpdate_Path>(this, _$identity);
-
-
-
-@override
-bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is RouterUpdate_Path&&(identical(other.feeder, feeder) || other.feeder == feeder)&&(identical(other.path, path) || other.path == path));
-}
-
-
-@override
-int get hashCode {
-    return Object.hash(runtimeType,feeder,path);
-}
-
-@override
-String toString() {
-    return 'RouterUpdate.path(feeder: $feeder, path: $path)';
-}
-
-
-}
-
-/// @nodoc
-abstract mixin class $RouterUpdate_PathCopyWith<$Res> implements $RouterUpdateCopyWith<$Res> {
-  factory $RouterUpdate_PathCopyWith(RouterUpdate_Path value, $Res Function(RouterUpdate_Path) _then) = _$RouterUpdate_PathCopyWithImpl;
-@useResult
-$Res call({
- String feeder, RoutePath? path
-});
-
-
-
-
-}
-/// @nodoc
-class _$RouterUpdate_PathCopyWithImpl<$Res>
-    implements $RouterUpdate_PathCopyWith<$Res> {
-  _$RouterUpdate_PathCopyWithImpl(this._self, this._then);
-
-  final RouterUpdate_Path _self;
-  final $Res Function(RouterUpdate_Path) _then;
-
-/// Create a copy of RouterUpdate
-/// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? feeder = null,Object? path = freezed,}) {
-  return _then(RouterUpdate_Path(
-feeder: null == feeder ? _self.feeder : feeder // ignore: cast_nullable_to_non_nullable
-as String,path: freezed == path ? _self.path : path // ignore: cast_nullable_to_non_nullable
-as RoutePath?,
-  ));
-}
-
-
-}
-
-/// @nodoc
-
-
-class RouterUpdate_Settled extends RouterUpdate {
-  const RouterUpdate_Settled({required this.pending, required this.settlement}): super._();
-  
-
- final  PendingWrite pending;
- final  Settlement settlement;
-
-/// Create a copy of RouterUpdate
-/// with the given fields replaced by the non-null parameter values.
-@JsonKey(includeFromJson: false, includeToJson: false)
-@pragma('vm:prefer-inline')
-$RouterUpdate_SettledCopyWith<RouterUpdate_Settled> get copyWith => _$RouterUpdate_SettledCopyWithImpl<RouterUpdate_Settled>(this, _$identity);
-
-
-
-@override
-bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is RouterUpdate_Settled&&(identical(other.pending, pending) || other.pending == pending)&&(identical(other.settlement, settlement) || other.settlement == settlement));
-}
-
-
-@override
-int get hashCode {
-    return Object.hash(runtimeType,pending,settlement);
-}
-
-@override
-String toString() {
-    return 'RouterUpdate.settled(pending: $pending, settlement: $settlement)';
-}
-
-
-}
-
-/// @nodoc
-abstract mixin class $RouterUpdate_SettledCopyWith<$Res> implements $RouterUpdateCopyWith<$Res> {
-  factory $RouterUpdate_SettledCopyWith(RouterUpdate_Settled value, $Res Function(RouterUpdate_Settled) _then) = _$RouterUpdate_SettledCopyWithImpl;
-@useResult
-$Res call({
- PendingWrite pending, Settlement settlement
-});
-
-
-$SettlementCopyWith<$Res> get settlement;
-
-}
-/// @nodoc
-class _$RouterUpdate_SettledCopyWithImpl<$Res>
-    implements $RouterUpdate_SettledCopyWith<$Res> {
-  _$RouterUpdate_SettledCopyWithImpl(this._self, this._then);
-
-  final RouterUpdate_Settled _self;
-  final $Res Function(RouterUpdate_Settled) _then;
-
-/// Create a copy of RouterUpdate
-/// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? pending = null,Object? settlement = null,}) {
-  return _then(RouterUpdate_Settled(
-pending: null == pending ? _self.pending : pending // ignore: cast_nullable_to_non_nullable
-as PendingWrite,settlement: null == settlement ? _self.settlement : settlement // ignore: cast_nullable_to_non_nullable
-as Settlement,
-  ));
-}
-
-/// Create a copy of RouterUpdate
-/// with the given fields replaced by the non-null parameter values.
-@override
-@pragma('vm:prefer-inline')
-$SettlementCopyWith<$Res> get settlement {
-  
-  return $SettlementCopyWith<$Res>(_self.settlement, (value) {
-    return _then(_self.copyWith(settlement: value));
-  });
-}
-}
-
-/// @nodoc
-
-
-class RouterUpdate_Account extends RouterUpdate {
-  const RouterUpdate_Account({required this.account}): super._();
-  
-
- final  ServerAccount account;
-
-/// Create a copy of RouterUpdate
-/// with the given fields replaced by the non-null parameter values.
-@JsonKey(includeFromJson: false, includeToJson: false)
-@pragma('vm:prefer-inline')
-$RouterUpdate_AccountCopyWith<RouterUpdate_Account> get copyWith => _$RouterUpdate_AccountCopyWithImpl<RouterUpdate_Account>(this, _$identity);
-
-
-
-@override
-bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is RouterUpdate_Account&&(identical(other.account, account) || other.account == account));
-}
-
-
-@override
-int get hashCode {
-    return Object.hash(runtimeType,account);
-}
-
-@override
-String toString() {
-    return 'RouterUpdate.account(account: $account)';
-}
-
-
-}
-
-/// @nodoc
-abstract mixin class $RouterUpdate_AccountCopyWith<$Res> implements $RouterUpdateCopyWith<$Res> {
-  factory $RouterUpdate_AccountCopyWith(RouterUpdate_Account value, $Res Function(RouterUpdate_Account) _then) = _$RouterUpdate_AccountCopyWithImpl;
-@useResult
-$Res call({
- ServerAccount account
-});
-
-
-
-
-}
-/// @nodoc
-class _$RouterUpdate_AccountCopyWithImpl<$Res>
-    implements $RouterUpdate_AccountCopyWith<$Res> {
-  _$RouterUpdate_AccountCopyWithImpl(this._self, this._then);
-
-  final RouterUpdate_Account _self;
-  final $Res Function(RouterUpdate_Account) _then;
-
-/// Create a copy of RouterUpdate
-/// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? account = null,}) {
-  return _then(RouterUpdate_Account(
-account: null == account ? _self.account : account // ignore: cast_nullable_to_non_nullable
-as ServerAccount,
-  ));
-}
-
-
-}
-
-/// @nodoc
-
-
-class RouterUpdate_FeedEnded extends RouterUpdate {
-  const RouterUpdate_FeedEnded({required this.key, required this.feeder, required this.settlement}): super._();
-  
-
- final  String key;
- final  String feeder;
- final  Settlement settlement;
-
-/// Create a copy of RouterUpdate
-/// with the given fields replaced by the non-null parameter values.
-@JsonKey(includeFromJson: false, includeToJson: false)
-@pragma('vm:prefer-inline')
-$RouterUpdate_FeedEndedCopyWith<RouterUpdate_FeedEnded> get copyWith => _$RouterUpdate_FeedEndedCopyWithImpl<RouterUpdate_FeedEnded>(this, _$identity);
-
-
-
-@override
-bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is RouterUpdate_FeedEnded&&(identical(other.key, key) || other.key == key)&&(identical(other.feeder, feeder) || other.feeder == feeder)&&(identical(other.settlement, settlement) || other.settlement == settlement));
-}
-
-
-@override
-int get hashCode {
-    return Object.hash(runtimeType,key,feeder,settlement);
-}
-
-@override
-String toString() {
-    return 'RouterUpdate.feedEnded(key: $key, feeder: $feeder, settlement: $settlement)';
-}
-
-
-}
-
-/// @nodoc
-abstract mixin class $RouterUpdate_FeedEndedCopyWith<$Res> implements $RouterUpdateCopyWith<$Res> {
-  factory $RouterUpdate_FeedEndedCopyWith(RouterUpdate_FeedEnded value, $Res Function(RouterUpdate_FeedEnded) _then) = _$RouterUpdate_FeedEndedCopyWithImpl;
-@useResult
-$Res call({
- String key, String feeder, Settlement settlement
-});
-
-
-$SettlementCopyWith<$Res> get settlement;
-
-}
-/// @nodoc
-class _$RouterUpdate_FeedEndedCopyWithImpl<$Res>
-    implements $RouterUpdate_FeedEndedCopyWith<$Res> {
-  _$RouterUpdate_FeedEndedCopyWithImpl(this._self, this._then);
-
-  final RouterUpdate_FeedEnded _self;
-  final $Res Function(RouterUpdate_FeedEnded) _then;
-
-/// Create a copy of RouterUpdate
-/// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? key = null,Object? feeder = null,Object? settlement = null,}) {
-  return _then(RouterUpdate_FeedEnded(
-key: null == key ? _self.key : key // ignore: cast_nullable_to_non_nullable
-as String,feeder: null == feeder ? _self.feeder : feeder // ignore: cast_nullable_to_non_nullable
-as String,settlement: null == settlement ? _self.settlement : settlement // ignore: cast_nullable_to_non_nullable
-as Settlement,
-  ));
-}
-
-/// Create a copy of RouterUpdate
-/// with the given fields replaced by the non-null parameter values.
-@override
-@pragma('vm:prefer-inline')
-$SettlementCopyWith<$Res> get settlement {
-  
-  return $SettlementCopyWith<$Res>(_self.settlement, (value) {
-    return _then(_self.copyWith(settlement: value));
-  });
-}
-}
-
-/// @nodoc
 mixin _$Settlement {
 
 
@@ -2009,17 +928,14 @@ extension SettlementPatterns on Settlement {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( Settlement_Done value)?  done,TResult Function( Settlement_Refused value)?  refused,TResult Function( Settlement_Started value)?  started,TResult Function( Settlement_Fed value)?  fed,TResult Function( Settlement_Unrecorded value)?  unrecorded,TResult Function( Settlement_NotSent value)?  notSent,TResult Function( Settlement_Superseded value)?  superseded,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( Settlement_Refused value)?  refused,TResult Function( Settlement_Started value)?  started,TResult Function( Settlement_Fed value)?  fed,TResult Function( Settlement_NotSent value)?  notSent,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
-case Settlement_Done() when done != null:
-return done(_that);case Settlement_Refused() when refused != null:
+case Settlement_Refused() when refused != null:
 return refused(_that);case Settlement_Started() when started != null:
 return started(_that);case Settlement_Fed() when fed != null:
-return fed(_that);case Settlement_Unrecorded() when unrecorded != null:
-return unrecorded(_that);case Settlement_NotSent() when notSent != null:
-return notSent(_that);case Settlement_Superseded() when superseded != null:
-return superseded(_that);case _:
+return fed(_that);case Settlement_NotSent() when notSent != null:
+return notSent(_that);case _:
   return orElse();
 
 }
@@ -2037,17 +953,14 @@ return superseded(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( Settlement_Done value)  done,required TResult Function( Settlement_Refused value)  refused,required TResult Function( Settlement_Started value)  started,required TResult Function( Settlement_Fed value)  fed,required TResult Function( Settlement_Unrecorded value)  unrecorded,required TResult Function( Settlement_NotSent value)  notSent,required TResult Function( Settlement_Superseded value)  superseded,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( Settlement_Refused value)  refused,required TResult Function( Settlement_Started value)  started,required TResult Function( Settlement_Fed value)  fed,required TResult Function( Settlement_NotSent value)  notSent,}){
 final _that = this;
 switch (_that) {
-case Settlement_Done():
-return done(_that);case Settlement_Refused():
+case Settlement_Refused():
 return refused(_that);case Settlement_Started():
 return started(_that);case Settlement_Fed():
-return fed(_that);case Settlement_Unrecorded():
-return unrecorded(_that);case Settlement_NotSent():
-return notSent(_that);case Settlement_Superseded():
-return superseded(_that);}
+return fed(_that);case Settlement_NotSent():
+return notSent(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -2061,17 +974,14 @@ return superseded(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( Settlement_Done value)?  done,TResult? Function( Settlement_Refused value)?  refused,TResult? Function( Settlement_Started value)?  started,TResult? Function( Settlement_Fed value)?  fed,TResult? Function( Settlement_Unrecorded value)?  unrecorded,TResult? Function( Settlement_NotSent value)?  notSent,TResult? Function( Settlement_Superseded value)?  superseded,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( Settlement_Refused value)?  refused,TResult? Function( Settlement_Started value)?  started,TResult? Function( Settlement_Fed value)?  fed,TResult? Function( Settlement_NotSent value)?  notSent,}){
 final _that = this;
 switch (_that) {
-case Settlement_Done() when done != null:
-return done(_that);case Settlement_Refused() when refused != null:
+case Settlement_Refused() when refused != null:
 return refused(_that);case Settlement_Started() when started != null:
 return started(_that);case Settlement_Fed() when fed != null:
-return fed(_that);case Settlement_Unrecorded() when unrecorded != null:
-return unrecorded(_that);case Settlement_NotSent() when notSent != null:
-return notSent(_that);case Settlement_Superseded() when superseded != null:
-return superseded(_that);case _:
+return fed(_that);case Settlement_NotSent() when notSent != null:
+return notSent(_that);case _:
   return null;
 
 }
@@ -2088,16 +998,13 @@ return superseded(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  done,TResult Function( ServerRefusal refusal)?  refused,TResult Function( int feed)?  started,TResult Function( int feed,  int requested,  int completed,  FeedOutcome outcome,  FeedReason reason)?  fed,TResult Function()?  unrecorded,TResult Function()?  notSent,TResult Function()?  superseded,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( FeedRefusal refusal)?  refused,TResult Function( int feed)?  started,TResult Function( int feed,  int requested,  int completed,  FeedOutcome outcome,  FeedReason reason)?  fed,TResult Function()?  notSent,required TResult orElse(),}) {final _that = this;
 switch (_that) {
-case Settlement_Done() when done != null:
-return done();case Settlement_Refused() when refused != null:
+case Settlement_Refused() when refused != null:
 return refused(_that.refusal);case Settlement_Started() when started != null:
 return started(_that.feed);case Settlement_Fed() when fed != null:
-return fed(_that.feed,_that.requested,_that.completed,_that.outcome,_that.reason);case Settlement_Unrecorded() when unrecorded != null:
-return unrecorded();case Settlement_NotSent() when notSent != null:
-return notSent();case Settlement_Superseded() when superseded != null:
-return superseded();case _:
+return fed(_that.feed,_that.requested,_that.completed,_that.outcome,_that.reason);case Settlement_NotSent() when notSent != null:
+return notSent();case _:
   return orElse();
 
 }
@@ -2115,16 +1022,13 @@ return superseded();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  done,required TResult Function( ServerRefusal refusal)  refused,required TResult Function( int feed)  started,required TResult Function( int feed,  int requested,  int completed,  FeedOutcome outcome,  FeedReason reason)  fed,required TResult Function()  unrecorded,required TResult Function()  notSent,required TResult Function()  superseded,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( FeedRefusal refusal)  refused,required TResult Function( int feed)  started,required TResult Function( int feed,  int requested,  int completed,  FeedOutcome outcome,  FeedReason reason)  fed,required TResult Function()  notSent,}) {final _that = this;
 switch (_that) {
-case Settlement_Done():
-return done();case Settlement_Refused():
+case Settlement_Refused():
 return refused(_that.refusal);case Settlement_Started():
 return started(_that.feed);case Settlement_Fed():
-return fed(_that.feed,_that.requested,_that.completed,_that.outcome,_that.reason);case Settlement_Unrecorded():
-return unrecorded();case Settlement_NotSent():
-return notSent();case Settlement_Superseded():
-return superseded();}
+return fed(_that.feed,_that.requested,_that.completed,_that.outcome,_that.reason);case Settlement_NotSent():
+return notSent();}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -2138,16 +1042,13 @@ return superseded();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  done,TResult? Function( ServerRefusal refusal)?  refused,TResult? Function( int feed)?  started,TResult? Function( int feed,  int requested,  int completed,  FeedOutcome outcome,  FeedReason reason)?  fed,TResult? Function()?  unrecorded,TResult? Function()?  notSent,TResult? Function()?  superseded,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( FeedRefusal refusal)?  refused,TResult? Function( int feed)?  started,TResult? Function( int feed,  int requested,  int completed,  FeedOutcome outcome,  FeedReason reason)?  fed,TResult? Function()?  notSent,}) {final _that = this;
 switch (_that) {
-case Settlement_Done() when done != null:
-return done();case Settlement_Refused() when refused != null:
+case Settlement_Refused() when refused != null:
 return refused(_that.refusal);case Settlement_Started() when started != null:
 return started(_that.feed);case Settlement_Fed() when fed != null:
-return fed(_that.feed,_that.requested,_that.completed,_that.outcome,_that.reason);case Settlement_Unrecorded() when unrecorded != null:
-return unrecorded();case Settlement_NotSent() when notSent != null:
-return notSent();case Settlement_Superseded() when superseded != null:
-return superseded();case _:
+return fed(_that.feed,_that.requested,_that.completed,_that.outcome,_that.reason);case Settlement_NotSent() when notSent != null:
+return notSent();case _:
   return null;
 
 }
@@ -2158,43 +1059,11 @@ return superseded();case _:
 /// @nodoc
 
 
-class Settlement_Done extends Settlement {
-  const Settlement_Done(): super._();
-  
-
-
-
-
-
-
-@override
-bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is Settlement_Done);
-}
-
-
-@override
-int get hashCode => runtimeType.hashCode;
-
-@override
-String toString() {
-    return 'Settlement.done()';
-}
-
-
-}
-
-
-
-
-/// @nodoc
-
-
 class Settlement_Refused extends Settlement {
   const Settlement_Refused({required this.refusal}): super._();
   
 
- final  ServerRefusal refusal;
+ final  FeedRefusal refusal;
 
 /// Create a copy of Settlement
 /// with the given fields replaced by the non-null parameter values.
@@ -2228,7 +1097,7 @@ abstract mixin class $Settlement_RefusedCopyWith<$Res> implements $SettlementCop
   factory $Settlement_RefusedCopyWith(Settlement_Refused value, $Res Function(Settlement_Refused) _then) = _$Settlement_RefusedCopyWithImpl;
 @useResult
 $Res call({
- ServerRefusal refusal
+ FeedRefusal refusal
 });
 
 
@@ -2248,7 +1117,7 @@ class _$Settlement_RefusedCopyWithImpl<$Res>
 @pragma('vm:prefer-inline') $Res call({Object? refusal = null,}) {
   return _then(Settlement_Refused(
 refusal: null == refusal ? _self.refusal : refusal // ignore: cast_nullable_to_non_nullable
-as ServerRefusal,
+as FeedRefusal,
   ));
 }
 
@@ -2402,38 +1271,6 @@ as FeedReason,
 /// @nodoc
 
 
-class Settlement_Unrecorded extends Settlement {
-  const Settlement_Unrecorded(): super._();
-  
-
-
-
-
-
-
-@override
-bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is Settlement_Unrecorded);
-}
-
-
-@override
-int get hashCode => runtimeType.hashCode;
-
-@override
-String toString() {
-    return 'Settlement.unrecorded()';
-}
-
-
-}
-
-
-
-
-/// @nodoc
-
-
 class Settlement_NotSent extends Settlement {
   const Settlement_NotSent(): super._();
   
@@ -2455,38 +1292,6 @@ int get hashCode => runtimeType.hashCode;
 @override
 String toString() {
     return 'Settlement.notSent()';
-}
-
-
-}
-
-
-
-
-/// @nodoc
-
-
-class Settlement_Superseded extends Settlement {
-  const Settlement_Superseded(): super._();
-  
-
-
-
-
-
-
-@override
-bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is Settlement_Superseded);
-}
-
-
-@override
-int get hashCode => runtimeType.hashCode;
-
-@override
-String toString() {
-    return 'Settlement.superseded()';
 }
 
 

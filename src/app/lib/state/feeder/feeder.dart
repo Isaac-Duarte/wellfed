@@ -10,8 +10,6 @@ import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/install.dart' show ImageCheck;
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/router.dart';
-import 'package:wellfed/src/rust/api/server_error.dart';
-import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/feeder/feeder_state.dart';
@@ -23,7 +21,6 @@ import 'package:wellfed/state/update/update.dart';
 import 'package:wellfed/state/wifi/networks.dart';
 
 part 'feeder_route.dart';
-part 'feeder_server.dart';
 part 'feeder_session.dart';
 part 'feeder_writes.dart';
 
@@ -44,20 +41,15 @@ enum AddressChange {
 
 /// One known feeder for the Home card: keeps a session open while the app
 /// runs, reconnecting with backoff, and sends every request and feed through
-/// the path router, which picks the owner's server or that session. Every
+/// the router, which pins each write before it goes on that session. Every
 /// feed goes through the device API like any other client's; this holds no
 /// feeding logic beyond showing what the feeder said.
 class FeederController extends ChangeNotifier {
-  /// Starts serving `known` at once, and until disposed. Without `ownKey`
-  /// the phone holds no key on the feeder, so it opens no session, and the
-  /// owner's server is its only way there.
-  FeederController(this._book, this._ports, KnownFeeder known, {bool ownKey = true})
-    : _state = FeederState(known: known, connection: ownKey ? Connection.looking : Connection.offline),
-      _connection = ownKey ? Connection.looking : Connection.offline,
-      _ownKey = ownKey {
+  /// Starts serving `known` at once, and until disposed.
+  FeederController(this._book, this._ports, KnownFeeder known) : _state = FeederState(known: known) {
     _pendingFromBefore();
     _readUnconfirmed();
-    if (ownKey) unawaited(_serve());
+    unawaited(_serve());
   }
 
   static const _locateWait = Duration(seconds: 8);
@@ -76,10 +68,6 @@ class FeederController extends ChangeNotifier {
   /// a screen opened meanwhile waits for it and never starts a second one.
   late final MealCallFlow mealCall = MealCallFlow(this);
 
-  /// The phone holds a key of its own on this feeder, and keeps a session
-  /// with it; without one the owner's server is its only way there.
-  bool get ownKey => _ownKey;
-
   /// All that is known of this feeder.
   FeederState get state => _state;
   FeederState _state;
@@ -87,18 +75,8 @@ class FeederController extends ChangeNotifier {
   FeederSession? _session;
   bool _disposed = false;
 
-  /// The phone holds a key of its own on the feeder, and keeps a session.
-  final bool _ownKey;
-
-  /// How this phone's own session stands, which [state] shows unless the
-  /// owner's server reaches the feeder while it is down.
-  Connection _connection;
-
-  /// The feeder as the owner's server last told it, while the server lists it.
-  _ServerSide? _server;
-
-  /// The server's account for this phone may only look.
-  bool _viewer = false;
+  /// How this phone's own session stands.
+  Connection _connection = Connection.looking;
 
   /// Runs out when a running feed's result is overdue.
   Timer? _feedDue;
@@ -158,7 +136,7 @@ class FeederController extends ChangeNotifier {
         return client.you ? 'This $deviceName' : client.label;
       }
     }
-    return 'A $anyDevice or server';
+    return 'A $anyDevice';
   }
 
   /// Read who the feeder lists.
@@ -242,12 +220,12 @@ class FeederController extends ChangeNotifier {
   /// The address changed, so the loop dials again without its backoff.
   bool _redial = false;
 
-  /// One request to the feeder, through the path router. A write goes out
+  /// One request to the feeder, through the router. A write goes out
   /// once and is never sent again; the reply says how it ended, an unknown
   /// end included. With no router (its pins could not be opened) nothing
   /// goes at all, as a write the router cannot pin must not.
   Future<FeederReply> ask(FeederRequest request) async {
-    final PathRouter? router = _ports.router;
+    final FeederRouter? router = _ports.router;
     if (router == null) return const FeederReply.notSent(reason: NotSentReason.store);
     final RoutedReply routed;
     try {
@@ -366,7 +344,7 @@ class FeederController extends ChangeNotifier {
   }
 
   void _setState(FeederState next) {
-    _state = _reached(next);
+    _state = next.copyWith(connection: _connection);
     if (!_disposed) notifyListeners();
   }
 

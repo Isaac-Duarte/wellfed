@@ -16,7 +16,6 @@ import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/model.dart' show Skew;
 import 'package:wellfed/src/rust/api/router.dart';
 import 'package:wellfed/src/rust/api/router.dart' as router_api show feedDueSeconds, settledFeed;
-import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/src/rust/api/update.dart';
@@ -33,7 +32,7 @@ abstract interface class UpdatePush {
 }
 
 /// What a feeder's controller reaches outside Dart: the Rust session, the
-/// path router and NSD. Behind this, so its screens are tested with no Rust
+/// router and NSD. Behind this, so its screens are tested with no Rust
 /// and no network.
 abstract interface class FeederPorts {
   /// A session with the feeder `identity` (hex) at `address`, not yet run.
@@ -41,28 +40,15 @@ abstract interface class FeederPorts {
 
   /// The one router every request and feed goes through; `null` when its
   /// pins could not be opened, and then nothing is sent at all.
-  PathRouter? get router;
+  FeederRouter? get router;
 
-  /// A feed's end as `settlement` gives it, for a feed whose `Fed` event this
-  /// phone has not read; `null` for any settlement but a feed's end.
+  /// A feed's end as `settlement` gives it, for an uncertain feed the
+  /// feeder's history settled; `null` for any settlement but a feed's end.
   FeedResult? settledFeed(Settlement settlement);
 
   /// How long a feed of `portions` may take, in seconds, past which a feeder
   /// that stayed on has ended it.
   int feedDueSeconds(int portions);
-
-  /// Adopt `feeder`, paired before the server, onto the server through the
-  /// router: an owner's invite made with this phone's key, which becomes the
-  /// account's phone key.
-  Future<Adoption> adopt(KnownFeeder feeder);
-
-  /// Read the server's list again after an adoption whose answer was lost.
-  /// It sends nothing but the claim.
-  Future<Adoption> checkAdoption(String identity);
-
-  /// Claim this phone's key on `identity` as the account's, for an adoption
-  /// that left it unclaimed.
-  Future<Adoption> claimPhone(String identity);
 
   /// A session with this feeder read `build`, which settles the stock trial
   /// that installed it, if one is open.
@@ -140,7 +126,7 @@ class AppFeederPorts implements FeederPorts {
   AppFeederPorts(this._key, this.router);
 
   @override
-  final PathRouter? router;
+  final FeederRouter? router;
 
   @override
   bool get updatesFeeder => !onDesktopHost;
@@ -150,34 +136,6 @@ class AppFeederPorts implements FeederPorts {
 
   @override
   int feedDueSeconds(int portions) => router_api.feedDueSeconds(portions: portions);
-
-  @override
-  Future<Adoption> adopt(KnownFeeder feeder) =>
-      _routed((router) => router.adopt(feeder: feeder.identity, name: feeder.name, address: feeder.address, key: _key));
-
-  @override
-  Future<Adoption> checkAdoption(String identity) =>
-      _routed((router) => router.checkAdoption(feeder: identity, key: _key));
-
-  @override
-  Future<Adoption> claimPhone(String identity) => _routed((router) => router.claimPhone(feeder: identity, key: _key));
-
-  /// With no router nothing goes to the server either.
-  Future<Adoption> _routed(Future<Adoption> Function(PathRouter router) call) {
-    final PathRouter? routing = router;
-    if (routing == null) {
-      return Future.value(
-        const Adoption.failed(
-          error: ServerError(
-            kind: ServerErrorKind.closed,
-            message: 'the pending writes could not be opened',
-            mayHaveRun: false,
-          ),
-        ),
-      );
-    }
-    return call(routing);
-  }
 
   @override
   Future<void> share(String text) async {
