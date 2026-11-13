@@ -5442,7 +5442,6 @@ dependencies = [
  "wellfed-core-feeder",
  "wellfed-device",
  "wellfed-device-api",
- "wellfed-feeder",
  "wellfed-model",
  "wellfed-proto",
  "wellfed-session",
@@ -5554,7 +5553,6 @@ name = "wellfed-feeder"
 version = "0.1.0"
 dependencies = [
  "proptest",
- "thiserror 2.0.21",
  "wellfed-core",
  "wellfed-core-feeder",
  "wellfed-device",
@@ -5635,7 +5633,6 @@ dependencies = [
  "wellfed-formats",
  "wellfed-image",
  "wellfed-proto",
- "wellfed-session",
  "wellfed-signed",
 ]
 
@@ -5724,7 +5721,6 @@ dependencies = [
  "wellfed-hal-common",
  "wellfed-session",
  "wellfed-signed",
- "wellfed-testkit",
 ]
 
 [[package]]
@@ -5817,7 +5813,6 @@ dependencies = [
  "clap",
  "serde",
  "serde_json",
- "tempfile",
  "thiserror 2.0.21",
  "wellfed-bench-formats",
  "wellfed-core",
@@ -6034,7 +6029,6 @@ dependencies = [
 name = "wellfed-server-testkit"
 version = "0.1.0"
 dependencies = [
- "axum",
  "ed25519-dalek",
  "jiff",
  "sha2 0.10.9",
