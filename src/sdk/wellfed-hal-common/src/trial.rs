@@ -123,6 +123,13 @@ pub fn fallback(read: impl FnMut(u32, &mut [u8; 32]) -> bool) -> [u8; 8] {
     }
 }
 
+/// Whether bank 0 is one a give-way may land on ([`fallback`]): KM4 asks
+/// before it gives a trial up, since KM0 would otherwise run the build on
+/// held, feeding nothing, rather than give way.
+pub fn has_fallback(read: impl FnMut(u32, &mut [u8; 32]) -> bool) -> bool {
+    fallback(read) == MARKER
+}
+
 /// The backup register KM0 counts in; KM4 reads and settles it.
 pub const REGISTER: u32 = 4;
 pub const BOOT_MASK: u32 = 0xffff;

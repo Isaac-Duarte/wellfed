@@ -231,6 +231,25 @@ impl Banks {
         }
     }
 
+    /// Whether bank 0 is one KM0 would give way to: its marker and core
+    /// headers check (`trial::has_fallback`).
+    pub fn bank0_valid(&self) -> bool {
+        trial::has_fallback(|at, header| {
+            let at = at as usize;
+            let Some(bytes) = self.bank0.get(at..at + 32) else {
+                return false;
+            };
+            header.copy_from_slice(bytes);
+            true
+        })
+    }
+
+    /// Clear bank 0's first marker byte, as a bank 0 write cut short
+    /// leaves it: nothing to give way to.
+    pub fn spoil_bank0(&mut self) {
+        self.bank0[0] = 0;
+    }
+
     pub fn bank1_valid(&self) -> bool {
         Self::valid(&self.bank1)
     }

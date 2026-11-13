@@ -31,10 +31,11 @@
 //! ([`Product::keep_on_reset`]), erases the marker last, and only then opens
 //! the stores, empty. The feed journal, a readable update store and the
 //! seed are never touched, nor any store the product opens as kept. Each
-//! of its steps, and each of a handover's, waits until the watchdog feeder
-//! has checkpointed since the last (`supervision::Pace`): every lease stops
-//! the tick the feeder's wait is counted in, so forty erases a millisecond
-//! apart once held off its checkpoint past the watchdog's progress gap.
+//! of its steps, and each of a handover's that writes, waits until the
+//! watchdog feeder has checkpointed since the last (`supervision::Pace`), so
+//! a feed period holds one step's leases: every lease stops the tick the
+//! feeder's wait is counted in, so forty erase steps a millisecond apart
+//! once held off its checkpoint past the watchdog's progress gap.
 //!
 //! It keeps the time settings too (sectors 27 and 28,
 //! `wellfed_device::store::time`): the owner's zone and the NTP server,
@@ -114,7 +115,7 @@ const CONFIRM_SECTOR: u32 = wellfed_hal::board::storage::CONFIRM.first;
 pub const POLL_MS: u32 = 200;
 /// Between a factory reset's erases, each its own step and write turn.
 pub const RESET_POLL_MS: u32 = 1;
-/// While a factory reset's or a handover's next erase waits for the
+/// While a factory reset's or a handover's next step waits for the
 /// watchdog feeder to checkpoint (`supervision::Pace`): a feed period is
 /// 250 ms, so this costs at most a few milliseconds a step.
 pub const PACE_POLL_MS: u32 = 10;
@@ -1254,8 +1255,13 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
         let clients = HANDOVER_CLEARED_SECTORS;
         let index = u32::from(step);
         let clears = !cfg!(build_wifi);
+        // The steps that write nothing: a build with its own Wi-Fi keeps
+        // its stores, and only bank 0 erases the confirmation. They need
+        // no feed period after them.
+        let idle = (index <= clients && !clears)
+            || (index == clients + 2 && sdk::running_bank() != Some(0));
         arming::set_attempt();
-        let done = if index <= clients && !clears {
+        let done = if idle {
             true
         } else if let Some(sector) = handover_cleared(index) {
             F::erase(sector) && blank::<F>(sector)
@@ -1284,8 +1290,6 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
                 wellfed_hal::ota::update::store_started_over();
             }
             started
-        } else if index == clients + 2 && sdk::running_bank() != Some(0) {
-            true
         } else if index == clients + 2 {
             F::erase(CONFIRM_SECTOR) && blank::<F>(CONFIRM_SECTOR)
         } else {
@@ -1293,7 +1297,9 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
         };
         arming::clear_attempt();
         drop(turn);
-        self.core.pace.wrote();
+        if !idle {
+            self.core.pace.wrote();
+        }
 
         if !done {
             return self.handover_end(Record::HandoverStopped { stage: step });

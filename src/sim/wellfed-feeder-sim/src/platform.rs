@@ -183,8 +183,8 @@ pub struct SimPlatform {
     reset_flags: u32,
     /// A reset storm holds this boot, as the simulated runtime says.
     held: bool,
-    /// A trial build that has not confirmed, as the simulated runtime says.
-    confirming: bool,
+    /// The simulated runtime would give the trial up for bank 0 now.
+    can_give_way: bool,
     /// The loop asked the trial to give way to bank 0.
     give_way: bool,
     /// The radio the loop last asked for: while off, no connection is
@@ -283,7 +283,7 @@ impl SimPlatform {
             supply: SimSupply::MAINS,
             reset_flags: 0,
             held: false,
-            confirming: false,
+            can_give_way: false,
             give_way: false,
             radio: Radio::On,
             build_wifi: BuildWifi::Present,
@@ -322,9 +322,10 @@ impl SimPlatform {
         self.held = held;
     }
 
-    /// A trial build still confirming (`true`), or confirmed.
-    pub(crate) fn set_confirming(&mut self, confirming: bool) {
-        self.confirming = confirming;
+    /// Whether the simulated runtime would give the trial up now: it is
+    /// confirming over a valid bank 0.
+    pub(crate) fn set_can_give_way(&mut self, can: bool) {
+        self.can_give_way = can;
     }
 
     /// Whether the loop asked the trial to give way, taken once.
@@ -654,14 +655,11 @@ impl Platform for SimPlatform {
         self.reboot = true;
     }
 
-    fn confirming(&self) -> bool {
-        self.confirming
-    }
-
-    /// The simulated runtime gives way on the update stage's next turn,
-    /// later in this pass.
-    fn give_way(&mut self) {
-        self.give_way = true;
+    /// The simulated runtime gives way on the update stage's turn later
+    /// in this pass, which the answer already holds to.
+    fn give_way(&mut self) -> bool {
+        self.give_way |= self.can_give_way;
+        self.can_give_way
     }
 
     fn restarting(&self) -> bool {

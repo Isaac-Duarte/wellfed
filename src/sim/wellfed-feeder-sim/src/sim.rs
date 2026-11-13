@@ -161,7 +161,8 @@ impl Sim {
         let (confirming, held) = (self.updates.confirming(), self.updates.held());
         self.feeds.gate(confirming, held);
         self.platform().set_held(held);
-        self.platform().set_confirming(confirming);
+        let can_give_way = self.updates.can_give_way();
+        self.platform().set_can_give_way(can_give_way);
     }
 
     /// The boot is a trial build's that has not confirmed yet.
@@ -356,9 +357,12 @@ impl Sim {
     /// The update stage's turn, as the service task gives it; whether it
     /// has work waiting.
     fn update(&mut self, now_ms: u32, record: &mut impl FnMut(Record)) -> bool {
+        // A Reset hold's give-way first, as the firmware's loop gives way
+        // in the pass that took the hold.
+        let reset = self.platform().take_give_way() && self.updates.give_way();
         let build_wifi = self.platform().build_wifi_of();
         let mut turn = self.updates.turn(now_ms, build_wifi);
-        if self.platform().take_give_way() && self.updates.give_way(GiveWayReason::Reset) {
+        if reset {
             turn.gave_way = Some(GiveWayReason::Reset);
             turn.restart = true;
         }

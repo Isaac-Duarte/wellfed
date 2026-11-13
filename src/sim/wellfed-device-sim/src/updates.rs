@@ -14,11 +14,13 @@
 //!   confirmation fails (the floor or the record not written), stays in
 //!   trial and resets after [`TRIAL_MS`], as the supervisor's deadline makes
 //!   it; one that storms resets the same way. KM0 then counts the reset.
-//! - **A trial that can never confirm gives way** at once, as the
-//!   firmware's runtime does (`wellfed_sdk::give_way`): its confirmation
-//!   failed, it has no network to join (no build network and none
+//! - **A trial no boot of it could confirm gives way** at once, as the
+//!   firmware's runtime does (`wellfed_sdk::give_way`): its floor could
+//!   not be raised, it has no network to join (no build network and none
 //!   stored), or the owner held Reset. KM0's count is set to its limit and
-//!   the device restarts, so the next boot gives way to bank 0.
+//!   the device restarts, so the next boot gives way to bank 0; with no
+//!   valid bank 0 nothing happens. A confirmation record that could not be
+//!   written keeps the deadline and KM0's count.
 //! - **A storm holds a boot** that has nothing to give way to
 //!   ([`Storm::Held`]): the feeding owner stays closed
 //!   ([`Updates::held`]) for `trial::hold_ms` of the storm's level, then the
@@ -47,10 +49,12 @@ use std::rc::Rc;
 
 use wellfed_board::storage;
 use wellfed_core::ota::{self, CONFIRM_LEN};
+use wellfed_core::store::handover;
 use wellfed_core::store::slot::SlotIo;
 use wellfed_core::store::update::{State, UpdateStore};
 use wellfed_device::store::net::{BuildWifi, NetStatus, NetStore};
-use wellfed_hal::ota::confirm::GiveWayReason;
+use wellfed_device::store::reset;
+use wellfed_hal::ota::confirm::{self, GiveWayReason};
 use wellfed_hal::ota::mailbox;
 use wellfed_hal::ota::update::{self as update, Floor, Update};
 use wellfed_hal::trial::{self, Storm};
@@ -200,15 +204,23 @@ impl Updates {
         }
     }
 
-    /// Give the trial build up for bank 0, for `reason`: KM0's count goes
-    /// to its limit, and the caller restarts the device. Only while it is
-    /// confirming, and only once; whether it gave way.
-    pub fn give_way(&mut self, _reason: GiveWayReason) -> bool {
-        if !self.confirming() || self.gave_way {
+    /// Whether [`Self::give_way`] would give the trial up now: it already
+    /// has, or it is confirming over a bank 0 KM0 would give way to.
+    pub fn can_give_way(&self) -> bool {
+        self.gave_way || (self.confirming() && self.banks.borrow().bank0_valid())
+    }
+
+    /// Give the trial build up for bank 0: KM0's count goes to its limit,
+    /// and the caller restarts the device. Only while it is confirming and
+    /// bank 0 is valid; whether it gives way (true again once it has).
+    pub fn give_way(&mut self) -> bool {
+        if !self.can_give_way() {
             return false;
         }
-        self.banks.borrow_mut().spent(self.bank);
-        self.gave_way = true;
+        if !self.gave_way {
+            self.banks.borrow_mut().spent(self.bank);
+            self.gave_way = true;
+        }
         true
     }
 
@@ -224,12 +236,18 @@ impl Updates {
             self.faulted = true;
             restart = true;
         }
-        let unprovisioned = self.confirming() && self.unprovisioned(build_wifi);
-        let (confirmed, failed) = match unprovisioned {
-            true => (None, Some(GiveWayReason::NoNetwork)),
-            false => self.confirm(now_ms),
+        // A trial already given up (a Reset hold, this pass) confirms
+        // nothing more before its restart.
+        let given = self.gave_way;
+        let gave_way =
+            (!given && self.confirming() && self.unprovisioned(build_wifi) && self.give_way())
+                .then_some(GiveWayReason::NoNetwork);
+        let (confirmed, lasting) = if given || gave_way.is_some() {
+            (None, None)
+        } else {
+            self.confirm(now_ms)
         };
-        let gave_way = failed.filter(|&reason| self.give_way(reason));
+        let gave_way = gave_way.or(lasting.filter(|_| self.give_way()));
         restart |= gave_way.is_some();
         self.storm_step(now_ms);
 
@@ -250,9 +268,9 @@ impl Updates {
     }
 
     /// The trial build's one confirmation, once it is due: what it did to
-    /// the floor, and why it failed if it did. One that fails is not tried
-    /// again this boot, as the firmware's confirmation ends on an error,
-    /// and the trial gives way.
+    /// the floor, and, if it failed in a way no later boot could pass, why.
+    /// One that fails is not tried again this boot, as the firmware's
+    /// confirmation ends on an error.
     fn confirm(&mut self, now_ms: u32) -> (Option<Floor>, Option<GiveWayReason>) {
         let Some(due) = self.confirm_at else {
             return (None, None);
@@ -270,14 +288,25 @@ impl Updates {
                 }
                 (Some(floor), None)
             }
-            Err(reason) => (Some(Floor::Failed), Some(reason)),
+            Err(stage) => (
+                Some(Floor::Failed),
+                GiveWayReason::lasting(confirm::Record::Error { stage }),
+            ),
         }
     }
 
     /// No network to join: the image has none built in and the credential
-    /// store reads as holding none (not one it cannot read).
+    /// store reads as holding none, as the firmware's join half reads it:
+    /// not one it cannot read, nor one a pending factory reset or handover
+    /// withholds.
     fn unprovisioned(&self, build_wifi: BuildWifi) -> bool {
         if build_wifi == BuildWifi::Present {
+            return false;
+        }
+        let mut marker = [0; reset::MARKER.len()];
+        let withheld = Region::new(&self.flash, storage::RESET).read(0, 0, &mut marker)
+            && (reset::marked(&marker) || handover::marked(&marker));
+        if withheld {
             return false;
         }
         let mut net = NetStore::default();
@@ -364,22 +393,23 @@ fn boot(flash: &Rc<Flash>, banks: &mut Banks, key: Option<[u8; 32]>) -> (Boot, [
 }
 
 /// The build confirms: the floor first, then the record, as the
-/// firmware's confirmation writes them; which of them failed.
+/// firmware's confirmation writes them; the stage that failed, as the
+/// firmware's names it.
 fn confirm(
     flash: &Rc<Flash>,
     stage: &mut Update<Region>,
     build: &[u8; 32],
-) -> Result<Floor, GiveWayReason> {
+) -> Result<Floor, confirm::ErrorStage> {
     let floor = stage.raise_floor();
     let version = match floor {
         Floor::Raised { version } => version,
         Floor::Unchanged => 0,
-        Floor::Failed => return Err(GiveWayReason::Floor),
+        Floor::Failed => return Err(confirm::ErrorStage::Floor),
     };
     let record = ota::confirm_record(build, version);
     let sector = Region::new(flash, storage::CONFIRM);
     if !(sector.erase(0) && sector.program(0, 0, &record)) {
-        return Err(GiveWayReason::Write);
+        return Err(confirm::ErrorStage::Write);
     }
     Ok(floor)
 }

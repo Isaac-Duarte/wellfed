@@ -164,14 +164,15 @@ pub fn checkpointed() {
     CHECKPOINTS.fetch_add(1, Ordering::AcqRel);
 }
 
-/// A run of flash writes stepped back to back (a factory reset's erases,
-/// a handover's), paced by the watchdog feeder.
+/// A run of flash write steps taken back to back (a factory reset's, a
+/// handover's), paced by the watchdog feeder: each step's leases (an erase,
+/// or a store's erase and programs) in a feed period of their own.
 ///
 /// Every flash lease masks IRQs and so stops SysTick: the feeder's wait
 /// between checkpoints, counted in ticks, stretches by the masked time of
 /// every lease inside it, while the watchdog's progress gap is measured
 /// on the system timer. Steps a millisecond apart fit most of a second of
-/// masked time into one feed period: a factory reset's forty erases did
+/// masked time into one feed period: a factory reset's forty erase steps did
 /// (`gap_ms=1063` on a feed period of 250 ticks). So a paced run takes its
 /// next step only once the feeder has checkpointed since its last, and one
 /// feed period holds at most one step's leases.

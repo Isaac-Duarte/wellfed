@@ -107,43 +107,40 @@ named_enum! {
 
 named_enum! {
     /// Why a trial build gives way to bank 0 before its trial runs out
-    /// (`give_way=1 reason=`): it can never confirm this boot, or the owner
-    /// held Reset, which only bank 0 can carry out while the trial lasts.
+    /// (`give_way=1 reason=`): no later boot of it could confirm either, or
+    /// the owner held Reset, which only bank 0 can carry out while the
+    /// trial lasts.
     pub enum GiveWayReason {
         /// No network to join: no build network and none stored. Only the
         /// settings writer saves one, and it starts once the trial confirms.
         NoNetwork = "no_network",
-        /// The confirmation record could not be read.
-        Read = "read",
-        /// The confirmation record could not be written.
-        Write = "write",
-        /// The update store's floor could not be raised.
+        /// The update store's floor could not be raised: a store this build
+        /// cannot read stays so until bank 0's Reset clears it.
         Floor = "floor",
-        /// The flash hooks could not be armed, so nothing can be written.
-        Arming = "arming",
         /// A Reset hold on the panel.
         Reset = "reset",
     }
 }
 
 impl GiveWayReason {
-    /// Why a confirmation that ended with `record` left the trial unable
-    /// to confirm this boot; `None` when it confirmed.
-    pub const fn unconfirmed(record: Record) -> Option<Self> {
-        Some(match record {
-            Record::Already | Record::Confirmed { .. } => return None,
-            Record::GiveWay { reason } => reason,
-            Record::Arming(_) => Self::Arming,
-            Record::Error {
-                stage: ErrorStage::Read,
-            } => Self::Read,
-            Record::Error {
-                stage: ErrorStage::Write,
-            } => Self::Write,
+    /// Whether a confirmation that ended with `record` leaves the trial
+    /// unable to confirm on any later boot too, and why. A failed read or
+    /// write of the record, or arming that failed (a skip after a hang
+    /// clears the attempt marker for the next boot), may pass next boot:
+    /// those keep KM0's count, and the trial's deadline resets the boot.
+    pub const fn lasting(record: Record) -> Option<Self> {
+        match record {
+            Record::GiveWay { reason } => Some(reason),
             Record::Error {
                 stage: ErrorStage::Floor,
-            } => Self::Floor,
-        })
+            } => Some(Self::Floor),
+            Record::Already
+            | Record::Confirmed { .. }
+            | Record::Arming(_)
+            | Record::Error {
+                stage: ErrorStage::Read | ErrorStage::Write,
+            } => None,
+        }
     }
 }
 

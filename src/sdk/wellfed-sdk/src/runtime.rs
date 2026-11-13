@@ -140,10 +140,13 @@ fn restart() {
     RESTART.store(true, Ordering::Release);
 }
 
-/// Give this boot's trial build up for bank 0 at once, for `reason`: it can
-/// never confirm this boot, or the owner held Reset, which only a
-/// confirmed build's settings writer carries out. Nothing happens unless
-/// the boot runs an unconfirmed trial, and only the first call acts.
+/// Give this boot's trial build up for bank 0 at once, for `reason`: no
+/// boot of it could confirm, or the owner held Reset, which only a
+/// confirmed build's settings writer carries out. Whether the trial gives
+/// way: only an unconfirmed trial does, and only onto a bank 0 KM0 would
+/// give way to (`trial::has_fallback`, the check KM0 makes); with none,
+/// KM0 would run the build on held, feeding nothing, so nothing happens.
+/// Once one call has acted, every later one answers true.
 ///
 /// No flash is written: the trial register takes the trial's last count
 /// (`trial::spent`), and the restart hands the decision to KM0, which
@@ -153,10 +156,17 @@ fn restart() {
 /// held: a build bank 0 activated reads there as one that failed its
 /// trial. The line goes out before the feeding stops; the watchdog's
 /// expiry (at least 2.4 s) and the feeder's flush follow.
-pub fn give_way(reason: GiveWayReason) {
+pub fn give_way(reason: GiveWayReason) -> bool {
     static GAVE_WAY: AtomicBool = AtomicBool::new(false);
-    if !confirming() || GAVE_WAY.swap(true, Ordering::AcqRel) {
-        return;
+    if GAVE_WAY.load(Ordering::Acquire) {
+        return true;
+    }
+    let fallback = || trial::has_fallback(|at, header| sdk::bank0_read(at, header));
+    if !confirming() || !fallback() {
+        return false;
+    }
+    if GAVE_WAY.swap(true, Ordering::AcqRel) {
+        return true;
     }
 
     let identity = trial::identity();
@@ -172,6 +182,7 @@ pub fn give_way(reason: GiveWayReason) {
 
     supervision::stopping();
     RESTART.store(true, Ordering::Release);
+    true
 }
 
 /// Rewrites KM0's trial register (`trial::REGISTER`) with IRQs masked, so
@@ -704,10 +715,10 @@ fn confirm_step() -> u32 {
     // With no network to join the link never goes live, and only the
     // settings writer, which waits for the confirmation, could save one.
     // A network that is stored or built in but absent is not this: it may
-    // come back before the trial's deadline.
-    if confirming() && net_status::unprovisioned() {
+    // come back before the trial's deadline. With no bank 0 to give way to
+    // the confirmation goes on waiting, as it always has.
+    if confirming() && net_status::unprovisioned() && give_way(GiveWayReason::NoNetwork) {
         CONFIRM_DONE.store(true, Ordering::Release);
-        give_way(GiveWayReason::NoNetwork);
         return 0;
     }
     let provider = PROVIDER.get();
@@ -755,12 +766,19 @@ fn confirm_step() -> u32 {
                 sdk::log(line);
             }
         }
-        match step.record.and_then(GiveWayReason::unconfirmed) {
-            // A trial that ended unconfirmed cannot confirm this boot, and
-            // its writer never starts: bank 0 takes over now rather than
-            // after its deadline and every boot it has left.
-            Some(reason) => give_way(reason),
-            None if step.record.is_some() => start_settings(),
+        match step.record {
+            Some(confirm::Record::Already | confirm::Record::Confirmed { .. }) => {
+                start_settings();
+            }
+            // A trial no later boot could confirm either never starts its
+            // writer: bank 0 takes over now rather than after its deadline
+            // and every boot it has left. Any other failure keeps the
+            // deadline and KM0's count, and may pass on the next boot.
+            Some(record) => {
+                if let Some(reason) = GiveWayReason::lasting(record) {
+                    give_way(reason);
+                }
+            }
             None => {}
         }
     }

@@ -372,7 +372,8 @@ impl Owner {
 /// writer unless `refusal` names why not; `ticket` takes its ticket. On a
 /// trial build still confirming, no writer would take it, so the trial
 /// gives way to bank 0 instead (and bank 0 then counts it as a trial that
-/// failed).
+/// failed). With no bank 0 to give way to it is queued as on any boot, and
+/// runs if the trial confirms.
 fn reset_hold<P: Platform>(
     platform: &mut P,
     refusal: Option<ResetRefusal>,
@@ -383,9 +384,8 @@ fn reset_hold<P: Platform>(
         record(Record::ResetRefused { reason });
         return;
     }
-    if platform.confirming() {
+    if platform.give_way() {
         record(Record::ResetGaveWay);
-        platform.give_way();
         return;
     }
 

@@ -2430,6 +2430,7 @@ mod tests {
         assert_eq!(memo["x"].0, 35);
         assert!(!memo.contains_key("y"), "y's cut landed on x above it");
     }
+
     /// The longest simple path from `name`, by enumerating every one: the
     /// stack a walk must never report less than.
     fn longest_simple_path(

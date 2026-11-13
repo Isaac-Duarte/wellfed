@@ -1,9 +1,9 @@
 //! What the runtime says of a boot reaches readiness on the simulator, in
 //! virtual time, as on the feeder: a trial build reads `Starting` until it
 //! confirms, and resets at its deadline if it never does, until KM0 gives
-//! way to bank 0; one that can never confirm this boot (its confirmation
-//! failed, it has no network to join, or the owner held Reset) gives way
-//! at once; a boot a reset storm holds reads `Fault`, its feeding owner
+//! way to bank 0; one no boot of it could confirm (an update store it
+//! cannot read, no network to join) or whose owner holds Reset gives way
+//! at once, given a valid bank 0; a boot a reset storm holds reads `Fault`, its feeding owner
 //! closed, until its hold has run.
 
 use std::cell::RefCell;
@@ -189,23 +189,31 @@ fn a_build_that_never_confirms_reads_starting_until_its_deadline() {
     assert!(feeder.run(1_000), "reset at the trial's deadline");
 }
 
-/// A confirmation whose record cannot be written leaves the build unable
-/// to confirm this boot, and its writer never starts: it gives way at
-/// once, and the next boot is bank 0's, with no trial boot run out.
+/// A confirmation whose record cannot be written may pass on the next
+/// boot, so the build stays in trial: it reads `Starting` on, resets at the
+/// deadline, and KM0 counts each reset until it gives way to bank 0.
 #[test]
-fn a_trial_whose_confirmation_fails_gives_way_at_once() {
+fn a_trial_whose_confirmation_record_fails_resets_until_bank_0_takes_over() {
     let flash = Flash::memory();
     flash.fail_programs(Some(storage::CONFIRM));
     let banks = Banks::new();
     banks.borrow_mut().bank1_build = UNCONFIRMED;
     let mut feeder = Feeder::boot(flash, banks);
 
-    assert!(feeder.run(TRIAL_MS - 10), "restarts before its deadline");
-    assert_eq!(feeder.booted(), (1, true, Storm::Normal));
-    assert_eq!(feeder.confirmations(), [Floor::Failed]);
-    assert_eq!(feeder.gave_way(), [GiveWayReason::Write]);
+    for boot in 1..=TRIAL_LIMIT {
+        assert!(!feeder.run(TRIAL_MS - 10), "boot {boot}");
+        assert_eq!(feeder.booted(), (1, true, Storm::Normal), "boot {boot}");
+        assert_eq!(feeder.confirmations(), [Floor::Failed], "boot {boot}");
+        assert!(feeder.gave_way().is_empty(), "boot {boot}");
+        assert_eq!(
+            feeder.sim.readiness(),
+            Readiness::Blocked(Blocked::Starting),
+            "boot {boot}"
+        );
+        assert!(feeder.run(1_000), "boot {boot} resets at its deadline");
+        feeder.restart();
+    }
 
-    feeder.restart();
     assert!(!feeder.run(TRIAL_MS + 10));
     assert_eq!(feeder.booted(), (0, false, Storm::Normal));
     assert!(!feeder.banks.borrow().bank1_valid());
@@ -462,4 +470,52 @@ fn a_confirmation_erased_after_the_first_boot_is_not_written_again() {
         feeder.sim.readiness(),
         Readiness::Blocked(Blocked::Starting)
     );
+}
+
+/// With no valid bank 0 there is nothing to give way to: KM0 would run the
+/// trial on held, feeding nothing. A Reset hold is queued as on any boot,
+/// and the reset runs once the trial confirms and its writer starts.
+#[test]
+fn a_reset_hold_on_a_trial_with_no_bank_0_waits_for_the_confirmation() {
+    use wellfed_core::buttons::{Button, Buttons, Gesture};
+    use wellfed_device_api::mailbox::Requested;
+    use wellfed_feeder::feeder::{self, owner};
+
+    let held = |button| Gesture::Hold {
+        chord: Buttons::of(button),
+        level: 1,
+    };
+    let mut feeder = Feeder::on_trial();
+    feeder.banks.borrow_mut().spoil_bank0();
+    feeder.restart();
+    assert!(!feeder.run(100));
+    feeder.sim.gesture(held(Button::Lock));
+    assert!(!feeder.run(50));
+    feeder.sim.gesture(held(Button::Reset));
+    assert!(!feeder.run(50), "no give-way");
+
+    let queued = Record::Feeder(feeder::Record::Owner(owner::Record::Reset {
+        requested: Requested::Queued,
+    }));
+    assert!(feeder.records.contains(&queued), "{:?}", feeder.records);
+    assert!(feeder.gave_way().is_empty());
+
+    assert!(feeder.run(TRIAL_MS), "the reset's restart, once confirmed");
+    assert_eq!(feeder.confirmations(), [Floor::Unchanged]);
+    assert!(feeder.gave_way().is_empty());
+}
+
+/// Nor does a trial with no network to join give way without a valid
+/// bank 0: it waits, as the firmware's confirmation always has.
+#[test]
+fn a_trial_with_no_network_and_no_bank_0_does_not_give_way() {
+    use wellfed_device::store::net::BuildWifi;
+
+    let mut feeder = Feeder::on_trial();
+    feeder.banks.borrow_mut().spoil_bank0();
+    feeder.restart();
+    feeder.sim.platform().set_build_wifi(BuildWifi::Absent);
+
+    assert!(!feeder.run(CONFIRM_MS + 100));
+    assert!(feeder.gave_way().is_empty());
 }
