@@ -279,7 +279,7 @@ class Kept:
     @property
     def path(self) -> str:
         """Where the store lives, for the owner to remove it."""
-        return self._store.path
+        return str(self._store.path)
 
     @property
     def unread(self) -> bool:
