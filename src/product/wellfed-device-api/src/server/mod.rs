@@ -324,11 +324,12 @@ impl Server {
     /// `None` when every session is busy. Busy is anything an ending would
     /// cut short or leave the client unsure of: a request waiting to be
     /// read, for its write (a retry's wait for one under way among them)
-    /// or for its answer to finish going out, a feed it asked for still holding the outputs, an install it
-    /// drives, and every session not yet open (which the handshake limit
-    /// ends) or no longer (a join or the recovery window, each mid-write or
-    /// waiting for the owner). A write whose session already ended goes on
-    /// in its client's memory, whichever of that key's sessions ends.
+    /// or for its answer to finish going out, a feed it asked for still
+    /// holding the outputs, an install it drives, and every session not yet
+    /// open (which the handshake limit ends) or no longer (a join or the
+    /// recovery window, each mid-write or waiting for the owner). A write
+    /// whose session already ended goes on in its client's memory,
+    /// whichever of that key's sessions ends.
     fn evict(&mut self, now_ms: u32, record: &mut impl FnMut(Record)) -> Option<usize> {
         let index = (0..SESSIONS)
             .filter(|&index| self.idle(index))

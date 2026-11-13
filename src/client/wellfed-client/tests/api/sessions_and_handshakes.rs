@@ -15,7 +15,7 @@ use wellfed_session::frame;
 use wellfed_session::noise::Keypair;
 
 use crate::support::{
-    EPOCH, FEEDER, MEMBER, OWNER, Rig, STRANGER, ask, connect, drive, live, open, public,
+    Client_, EPOCH, FEEDER, MEMBER, OWNER, Rig, STRANGER, ask, connect, drive, live, open, public,
     receiving, send_unwritten, view,
 };
 
@@ -470,15 +470,11 @@ fn an_eviction_passes_over_sessions_a_write_a_feed_or_an_install_holds() {
     assert_eq!(ended_slots(&rig, Reason::Evicted), evicted);
 }
 
-/// A session whose write's answer is sealed but not yet all sent keeps
-/// its slot even as the quietest: ending it would leave its client unsure
-/// whether the write ran.
-#[test]
-fn an_eviction_passes_over_a_session_whose_answer_is_still_going_out() {
-    let mut rig = Rig::new();
-    let mut sessions: Vec<_> = (0..SESSIONS).map(|_| open(&mut rig, OWNER)).collect();
+/// Four open sessions, the first with a write answered and none of the
+/// answer sent, then the others speaking after it, so it is the quietest.
+fn quietest_with_its_answer_unsent(rig: &mut Rig) -> Vec<Client_> {
+    let mut sessions: Vec<_> = (0..SESSIONS).map(|_| open(rig, OWNER)).collect();
 
-    // The write is answered, and its socket has taken none of the answer.
     let put = Op::PutSettings {
         base: Generation(7),
         changes: model::FeederSettingsPatch {
@@ -499,11 +495,20 @@ fn an_eviction_passes_over_a_session_whose_answer_is_still_going_out() {
         "the answer waits to go out"
     );
 
-    // The others speak after it, so it is the quietest.
     for (index, session) in sessions.iter_mut().enumerate().skip(1) {
-        let status = ask(&mut rig, session, 2, Op::Status);
+        let status = ask(rig, session, 2, Op::Status);
         assert!(matches!(status, Answer::Status(_)), "session {index}");
     }
+    sessions
+}
+
+/// A session whose write's answer is sealed but not yet all sent keeps
+/// its slot even as the quietest: ending it would leave its client unsure
+/// whether the write ran.
+#[test]
+fn an_eviction_passes_over_a_session_whose_answer_is_still_going_out() {
+    let mut rig = Rig::new();
+    let mut sessions = quietest_with_its_answer_unsent(&mut rig);
     assert_eq!(rig.accept(), Some(sessions[1].slot));
 
     let writer = &mut sessions[0];
@@ -523,4 +528,23 @@ fn an_eviction_passes_over_a_session_whose_answer_is_still_going_out() {
             generation: Some(Generation(8))
         })
     );
+}
+
+/// Part of the answer sent still holds the slot; once the rest is out, the
+/// quietest session is the one evicted again.
+#[test]
+fn a_session_is_evictable_again_once_its_answer_is_out() {
+    let mut rig = Rig::new();
+    let sessions = quietest_with_its_answer_unsent(&mut rig);
+    let writer = sessions[0].slot;
+
+    rig.server.sent(writer, 1);
+    assert!(
+        !rig.server.tx(writer).is_empty(),
+        "part of the answer is left"
+    );
+    assert_eq!(rig.accept(), Some(sessions[1].slot));
+
+    rig.collect(writer);
+    assert_eq!(rig.accept(), Some(writer));
 }
