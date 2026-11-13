@@ -1241,7 +1241,7 @@ mod tests {
         let manifest = fs::read_to_string(review.join("build-manifest.json")).unwrap();
         for edited in [
             manifest.replace(BUILD, &"ab".repeat(32)),
-            manifest.replace("null", "\"fw16-pulse-v1\""),
+            manifest.replace("null", "\"demo-motion-v1\""),
         ] {
             fs::write(review.join("build-manifest.json"), edited).unwrap();
             let error = refusal(checkout.path(), &review);
@@ -1269,20 +1269,20 @@ mod tests {
     #[test]
     fn a_motion_image_needs_its_exact_policy_attended() {
         let key = bench_key(2);
-        let (checkout, review) = freeze(&build_image(), Some("fw16-pulse-v1"));
+        let (checkout, review) = freeze(&build_image(), Some("demo-motion-v1"));
         let frozen = Frozen::open(checkout.path(), &review).unwrap();
-        assert_eq!(frozen.motion_policy(), Some("fw16-pulse-v1"));
+        assert_eq!(frozen.motion_policy(), Some("demo-motion-v1"));
 
         for motion in [Motion::Refused, Motion::Attended("fw16-other-v1")] {
             let error = frozen.offer(&key, 1, motion).unwrap_err();
             assert!(
-                matches!(&error, Error::Frozen(FrozenError::Unattended { policy }) if policy == "fw16-pulse-v1"),
+                matches!(&error, Error::Frozen(FrozenError::Unattended { policy }) if policy == "demo-motion-v1"),
                 "{error:?}"
             );
         }
         assert!(
             frozen
-                .offer(&key, 1, Motion::Attended("fw16-pulse-v1"))
+                .offer(&key, 1, Motion::Attended("demo-motion-v1"))
                 .is_ok()
         );
     }
@@ -1465,7 +1465,7 @@ mod tests {
     #[test]
     fn a_stock_review_of_another_image_is_refused() {
         let image = build_image();
-        let (checkout, review) = freeze(&image, Some("fw16-pulse-v1"));
+        let (checkout, review) = freeze(&image, Some("demo-motion-v1"));
         fs::remove_file(review.join("build-manifest.json")).unwrap();
         let mut frozen: serde_json::Value =
             serde_json::from_slice(&fs::read(review.join("review.json")).unwrap()).unwrap();

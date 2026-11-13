@@ -113,9 +113,9 @@ pub fn __started(startup: crate::Startup) {
 }
 
 /// The firmware's startup work that holds the KM0 flash handshake (the
-/// optics probe) has ended, so another flash writer may bind it. The runtime does not confirm the build before this is reported.
-/// A firmware with no such work returns `Startup::Done` from its start
-/// hook instead.
+/// optics probe) has ended, so another flash writer may bind it. The
+/// runtime does not confirm the build before this is reported. A firmware
+/// with no such work returns `Startup::Done` from its start hook instead.
 pub fn startup_done(done: bool) {
     PROBE_DONE.store(done, Ordering::Release);
 }
