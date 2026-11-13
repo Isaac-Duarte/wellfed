@@ -49,8 +49,8 @@
 use core::ffi::c_uint;
 
 use wellfed_core::store::slot::{
-    DualSlot, Extent, Layout, Pick, SlotIo, Version, get_u32, get_u64, newest, put_u32, put_u64,
-    seal, target, unwritten,
+    DualSlot, Extent, Layout, Newest, SlotIo, Version, get_u32, get_u64, put_u32, put_u64, seal,
+    target,
 };
 use wellfed_proto::api::{Counts, Resets};
 
@@ -336,35 +336,25 @@ fn storage_words(p: &[u8; RECORD_BYTES]) -> [u32; TOTAL_SECTORS] {
 impl<I: SlotIo> StatsStore<I> {
     /// Bind to two exclusive erase units and load the newest valid record.
     pub fn open(&mut self, io: I) -> StatsStatus {
-        let unit = io.unit_bytes();
-        *self = Self {
-            units: DualSlot::new(io, &LAYOUT),
-            ..Self::default()
-        };
-        if (unit as usize) < RECORD_BYTES {
-            self.status = StatsStatus::Io;
-            return self.status;
-        }
-        let (Some(a), Some(b)) = (
-            self.units.scan(0, |_, p| decode(p)),
-            self.units.scan(1, |_, p| decode(p)),
-        ) else {
-            self.status = StatsStatus::Io;
-            return self.status;
-        };
-
-        let empty = unwritten(&a, &b);
-        self.status = match newest(a, b, |&(generation, _, _)| generation) {
-            Pick::Future => StatsStatus::ReadOnly,
-            Pick::Newest(slot, (generation, totals, budget)) => {
+        *self = Self::default();
+        let decoded =
+            |p: &_| decode(p).map(|(generation, totals, budget)| (generation, (totals, budget)));
+        self.status = match self.units.open_newest(io, decoded) {
+            Newest::Io => StatsStatus::Io,
+            Newest::Future => StatsStatus::ReadOnly,
+            Newest::Loaded {
+                slot,
+                generation,
+                value: (totals, budget),
+            } => {
                 self.slot = slot;
                 self.generation = generation;
                 self.totals = totals;
                 self.budget = budget;
                 StatsStatus::Loaded
             }
-            Pick::Nothing if empty => StatsStatus::Empty,
-            Pick::Nothing => StatsStatus::Lost,
+            Newest::Nothing { unwritten: true } => StatsStatus::Empty,
+            Newest::Nothing { unwritten: false } => StatsStatus::Lost,
         };
         self.status
     }
@@ -399,20 +389,16 @@ impl<I: SlotIo> StatsStore<I> {
         if !self.may_save(kind) || !self.units.writable() {
             return false;
         }
-        let Some(generation) = self.generation.checked_add(1) else {
+        let budget = self.budget.after(kind);
+        let saved = self
+            .units
+            .save_newest(self.generation, self.slot, |generation| {
+                encode(generation, totals, budget)
+            });
+        let Some((slot, generation)) = saved else {
             self.status = StatsStatus::Io;
             return false;
         };
-        let slot = self.next_slot();
-        let budget = self.budget.after(kind);
-        let from = (self.generation > 0).then_some(self.slot);
-        if !self
-            .units
-            .replace(slot, from, &encode(generation, totals, budget))
-        {
-            self.status = StatsStatus::Io;
-            return false;
-        }
         self.slot = slot;
         self.generation = generation;
         self.totals = *totals;

@@ -25,8 +25,7 @@
 use core::ffi::c_uint;
 
 use wellfed_core::store::slot::{
-    CRC_AT, DualSlot, Extent, Layout, Pick, RECORD_BYTES, SlotIo, Version, get_u64, newest,
-    put_u64, seal, target,
+    CRC_AT, DualSlot, Extent, Layout, Newest, RECORD_BYTES, SlotIo, Version, get_u64, put_u64, seal,
 };
 use wellfed_device_api::mailbox::Calibration;
 
@@ -115,34 +114,23 @@ const _: () = assert!(PORTION_END <= CRC_AT);
 impl<I: SlotIo> CalibrationStore<I> {
     /// Bind to two exclusive erase units and load the newest valid record.
     pub fn open(&mut self, io: I) -> CalibrationStatus {
-        let unit = io.unit_bytes();
-        *self = Self {
-            units: DualSlot::new(io, &LAYOUT),
-            ..Self::default()
-        };
-        if (unit as usize) < RECORD_BYTES {
-            self.status = CalibrationStatus::Io;
-            return self.status;
-        }
-        let (Some(a), Some(b)) = (
-            self.units.scan(0, |_, p| decode(p)),
-            self.units.scan(1, |_, p| decode(p)),
-        ) else {
-            self.status = CalibrationStatus::Io;
-            return self.status;
-        };
-
-        self.status = match newest(a, b, |&(generation, _)| generation) {
-            Pick::Future => CalibrationStatus::ReadOnly,
-            Pick::Newest(slot, (generation, calibration)) => {
+        *self = Self::default();
+        self.status = match self.units.open_newest(io, decode) {
+            Newest::Io => CalibrationStatus::Io,
+            Newest::Future => CalibrationStatus::ReadOnly,
+            Newest::Loaded {
+                slot,
+                generation,
+                value,
+            } => {
                 self.slot = slot;
                 self.generation = generation;
-                self.calibration = calibration;
+                self.calibration = value;
                 CalibrationStatus::Loaded
             }
             // The two sectors are this store's alone, so anything else there
             // is a save of ours cut short: nothing measured, still writable.
-            Pick::Nothing => CalibrationStatus::Empty,
+            Newest::Nothing { .. } => CalibrationStatus::Empty,
         };
         self.status
     }
@@ -161,19 +149,15 @@ impl<I: SlotIo> CalibrationStore<I> {
         if !self.writable() || !self.units.writable() || !calibration.valid() {
             return false;
         }
-        let Some(generation) = self.generation.checked_add(1) else {
+        let saved = self
+            .units
+            .save_newest(self.generation, self.slot, |generation| {
+                encode(generation, calibration)
+            });
+        let Some((slot, generation)) = saved else {
             self.status = CalibrationStatus::Io;
             return false;
         };
-        let slot = target(self.generation, self.slot);
-        let from = (self.generation > 0).then_some(self.slot);
-        if !self
-            .units
-            .replace(slot, from, &encode(generation, calibration))
-        {
-            self.status = CalibrationStatus::Io;
-            return false;
-        }
         self.slot = slot;
         self.generation = generation;
         self.calibration = *calibration;

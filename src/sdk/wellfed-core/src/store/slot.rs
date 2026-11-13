@@ -529,7 +529,7 @@ impl<I: SlotIo> DualSlot<I> {
     }
 
     /// Bind to `io` and read both units by the newest-valid-wins rule, the
-    /// skeleton the seed, update, Wi-Fi, time and client stores share.
+    /// skeleton every newest-valid-wins store shares.
     /// `decode` takes a record whose header and checksum hold and gives its
     /// generation and value, or `None` for one this store does not accept.
     pub fn open_newest<const N: usize, V>(
@@ -566,14 +566,15 @@ impl<I: SlotIo> DualSlot<I> {
     /// the other unit by the torn-write rule, keeping what a newer minor
     /// added ([`Self::replace`]). The unit and generation it now holds, or
     /// `None` when a step failed: the unit may then hold any state a cut
-    /// leaves, and the record in `slot` is untouched.
+    /// leaves, and the record in `slot` is untouched. A generation with no
+    /// successor is `None` too, before anything is written.
     pub fn save_newest<const N: usize>(
         &self,
         generation: u64,
         slot: c_uint,
         encode: impl FnOnce(u64) -> [u8; N],
     ) -> Option<(c_uint, u64)> {
-        let next = generation + 1;
+        let next = generation.checked_add(1)?;
         let written = target(generation, slot);
         let from = (generation > 0).then_some(slot);
         self.replace(written, from, &encode(next))

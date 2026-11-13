@@ -58,8 +58,7 @@
 use core::ffi::c_uint;
 
 use wellfed_core::store::slot::{
-    DualSlot, Extent, Layout, Pick, SlotIo, Version, get_u32, newest, put_u32, seal, target,
-    unwritten,
+    DualSlot, Extent, Layout, Newest, SlotIo, Version, get_u32, put_u32, seal,
 };
 use wellfed_device_api::mailbox::{Claim, PLANS, Plan, PlansChange, PlansView, Table, Weekdays};
 use wellfed_proto::api::{EventBody, Source};
@@ -513,34 +512,26 @@ fn decode(p: &[u8; RECORD_BYTES]) -> Option<(u32, Plans)> {
 impl<I: SlotIo> PlansStore<I> {
     /// Bind to two exclusive erase units and load the newest valid record.
     pub fn open(&mut self, io: I) -> PlansStatus {
-        let unit = io.unit_bytes();
-        *self = Self {
-            units: DualSlot::new(io, &LAYOUT),
-            ..Self::default()
-        };
-        if (unit as usize) < RECORD_BYTES {
-            self.status = PlansStatus::Io;
-            return self.status;
-        }
-        let (Some(a), Some(b)) = (
-            self.units.scan(0, |_, p| decode(p)),
-            self.units.scan(1, |_, p| decode(p)),
-        ) else {
-            self.status = PlansStatus::Io;
-            return self.status;
-        };
-
-        let empty = unwritten(&a, &b);
-        self.status = match newest(a, b, |&(sequence, _)| u64::from(sequence)) {
-            Pick::Future => PlansStatus::ReadOnly,
-            Pick::Newest(slot, (sequence, plans)) => {
+        *self = Self::default();
+        // The sequence orders the records as a generation does, and rides
+        // along in its own width.
+        let decoded =
+            |p: &_| decode(p).map(|(sequence, plans)| (u64::from(sequence), (sequence, plans)));
+        self.status = match self.units.open_newest(io, decoded) {
+            Newest::Io => PlansStatus::Io,
+            Newest::Future => PlansStatus::ReadOnly,
+            Newest::Loaded {
+                slot,
+                value: (sequence, plans),
+                ..
+            } => {
                 self.slot = slot;
                 self.sequence = sequence;
                 self.plans = plans;
                 PlansStatus::Loaded
             }
-            Pick::Nothing if empty => PlansStatus::Empty,
-            Pick::Nothing => PlansStatus::Corrupt,
+            Newest::Nothing { unwritten: true } => PlansStatus::Empty,
+            Newest::Nothing { unwritten: false } => PlansStatus::Corrupt,
         };
         self.status
     }
@@ -602,16 +593,21 @@ impl<I: SlotIo> PlansStore<I> {
         if !self.writable() || !self.units.writable() {
             return false;
         }
+        // The record numbers its saves in 32 bits: the last one refuses
+        // before the shared save counts past it.
         let Some(sequence) = self.sequence.checked_add(1) else {
             self.status = PlansStatus::Io;
             return false;
         };
-        let slot = target(u64::from(self.sequence), self.slot);
-        let from = (self.sequence > 0).then_some(self.slot);
-        if !self.units.replace(slot, from, &encode(sequence, plans)) {
+        let saved = self
+            .units
+            .save_newest(u64::from(self.sequence), self.slot, |_| {
+                encode(sequence, plans)
+            });
+        let Some((slot, _)) = saved else {
             self.status = PlansStatus::Io;
             return false;
-        }
+        };
         self.slot = slot;
         self.sequence = sequence;
         self.plans = *plans;
