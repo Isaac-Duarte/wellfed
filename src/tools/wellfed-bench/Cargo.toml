@@ -19,9 +19,6 @@ hyper = { version = "1.12.0", features = ["client", "http1"] }
 hyper-util = { version = "0.1.21", features = ["tokio"] }
 # The operator's timers: local clock times and lengths such as `5m`.
 jiff = "0.2.38"
-# The full-screen console on /dev/tty; its keys are read by `tui::keys`.
-ratatui = { version = "0.30.2", default-features = false, features = ["crossterm_0_29", "layout-cache"] }
-crossterm = "0.29.0"
 # `wellfed-bench mcp`: the bench's tools for an agent, over stdio.
 rmcp = { version = "3.9.0", default-features = false, features = ["server", "transport-io"] }
 # The MCP tools' argument schemas, as rmcp's own are made.
@@ -42,14 +39,12 @@ wellfed-proto.workspace = true
 wellfed-relay = { path = "../wellfed-relay" }
 wellfed-rig = { path = "../wellfed-rig" }
 wellfed-session.workspace = true
-# `event`: the console waits on its terminal with poll(2) (tui::keys).
-# `termios`: on macOS, the name of the terminal to open for that poll.
-rustix = { version = "1", features = ["event", "fs", "process", "stdio", "termios"] }
+rustix = { version = "1", features = ["fs", "process", "stdio"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 
 [dev-dependencies]
-# The terminal tests' relay board is a pseudo-terminal.
+# The hangup tests' relay board is a pseudo-terminal.
 rustix = { version = "1", features = ["pty"] }
 tempfile.workspace = true
 # The feeder session against a simulated feeder over TCP.

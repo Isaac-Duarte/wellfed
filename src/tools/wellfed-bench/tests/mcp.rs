@@ -7,7 +7,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 use serde_json::{Value, json};
-use wellfed_bench::server::{Console, Options, Server, ToolPaths};
+use wellfed_bench::server::{Options, Server, ToolPaths};
 use wellfed_relay::{AtBoard, FakeBoard};
 
 struct Agent {
@@ -92,7 +92,6 @@ fn an_agent_lists_reads_posts_a_job_waits_and_is_refused_motion_and_feeds() {
             build_bin: root.join("absent"),
             wellfed_bin: root.join("absent"),
         },
-        console: Console::Terminal,
     };
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let server = Server::open(options, |_| {

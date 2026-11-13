@@ -18,7 +18,7 @@
 //!   (`feeder`), which the jobs and the `wellfed` CLI ask through, and a
 //!   receive-only UART capture while no job runs (`capture`); both feed
 //!   the bank ledger (`banks`) what the feeder reports.
-//! - **Stopping:** Ctrl+C, SIGTERM or the console's `q` cancel the job,
+//! - **Stopping:** Ctrl+C or SIGTERM cancels the job,
 //!   wait for its cleanup and release the bench; during a UART write a
 //!   press must come twice and a signal waits for the job (`stopping`).
 //! - **Notes:** the operator's step, next steps, timers and evidence
@@ -50,7 +50,7 @@ mod watching;
 pub use client::{Client, ClientError, Followed, Interrupt, StateEvents};
 pub use feeder::{ClockSync, DeviceOptions};
 pub use jobs::{JobCommand, JobOptions, ToolPaths};
-pub use output::{CONSOLE_QUEUE, Console, printable};
+pub use output::printable;
 pub use serve::{Options, ServeError, Server, restore_output};
 pub use state::Store;
 pub use tool_jobs::RestoreStockArgs;

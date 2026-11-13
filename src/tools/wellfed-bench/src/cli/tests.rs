@@ -353,7 +353,6 @@ fn a_left_install_is_listed_and_a_renamed_flash_client_is_refused() {
             "serve",
             "--device",
             "plaf103",
-            "--plain",
             "--flash-bin",
             &flash_bin,
         ],

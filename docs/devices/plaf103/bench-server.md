@@ -1,6 +1,6 @@
 # Bench server
 
-`wellfed-bench serve --device plaf103` is the [relay bench](bench.md)'s one server: it holds the bench while it runs, and every other `wellfed-bench` command is its client. This reference, for contributors running or scripting the bench, covers what it holds and keeps, its feeder session, its console, the agent tools, and the lease that keeps two tools off the bench.
+`wellfed-bench serve --device plaf103` is the [relay bench](bench.md)'s one server: it holds the bench while it runs, and every other `wellfed-bench` command is its client. This reference, for contributors running or scripting the bench, covers what it holds and keeps, its feeder session, its console lines, the agent tools, and the lease that keeps two tools off the bench.
 
 ## What it holds
 
@@ -27,11 +27,9 @@ Ctrl+C, SIGTERM or a hangup of its terminal stops the server: it refuses new job
 
 A cancelled write stops terminally and leaves its bank half-written until another UART write, so while the flash client holds the UART nothing stops the server by accident. The rig tags each `wellfed-flash` child with its use of the UART as it starts it, read from the command line: only a command known to leave flash alone (a read, an inspection, a plan) counts as one, and any other, a renamed or new writer included, is a write. During a write or loader session:
 
-- **Ctrl+C** in a line console during a write or loader session only says "A UART write is under way; press Ctrl+C again within 5 s to cancel it". A second press within 5 s stops the server, cancelling the write.
-- **`q` or Ctrl+C** in the full-screen console during one only shows "A UART write is under way; press y within 5 s to cancel it". `y` within 5 s stops the server, cancelling the write; no number of further `q`s does. The server decides each key against the UART as it is when the key reaches it, and pasted text presses nothing.
-- **SIGTERM or a hangup** during a write is deferred, however many arrive: the server says it will stop once the write ends, shows `server.stopping` (on the console's header and in `bench_status`), refuses new jobs, lets the job finish, then stops. Outside a write it stops at once.
+- **Ctrl+C** during a write or loader session only says "A UART write is under way; press Ctrl+C again within 5 s to cancel it". A second press within 5 s stops the server, cancelling the write.
+- **SIGTERM or a hangup** during a write is deferred, however many arrive: the server says it will stop once the write ends, shows `server.stopping` (in `wellfed-bench status` and `bench_status`), refuses new jobs, lets the job finish, then stops. Outside a write it stops at once.
 - **To stop a deferred server sooner,** send SIGINT twice within 5 s (`kill -INT PID` twice, no terminal needed), which cancels the write for good. SIGKILL is the last resort: the [lease](#bench-lease) and the orphan checks handle a killed server.
-- **The full-screen console ending on its own** (a terminal error or hangup, a panic) stops nothing. The server prints plain lines again, says the console ended, and Ctrl+C or SIGTERM stops it from then on.
 
 ## The socket's routes
 
@@ -106,30 +104,13 @@ Each entry is checked against what the feeder says it runs: the capture's `PLFW1
 
 ## The console
 
-On a terminal, `serve` draws its console full screen on `/dev/tty`: the UART-write banner with sectors verified; the job, its step and next steps; Activity; the relays and the lease; the feeder (banks, session, status, clock, journal high water, hotspot, capture and the device log's last lines); the operator's step, timers and evidence by card; and a scrolling log of every job's output. PgUp and PgDn scroll the log, Up and Down a line, and End follows it again. A job's question shows in a panel above the log with its number and the `wellfed-bench answer` line that answers it; the console only shows it.
+`serve` prints its console as plain lines on the terminal it started in: its own messages and every job's output, a line at a time, with control characters shown as `^X` so device output cannot change the terminal. A slow or closed terminal never holds the output pump: it loses console lines instead, which the job's stream and log file keep.
 
-`q` or Ctrl+C stops the server as SIGINT does ([above](#stopping-the-server)). During a UART write or loader session, a press only shows the confirmation in the footer, and `y` within 5 s confirms it. The screen redraws at most twice a second while the flash client writes, otherwise four times. It draws only from the live state and a channel, so a slow terminal never holds the output pump: it loses console lines instead, which the job's stream and log file keep. When the server stops, the screen closes and the log's last 30 lines print. Without a terminal (a service, a pipe), or with `--plain`, the console is plain lines on stdout.
-
-### Watching from another terminal
-
-`wellfed-bench console` draws the same screen for a running server, from another terminal or machine. It connects to the socket and adds no listener, so a remote run goes over `ssh -t`:
-
-```
-ssh -t HOST wellfed-bench console --root /path/to/checkout
-```
-
-- **It only reads.** It posts nothing and touches no hardware. `q` and Ctrl+C leave; the server and its job run on, as the footer says.
-- **Its log holds job output only.** It follows the running job, or else the last to finish, from its first kept line, with a separator at each new job and a line at each end. The server's own start-up and stopping lines are not on the socket (a job's log file is still complete). If several jobs start while it reads an earlier one, it skips to the newest.
-- **A question shows, read-only.** Answer with the panel's `wellfed-bench answer` line, or `job_answer`.
-- **If the server goes away,** the last state stays with a notice, and it retries every 2 s, picking up whichever server answers next and starting its log over for a new one.
-- **During a UART write** it redraws and polls at most twice a second. Over ssh it still runs on the bench host, so leave it if you want that host idle for a write.
-- **If its terminal goes away** (a dropped `ssh -t`), it exits; the server runs on.
-
-With no terminal or no server at the start, it exits with an error saying which. On leaving, it prints the log's last 30 lines.
+The rest of the live state (the job and its steps, the relays and the lease, the feeder, the operator's notes and a job's question) is in `wellfed-bench status` and the MCP tools' `bench_status`. From another terminal or machine, `wellfed-bench attach ID` follows a job's output from its first kept line, and `wellfed-bench answer` answers its question.
 
 ## The operator's notes
 
-`wellfed-bench note` posts to the server, which shows each note on the console and appends it to `private/bench-status/notes.jsonl` (buffered, never synced, and not flushed while the flash client holds the UART):
+`wellfed-bench note` posts to the server, which keeps each note in its live state (`bench_status` reads it) and appends it to `private/bench-status/notes.jsonl` (buffered, never synced, and not flushed while the flash client holds the UART):
 
 ```
 wellfed-bench note step "Install the candidate over UART"
@@ -216,7 +197,7 @@ The tools are found by process name and by the `private/` of their working direc
 
 ## Job records
 
-Each job records its steps, the flash client's progress lines (bytes read, sectors verified), relay changes and the active capture in the live state (`GET /state`), which `wellfed-bench status`, the [console](#the-console) and `bench_status` read. Two files in `private/bench-status/` outlive the server: `jobs/ID-NAME.log`, each job's output, complete once it ends; and `history.jsonl`, one line per job, including the reviewed next command after a prepare, which no tool reads back.
+Each job records its steps, the flash client's progress lines (bytes read, sectors verified), relay changes and the active capture in the live state (`GET /state`), which `wellfed-bench status` and `bench_status` read. Two files in `private/bench-status/` outlive the server: `jobs/ID-NAME.log`, each job's output, complete once it ends; and `history.jsonl`, one line per job, including the reviewed next command after a prepare, which no tool reads back.
 
 ## Evidence
 

@@ -183,7 +183,7 @@ The order of a session that writes a feeder's flash over UART, each step linking
 
 10. For the other bank, repeat from step 6 with `--bank 0` and its own source. Write one bank at a time: the other must hold a valid image, except that bank 1 may also be written over a bank 0 still at the pinned baseline ([what the updater writes](uart-development.md#what-the-updater-writes)). `wellfed-bench banks` shows what the bench last saw in each.
 
-11. Finish: `wellfed-bench off`, stop the server with `q`, put back any network or service you changed, and record what ran.
+11. Finish: `wellfed-bench off`, stop the server with Ctrl+C, put back any network or service you changed, and record what ran.
 
 If a step stops, nothing is retried. Don't run `flash-execute` again: start a fresh `flash-prepare … --interrupted` session ([finish an interrupted update](uart-development.md#finish-an-interrupted-update)). Going back to stock has its own commands ([stock and back](../devices/plaf103/bench.md#stock-and-back)).
 

@@ -178,7 +178,6 @@ esac
                 wellfed_bin: root.join("wellfed"),
             },
             root,
-            console: crate::server::Console::Terminal,
         }
     }
 
@@ -558,7 +557,7 @@ async fn with_every_asker_gone_the_server_keeps_serving() {
     let (asks, asked) = mpsc::unbounded_channel();
     let server = Running::start_asked(checkout.open(), Some(asked));
 
-    // As when the full-screen console's thread ends and its sender drops.
+    // As when the signal task ends and its sender drops.
     drop(asks);
     tokio::time::sleep(Duration::from_millis(300)).await;
 
