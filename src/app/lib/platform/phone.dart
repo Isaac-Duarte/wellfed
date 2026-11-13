@@ -94,6 +94,10 @@ class AppPhonePorts implements PhonePorts {
       return await NetworkInfo().getWifiName();
     } on MissingPluginException {
       return null;
+    } on Object catch (_) {
+      // Linux with no NetworkManager fails in D-Bus. The name is only ever a
+      // prefill or words on a screen, so none is the answer.
+      return null;
     }
   }
 

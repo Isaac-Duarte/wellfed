@@ -262,6 +262,13 @@ class FakeFeederPorts with FakeUpdateRules implements FeederPorts {
     return _FakePush(this);
   }
 
+  /// A computer's hold giving way: add to it.
+  // ignore: close_sinks, the test ends with it
+  final lapses = StreamController<void>.broadcast();
+
+  @override
+  Stream<void> holdLapsed() => lapses.stream;
+
   @override
   Future<bool> holdProcess(String text) async {
     holds++;

@@ -37,6 +37,7 @@ import 'package:wellfed/state/join/join.dart';
 import 'package:wellfed/state/settings/backups.dart';
 import 'package:wellfed/state/setup/setup.dart';
 import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/close_run.dart';
 import 'package:wellfed/widgets/desktop.dart';
 
 /// The app's routes. `root` is one route whatever the feeders: it follows
@@ -261,7 +262,10 @@ class _WellfedAppState extends State<WellfedApp> {
   @override
   void initState() {
     super.initState();
-    _lifecycle = AppLifecycleListener(onResume: _fleet.resumed);
+    _lifecycle = AppLifecycleListener(
+      onResume: _fleet.resumed,
+      onExitRequested: isDesktop ? _closeGuard.exitRequested : null,
+    );
     if (_alerts) {
       _watched = {for (final KnownFeeder feeder in widget.app.feeders) feeder.identity};
       widget.app.addListener(_feedersChanged);
@@ -270,6 +274,13 @@ class _WellfedAppState extends State<WellfedApp> {
       unawaited(Notices.launchedFor().then((identity) => identity == null ? null : _openAlerts(identity)));
     }
   }
+
+  /// A computer's window closing, or the app quitting, mid-run asks first:
+  /// it ends the process, and the run with it, wherever it is.
+  late final _closeGuard = CloseRunGuard(
+    runs: () => runHolds.held,
+    context: () => _router.routerDelegate.navigatorKey.currentContext,
+  );
 
   /// The feeders this phone knew when the book last changed.
   Set<String> _watched = {};

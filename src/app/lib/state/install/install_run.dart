@@ -52,6 +52,11 @@ extension InstallRunning on InstallFlow {
 
   Future<void> _hold(String text) async {
     _holding = true;
+    _lapses ??= _ports.holdLapsed().listen((_) {
+      if (!_holding) return;
+      _holdRefused = true;
+      _notify();
+    });
     _holdRefused = !await _ports.holdProcess(text);
     // The screen went away during the wait, and its release ran before this
     // hold took effect.
@@ -87,6 +92,9 @@ extension InstallRunning on InstallFlow {
       case InstallAsk_JoinFeederNetwork():
         _joinAsk = id;
         _handover = Handover.join;
+        // A computer watches for its owner's switch from the start: nothing
+        // to press, and every second counts once the frame goes.
+        if (_ports.feederJoin == FeederJoin.byHand) unawaited(joinFeeder());
       case InstallAsk_LeaveFeederNetwork():
         await _leaveFeeder(answer);
       case InstallAsk_RecognizeFeeder(device: final heard, :final address):
@@ -259,6 +267,8 @@ extension InstallRunning on InstallFlow {
 
   void _ended(InstallEnd end) {
     _run = null;
+    // A computer waiting for its owner to join would wait on for nobody.
+    if (_handover == Handover.joining) _ports.stopJoining();
     _joinAsk = null;
     if (_onFeederNetwork) {
       _onFeederNetwork = false;

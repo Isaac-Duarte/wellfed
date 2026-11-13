@@ -254,10 +254,10 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
                       ),
                       if (run?.holdRefused ?? false) ...[
                         const SizedBox(height: Space.s3),
-                        const Notice(
+                        Notice(
                           tone: Tone.warning,
                           glyph: Glyph.warning,
-                          text: 'Keep this app open until it finishes.',
+                          text: isDesktop ? stayAwakeWords : 'Keep this app open until it finishes.',
                         ),
                       ],
                       if (sending) ...[
@@ -323,7 +323,7 @@ class _Unavailable extends StatelessWidget {
       Notice(
         tone: Tone.fault,
         lead: "This $deviceName cannot update a feeder's firmware.",
-        text: 'Only the Android app can. Update from an Android phone that owns this feeder.',
+        text: 'Update from another phone or computer that owns this feeder.',
       ),
     ],
   );

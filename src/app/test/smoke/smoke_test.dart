@@ -133,6 +133,9 @@ class _Ports implements FeederPorts {
   Future<void> releaseProcess() async {}
 
   @override
+  Stream<void> holdLapsed() => const Stream.empty();
+
+  @override
   Future<void> share(String text) async {}
 
   @override

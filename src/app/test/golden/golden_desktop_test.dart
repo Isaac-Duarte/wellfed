@@ -6,6 +6,7 @@ import 'package:wellfed/screens/feeder/tabs.dart';
 import 'package:wellfed/screens/home/add_feeder.dart';
 import 'package:wellfed/screens/home/home.dart';
 import 'package:wellfed/screens/home/welcome.dart';
+import 'package:wellfed/screens/install/install_handover.dart';
 import 'package:wellfed/screens/settings/app_settings.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/model.dart';
@@ -13,9 +14,11 @@ import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/fleet/fleet.dart';
+import 'package:wellfed/state/install/install.dart';
 import 'package:wellfed/state/settings/backups.dart';
 
 import '../feeder/feeder_support.dart';
+import '../support/fake_install.dart';
 import '../support/fakes.dart';
 import '../support/harness.dart';
 import 'golden_fixtures.dart';
@@ -204,6 +207,39 @@ void main() {
         await settle(tester);
         await matchesGolden('desktop_feed_dialog', brightness);
       });
+
+      for (final (String name, Handover handover) in [
+        ('install_join', Handover.joining),
+        ('install_return', Handover.returning),
+      ]) {
+        _desktopGolden(name, (tester) async {
+          final fleet = FeederFleet(FakeBook(), FakeFeederPorts());
+          addTearDown(fleet.dispose);
+          await _desktop(
+            tester,
+            _window(
+              fleet,
+              null,
+              InstallHandoverPage(
+                flow: InstallFlow(FakeBook(), FakeInstallPorts()),
+                state: InstallHandover(
+                  const InstallFacts(phoneIp: '10.0.0.5'),
+                  handover: handover,
+                  joinFailed: false,
+                  restartAgain: false,
+                  waitReason: null,
+                  join: FeederJoin.byHand,
+                  homeNetwork: 'Maple St',
+                ),
+                onLeave: () async {},
+              ),
+            ),
+            brightness,
+          );
+          await decodeImages(tester);
+          await matchesGolden('desktop_$name', brightness);
+        });
+      }
     });
   }
 }

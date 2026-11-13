@@ -79,7 +79,7 @@ class _Unavailable extends StatelessWidget {
       Notice(
         tone: Tone.fault,
         lead: 'This $deviceName cannot restore the original firmware.',
-        text: 'Only the Android app can put it back. Restore from an Android phone that owns this feeder.',
+        text: 'Restore from another phone or computer that owns this feeder.',
       ),
     ],
   );
@@ -277,7 +277,10 @@ class _Running extends StatelessWidget {
       ),
       if (state.holdRefused) ...[
         const SizedBox(height: Space.s4),
-        const Notice(tone: Tone.warning, text: 'Keep this screen open: Android would not let this run behind.'),
+        Notice(
+          tone: Tone.warning,
+          text: isDesktop ? stayAwakeWords : 'Keep this screen open: Android would not let this run behind.',
+        ),
       ],
       WaitWords(
         state.pressDispense ? null : state.waitWords,

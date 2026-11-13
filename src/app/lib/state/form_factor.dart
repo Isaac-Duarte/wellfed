@@ -15,3 +15,7 @@ String get deviceName => isDesktop ? 'computer' : 'phone';
 /// Any of the owner's devices, as the words name them: "phone" on a phone,
 /// "device" on a desktop, where a phone may open the feeder too.
 String get anyDevice => isDesktop ? 'device' : 'phone';
+
+/// What a computer that would not promise to stay awake asks of its owner
+/// during a long run. Holding off sleep never covers a closed lid.
+const String stayAwakeWords = 'Keep this computer awake, with its lid open, until this finishes.';

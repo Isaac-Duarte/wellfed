@@ -40,7 +40,18 @@ You should see the feeder restart. It then opens its own Wi-Fi network for setup
 
 Tap **Join the feeder's network**, and choose the `PL-AF103` network in Android's picker. The picker can be empty until the network is up. The app sends your Wi-Fi details and goes back to your own network.
 
-Your password goes unencrypted over the feeder's open network for a few seconds. If the feeder doesn't connect within two minutes, the run stops with nothing installed. A wrong password or a network with no 2.4 GHz is the usual cause.
+On a computer, you switch networks yourself, since no desktop lets an app join one for you:
+
+1. Open the computer's Wi-Fi menu and pick the `PL-AF103` network. The app watches for the switch and sends your Wi-Fi details once it sees it.
+2. When the app says **Switch back**, rejoin your own network straight away. The feeder gives up if it can't reach your computer within about 20 seconds of joining your Wi-Fi.
+
+Before it watches, the app checks two things. A VPN has to be off, since the feeder can't reach a VPN's address. And the computer mustn't already be on another network with `192.168.1.x` addresses, such as a guest network on a second adapter, since your Wi-Fi password would go to that network's router. The screen says which to change.
+
+The app sends nothing until the computer itself says it joined a Wi-Fi network named `PL-AF103-…`. A Mac says so only to apps allowed your location, so allow Wellfed when macOS asks. On Windows 11, turn on Location for desktop apps in **Settings › Privacy & security › Location**. On Linux, the app asks NetworkManager or `iw`.
+
+A computer with a cable to your router (or a second Wi-Fi adapter) is easier: it stays on your network throughout, so there's nothing to switch back. If your own network uses `192.168.1.x` addresses, as the feeder's does, the computer has to be fully off it while it sends, cable included.
+
+Your password goes unencrypted over the feeder's open network for a few seconds. A network's name isn't proof it's a feeder's: anyone can name one `PL-AF103-…`, and neither this app nor the vendor's can tell. If the feeder doesn't connect within two minutes, the run stops with nothing installed. A wrong password or a network with no 2.4 GHz is the usual cause. On a computer, its firewall is the other: the feeder connects to it on TCP ports 1883 and 8088, and the stop screen says where your system allows them.
 
 ## Step 3: Confirm it's your feeder
 
@@ -87,6 +98,7 @@ Follow what the stop screen offers, since the right move depends on where it sto
 
 - **The feeder's network never appears.** Hold Reset again. If your phone set this feeder up in the vendor's app, forget that network in the phone's Wi-Fi settings first. If the panel ignores the hold, the vendor's app may have disabled the buttons: hold Lock for about 3 seconds, then Reset for about 3 seconds.
 - **The app says two feeders answered.** Unplug the others and start again.
+- **A computer slept or closed partway.** The app keeps the computer awake during the install, but closing the lid still sleeps it. Keep the lid open and the app running: closing the window asks first, since it stops the install wherever it is.
 
 ## Next steps
 
@@ -96,5 +108,6 @@ Follow what the stop screen offers, since the right move depends on where it sto
 ## Evidence
 
 - **Observed, October 30, 2026.** The app ran these steps on one research feeder from a real Reset hold, including a retry after a wrong password.
+- **Modeled.** The install from a computer, with its switch of networks by hand, is tested on the host only and hasn't been run on a feeder. The 20 second window comes from stock's behavior with no answer to its binding request, not from a timed run from a computer.
 - **Recovered.** The Lock and Reset sequence for disabled buttons comes from analysis of the vendor's firmware, and hasn't been pressed on the feeder.
 - The screenshots are from an October 30 run. Device details are painted over. The setup code shown had expired.

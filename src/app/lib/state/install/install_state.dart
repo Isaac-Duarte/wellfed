@@ -48,6 +48,37 @@ enum InstallStage {
   stopped,
 }
 
+/// How this device joins the feeder's setup network.
+enum FeederJoin {
+  /// Through Android's picker, which holds this process's sockets to it.
+  picker,
+
+  /// By the owner's hand, in a computer's own Wi-Fi menu, and back home the
+  /// same way. The app only sees each switch happen.
+  byHand,
+}
+
+/// Why a computer was not counted as on the feeder's network.
+enum FeederJoinProblem {
+  /// Its network never showed, or the owner stopped waiting.
+  notSeen,
+
+  /// It was already on another 192.168.1.x network, where the setup frame
+  /// and the Wi-Fi password in it would go to that network's router.
+  otherNetwork,
+
+  /// Its address is one the feeder can't reach, as a VPN's is.
+  vpn,
+
+  /// It joined a new 192.168.1.x network, but the system wouldn't say which
+  /// Wi-Fi that is, so the frame doesn't go.
+  nameUnreadable,
+
+  /// It was already on the feeder's network when the handover read where
+  /// home is, so the frame would name the wrong address.
+  alreadyOnFeeder,
+}
+
 /// Where the handover is.
 enum Handover {
   /// The broker starts; nothing to press yet.
@@ -56,11 +87,15 @@ enum Handover {
   /// Waiting for the owner to join the feeder's network.
   join,
 
-  /// Android's picker is up.
+  /// Android's picker is up, or a computer waits for the owner to join.
   joining,
 
   /// The frame goes out, and this phone comes back.
   sending,
+
+  /// The frame went out, and a computer waits for the owner to put it back
+  /// on the home network, which the feeder must reach within stock's wait.
+  returning,
 
   /// Waiting for the feeder to reach this phone.
   waiting,
@@ -207,14 +242,32 @@ final class InstallHandover extends InstallState {
     required this.joinFailed,
     required this.restartAgain,
     required this.waitReason,
+    this.join = FeederJoin.picker,
+    this.homeNetwork,
+    this.joinProblem,
   });
+
+  /// Why a computer was not counted as on the feeder's network, with
+  /// [joinFailed].
+  final FeederJoinProblem? joinProblem;
 
   /// Where the handover is.
   final Handover handover;
 
   /// Android's picker ended with no network: the feeder's network is not up
-  /// yet, or the owner cancelled.
+  /// yet, or the owner cancelled. On a computer, the owner stopped waiting.
   final bool joinFailed;
+
+  /// How this device joins the feeder's network.
+  final FeederJoin join;
+
+  /// The Wi-Fi this device was on before it joined the feeder's, when the
+  /// system said: the one to go back to.
+  final String? homeNetwork;
+
+  /// The home network uses the feeder's setup addresses (192.168.1.x), so a
+  /// computer can't reach the feeder while it stays on its home network too.
+  bool get homeSharesSetupAddresses => phoneIp?.startsWith('192.168.1.') ?? false;
 
   /// Stock connected but its reports were lost: restart it once more.
   final bool restartAgain;

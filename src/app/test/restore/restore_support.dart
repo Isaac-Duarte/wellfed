@@ -138,6 +138,13 @@ class FakeRestorePorts implements RestorePorts {
   /// Lets a test hold [holdProcess] open.
   Completer<void>? holding;
 
+  /// A computer's hold giving way: add to it.
+  // ignore: close_sinks, the test ends with it
+  final lapses = StreamController<void>.broadcast();
+
+  @override
+  Stream<void> holdLapsed() => lapses.stream;
+
   @override
   Future<bool> holdProcess(String text) async {
     held.add(text);

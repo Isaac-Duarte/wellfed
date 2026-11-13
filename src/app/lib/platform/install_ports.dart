@@ -10,6 +10,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:wellfed/platform/alert_ports.dart';
 import 'package:wellfed/platform/discovery.dart';
+import 'package:wellfed/platform/feeder_network.dart';
 import 'package:wellfed/platform/host.dart';
 import 'package:wellfed/platform/phone.dart';
 import 'package:wellfed/platform/setup_link.dart';
@@ -18,6 +19,7 @@ import 'package:wellfed/src/rust/api/install.dart' as rust;
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/store.dart' show identityHex;
+import 'package:wellfed/state/install/install_state.dart' show FeederJoin;
 import 'package:wellfed/state/wifi/networks.dart';
 
 /// Where the installer's files live on this phone.
@@ -51,8 +53,12 @@ abstract interface class InstallLink {
 /// phone.
 abstract interface class InstallPorts {
   /// Whether this device can join the feeder's own Wi-Fi, which every
-  /// install goes through. Only the Android app can.
+  /// install goes through: Android through its picker, a computer by its
+  /// owner's hand.
   bool get joinsFeederNetwork;
+
+  /// How this device joins the feeder's setup network.
+  FeederJoin get feederJoin;
 
   /// Where the install keeps its files.
   Future<InstallPaths> paths();
@@ -82,18 +88,28 @@ abstract interface class InstallPorts {
   /// The checked copy of stock kept for the feeder with `identity`.
   String? keptBackup(InstallPaths paths, List<int> identity);
 
-  /// This phone's address on the Wi-Fi, or `null` when it is on none.
+  /// This phone's address on the Wi-Fi, or `null` when it is on none. On a
+  /// computer, the address its default route goes from.
   Future<String?> phoneAddress();
 
-  /// Join the feeder's setup network, through Android's picker, so this
-  /// process's sockets go over it. Throws when none was joined.
-  Future<void> joinFeederNetwork();
+  /// Join the feeder's setup network. Android joins through its picker, so
+  /// this process's sockets go over it, and gives `null`. A computer waits for
+  /// its owner to join it by hand, and gives its address there, which the
+  /// frame goes from. `home` is this device's address in the frame, which
+  /// a route from stays on the home network. Throws when none was joined.
+  Future<String?> joinFeederNetwork(String? home);
+
+  /// Stop waiting for the owner to join by hand. Android's picker is the
+  /// owner's to close.
+  void stopJoining();
 
   /// Leave the setup network: this phone's address once it is back on its
-  /// Wi-Fi, or `null` if it does not come back in time.
+  /// Wi-Fi, or `null` if it does not come back in time. A computer waits for
+  /// its owner to switch back.
   Future<String?> leaveFeederNetwork();
 
   /// Ask Android for what the install needs; whether Bluetooth was allowed.
+  /// A computer asks nothing up front.
   /// `bluetooth` is `false` for a bench image, which pairs over the LAN.
   Future<bool> askPermissions({required bool bluetooth});
 
@@ -136,27 +152,40 @@ abstract interface class InstallPorts {
   Future<String?> locate(String identity);
 
   /// Keep this process alive with a notification, for as long as a run or a
-  /// listener needs stock's server on this phone. `false` when Android
-  /// refused, so the app's being on screen is all that keeps it alive.
+  /// listener needs stock's server on this phone, or a computer awake.
+  /// `false` when Android or the computer refused, so the app's being on
+  /// screen and awake is all that keeps it going.
   Future<bool> holdProcess(String text);
 
   /// Let this process go, once the run has ended.
   Future<void> releaseProcess();
 
-  /// Hand the kept stock backup at `path` to the owner, to save elsewhere.
+  /// Each time a computer's hold gave way while a run still held: the run's
+  /// screen then says to keep it awake. Nothing on a phone.
+  Stream<void> holdLapsed();
+
+  /// Hand the kept stock backup at `path` to the owner, to save elsewhere:
+  /// the share sheet on a phone, a save dialog on a computer.
   Future<void> shareBackup(String path);
 }
 
-/// [InstallPorts] on Android, with this phone's key.
+/// [InstallPorts] on Android and the desktops, with this device's key.
 class AppInstallPorts implements InstallPorts {
   /// Ports signed by `_key`.
   const AppInstallPorts(this._key);
   static const _wifi = MethodChannel('io.github.isaacduarte.wellfed/wifi');
 
+  /// A computer's view of the feeder's network, one for every run: one install
+  /// runs at a time.
+  static final _guided = GuidedFeederNetwork();
+
   final ClientKey _key;
 
   @override
-  bool get joinsFeederNetwork => !onDesktopHost;
+  bool get joinsFeederNetwork => true;
+
+  @override
+  FeederJoin get feederJoin => onDesktopHost ? FeederJoin.byHand : FeederJoin.picker;
 
   /// The image's files, as `make app-installer-input` fills them in.
   static const _imageAssets = ['review.json', 'build-manifest.json', 'image.bin', 'update.manifest'];
@@ -216,25 +245,38 @@ class AppInstallPorts implements InstallPorts {
       rust.keptBackup(dataDir: paths.data, identity: identity);
 
   @override
-  Future<String?> phoneAddress() => _wifi.invokeMethod<String>('phoneAddress');
+  Future<String?> phoneAddress() async =>
+      onDesktopHost ? _guided.homeAddress() : await _wifi.invokeMethod<String>('phoneAddress');
 
   @override
-  Future<void> joinFeederNetwork() => _wifi.invokeMethod<void>('joinFeeder');
+  Future<String?> joinFeederNetwork(String? home) async {
+    if (onDesktopHost) return _guided.join(home);
+    await _wifi.invokeMethod<void>('joinFeeder');
+    return null;
+  }
 
   @override
-  Future<String?> leaveFeederNetwork() => _wifi.invokeMethod<String>('leaveFeeder');
+  void stopJoining() => _guided.stop();
+
+  @override
+  Future<String?> leaveFeederNetwork() => onDesktopHost ? _guided.leave() : _wifi.invokeMethod<String>('leaveFeeder');
 
   @override
   Future<String?> phoneModel() => const AppPhonePorts().model();
 
+  /// On a computer, the Wi-Fi of the interface holding the home address:
+  /// the system's own "current network" can be a wired profile's name.
   @override
-  Future<String?> currentNetwork() => const AppPhonePorts().currentNetwork();
+  Future<String?> currentNetwork() => onDesktopHost ? _guided.homeNetwork() : const AppPhonePorts().currentNetwork();
 
   @override
   Future<NetworkScan> scanNetworks() => scanNearbyNetworks();
 
   @override
   Future<bool> askPermissions({required bool bluetooth}) async {
+    // Linux has no runtime permissions, and macOS asks as Bluetooth is first
+    // used: a refusal shows where the run reaches for it.
+    if (onDesktopHost) return true;
     final Map<Permission, PermissionStatus> granted = await [
       if (bluetooth) ...[Permission.bluetoothScan, Permission.bluetoothConnect],
       // Only to read the Wi-Fi's name for the prefill, and to show the
@@ -291,11 +333,15 @@ class AppInstallPorts implements InstallPorts {
   @override
   Future<void> releaseProcess() => releaseFor(AlertHold.install);
 
+  @override
+  Stream<void> holdLapsed() => runHolds.lapsed;
+
   /// `run` is done with this process; another run's hold stays.
   Future<void> releaseFor(AlertHold run) => runHolds.release(run);
 
   @override
   Future<void> shareBackup(String path) async {
+    if (onDesktopHost) return const SaveBackup()(path);
     await SharePlus.instance.share(
       ShareParams(
         files: [XFile(path, mimeType: 'application/octet-stream')],

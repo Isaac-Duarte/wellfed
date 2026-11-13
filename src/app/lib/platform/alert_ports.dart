@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:wellfed/platform/desktop_awake.dart';
 import 'package:wellfed/platform/discovery.dart';
 import 'package:wellfed/platform/host.dart';
 import 'package:wellfed/platform/notices.dart';
@@ -342,12 +343,22 @@ Future<void> forgetFeederAlerts(String identity) async {
   await Notices.remove(ids);
 }
 
-/// The process holds of this app's engine. The screen stays on with them,
-/// as a locked phone dozes whatever the service asks: a run's own sockets and
-/// discovery stall until someone wakes it.
-final runHolds = RunHolds((text) async {
-  await _screen.invokeMethod<void>('keepOn', text != null);
-  return await alertsChannel.invokeMethod<bool>('hold', text) ?? false;
-}, (run, {required held}) => holdAlerts(run: run, held: held));
+/// The process holds of this app's engine. On a phone the screen stays on
+/// with them, as a locked phone dozes whatever the service asks: a run's own
+/// sockets and discovery stall until someone wakes it. A computer has no
+/// service to keep, only sleep to hold off.
+final RunHolds runHolds = RunHolds(
+  onDesktopHost
+      ? _desktopAwake.apply
+      : (text) async {
+          await _screen.invokeMethod<void>('keepOn', text != null);
+          return await alertsChannel.invokeMethod<bool>('hold', text) ?? false;
+        },
+  (run, {required held}) => holdAlerts(run: run, held: held),
+);
+
+/// A computer's hold, which tells [runHolds] when its helper gave way.
+// ignore: unnecessary_lambdas, a tearoff would read runHolds while runHolds itself is being built from this.
+final _desktopAwake = DesktopAwake(onLapsed: () => runHolds.lapse());
 
 const _screen = MethodChannel('io.github.isaacduarte.wellfed/screen');

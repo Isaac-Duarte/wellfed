@@ -59,6 +59,10 @@ class UpdateFlow extends ChangeNotifier {
 
     final KnownFeeder known = _feeder.state.known;
     _holding = true;
+    _lapses ??= _ports.holdLapsed().listen((_) {
+      if (!_holding) return;
+      if (_state case final UpdateRun run) _set(run.changed(holdRefused: true));
+    });
     final bool held = await _ports.holdProcess('Updating ${known.name}');
     if (_disposed) {
       await _ports.releaseProcess();
@@ -119,6 +123,9 @@ class UpdateFlow extends ChangeNotifier {
     _release();
     _set(UpdateEnded(last));
   }
+
+  /// A computer's hold giving way mid-run.
+  StreamSubscription<void>? _lapses;
 
   void _release() {
     _push = null;
@@ -193,6 +200,7 @@ class UpdateFlow extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    unawaited(_lapses?.cancel());
     _release();
     super.dispose();
   }

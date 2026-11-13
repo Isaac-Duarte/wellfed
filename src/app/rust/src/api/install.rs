@@ -199,7 +199,8 @@ pub enum InstallAsk {
     /// Answered done once the owner was told: the broker already listens.
     RestartFeeder,
     /// Join the feeder's setup network, answered done once this process's
-    /// sockets go over it. The broker already listens.
+    /// sockets go over it, or [`InstallAnswer::Joined`] once this computer has
+    /// an address on it. The broker already listens.
     JoinFeederNetwork,
     /// The frame went out: leave the feeder's setup network, answered done
     /// once this phone is back on its Wi-Fi at the address the frame named.
@@ -233,6 +234,16 @@ pub enum InstallAnswer {
     /// Where the feeder is (`ip:port`), or `None`.
     Located {
         address: Option<String>,
+    },
+    /// The answer to [`InstallAsk::JoinFeederNetwork`] where the owner joins
+    /// it by hand, as on a computer: this computer's IPv4 address on the
+    /// feeder's link. Right before the frame, the run checks that the route
+    /// to the feeder still leaves from it, and fails the step otherwise; the
+    /// frame's socket is then bound to it, so an address gone by the send
+    /// fails it too. Binding does not pin the interface: the system still
+    /// routes by destination, which is why the route is read again.
+    Joined {
+        from: String,
     },
     /// It could not be done; `reason` reaches the person as written.
     Failed {
@@ -685,4 +696,13 @@ pub fn kept_backups(data_dir: String) -> Result<Vec<KeptBackup>, BridgeError> {
 #[frb(sync)]
 pub fn kept_backup(data_dir: String, identity: Vec<u8>) -> Option<String> {
     install::kept_backup(std::path::Path::new(&data_dir), &identity)
+}
+
+/// The IPv4 address this computer sends from toward `to`, by its routing
+/// table, or `None` when `to` is no IPv4 address or has no route. A computer
+/// joins the feeder's setup network by hand, so the app reads which link it
+/// is on, and where the feeder reaches it, this way. Nothing is sent.
+#[frb(sync)]
+pub fn route_source(to: String) -> Option<String> {
+    install::route_source(to.parse().ok()?).map(|from| from.to_string())
 }

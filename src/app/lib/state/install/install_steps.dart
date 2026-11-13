@@ -28,21 +28,36 @@ extension InstallSteps on InstallFlow {
   }
 
   /// Join the feeder's network. The owner may try again: the picker comes up
-  /// empty until the feeder's network is up.
+  /// empty until the feeder's network is up. A computer waits for the owner
+  /// to join it in the computer's own Wi-Fi menu, until [stopJoining].
   Future<void> joinFeeder() async {
     final int? ask = _joinAsk;
     final InstallRun? run = _run;
     if (ask == null || run == null || _handover == Handover.joining) return;
     _handover = Handover.joining;
     _joinFailed = false;
+    _joinProblem = null;
+    _joinStopAsked = false;
     _notify();
+    // The network to go back to, while this device is still on it.
+    if (_ports.feederJoin == FeederJoin.byHand) {
+      try {
+        _homeNetwork ??= await _ports.currentNetwork();
+      } on Object catch (_) {
+        // Only words hang on it: with none, the screen says "your home network".
+      }
+      // The run ended, or the owner stopped, before the watch began: a stop
+      // sent to the port then reached nothing.
+      if (_disposed || !identical(_run, run)) return;
+      if (_joinStopAsked) return _joinEnded(FeederJoinProblem.notSeen);
+    }
+    final String? from;
     try {
-      await _ports.joinFeederNetwork();
+      from = await _ports.joinFeederNetwork(_phoneIp);
+    } on JoinRefused catch (refused) {
+      return _joinEnded(refused.problem);
     } on Object catch (_) {
-      _handover = Handover.join;
-      _joinFailed = true;
-      _notify();
-      return;
+      return _joinEnded(null);
     }
     // The run ended while the picker was up: nothing will ever ask to leave.
     if (_disposed || !identical(_run, run)) {
@@ -53,12 +68,37 @@ extension InstallSteps on InstallFlow {
     _onFeederNetwork = true;
     _handover = Handover.sending;
     _notify();
-    run.answer(id: ask, answer: const InstallAnswer.done());
+    // A computer's address on the feeder's link: the frame goes from it alone.
+    run.answer(
+      id: ask,
+      answer: from == null ? const InstallAnswer.done() : InstallAnswer.joined(from: from),
+    );
+  }
+
+  /// Stop waiting for a computer to join the feeder's network by hand. The
+  /// owner can look again.
+  void stopJoining() {
+    if (_handover != Handover.joining) return;
+    _joinStopAsked = true;
+    _ports.stopJoining();
+  }
+
+  /// The join ended with no network, for `problem` on a computer.
+  void _joinEnded(FeederJoinProblem? problem) {
+    _handover = Handover.join;
+    _joinFailed = true;
+    _joinProblem = problem;
+    _notify();
   }
 
   /// Back on the Wi-Fi: the frame named this phone's address, so another one
   /// would leave the feeder looking in the wrong place.
   Future<void> _leaveFeeder(void Function(InstallAnswer) answer) async {
+    // A computer goes back by its owner's hand, and stock's wait is short.
+    if (_ports.feederJoin == FeederJoin.byHand) {
+      _handover = Handover.returning;
+      _notify();
+    }
     final String? address = await _ports.leaveFeederNetwork();
     _onFeederNetwork = false;
     if (address == _phoneIp && address != null) {

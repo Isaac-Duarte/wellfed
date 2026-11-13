@@ -1382,6 +1382,32 @@ mod tests {
     use wellfed_client::update::{Installer, Next};
     use wellfed_stock::controller::Rejection;
 
+    /// The frame's socket goes from the address the platform named, and an
+    /// address this host does not have refuses the socket before anything is
+    /// sent.
+    #[tokio::test]
+    async fn the_frame_goes_from_the_named_address() {
+        let listener = tokio::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("a loopback socket");
+        let to = listener.local_addr().expect("its address");
+
+        let socket = frame_socket(Some(Ipv4Addr::LOCALHOST))
+            .await
+            .expect("a socket on loopback");
+        socket.send_to(b"DL", to).await.expect("the frame");
+        let mut got = [0; 8];
+        let (n, from) = listener.recv_from(&mut got).await.expect("the frame");
+        assert_eq!(got.get(..n), Some(&b"DL"[..]));
+        assert_eq!(from.ip(), IpAddr::V4(Ipv4Addr::LOCALHOST));
+
+        assert!(
+            frame_socket(Some(Ipv4Addr::new(192, 0, 2, 77)))
+                .await
+                .is_err()
+        );
+    }
+
     /// A push that went silent, or answered unreadably, after its offer went
     /// out ends the promotion uncertain; one gone before the offer is a
     /// definite failure, since nothing reached bank 0.
