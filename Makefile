@@ -162,12 +162,15 @@ check-app:
 	cd $(APP) && flutter build apk --debug --target-platform android-arm64,android-x64
 	@# The https verifier needs both halves on the phone: the JNI hook in the
 	@# bridge and its Kotlin package, or the first https login panics. A
-	@# missing hold-clearing hook would crash the service when a task is swiped.
+	@# missing hold-clearing hook would crash the service when a task is swiped,
+	@# and a missing uplink hook the app at its start.
 	@for abi in arm64-v8a x86_64; do \
 		unzip -p $(APP_APK) lib/$$abi/libwellfed_app_bridge.so | grep -aq Java_io_github_isaacduarte_wellfed_TlsVerifier_start || \
 			{ echo "the APK's $$abi bridge lacks the TLS verifier's JNI hook"; exit 1; }; \
 		unzip -p $(APP_APK) lib/$$abi/libwellfed_app_bridge.so | grep -aq Java_io_github_isaacduarte_wellfed_RustHolds_clear || \
 			{ echo "the APK's $$abi bridge lacks the hold-clearing JNI hook"; exit 1; }; \
+		unzip -p $(APP_APK) lib/$$abi/libwellfed_app_bridge.so | grep -aq Java_io_github_isaacduarte_wellfed_Uplink_set || \
+			{ echo "the APK's $$abi bridge lacks the uplink's JNI hook"; exit 1; }; \
 	done
 	@unzip -p $(APP_APK) 'classes*.dex' | grep -aq 'Lorg/rustls/platformverifier/CertificateVerifier' || \
 		{ echo "the APK lacks rustls-platform-verifier's Kotlin half"; exit 1; }
