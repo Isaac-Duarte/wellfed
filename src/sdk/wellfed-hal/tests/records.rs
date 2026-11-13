@@ -197,6 +197,49 @@ fn confirmation_records_decode_to_what_they_say() {
         },
         Some(Event::Confirm(Confirm::Error { stage: "write" })),
     );
+    for &reason in confirm::GiveWayReason::ALL {
+        confirm_decodes(
+            confirm::Record::GiveWay { reason },
+            Some(Event::Confirm(Confirm::GiveWay {
+                reason: reason.as_str(),
+            })),
+        );
+    }
+}
+
+/// A confirmation that ends anything but confirmed names why the trial
+/// gives way.
+#[test]
+fn an_unconfirmed_ending_names_its_give_way_reason() {
+    use confirm::{ErrorStage, GiveWayReason, Record};
+    use wellfed_hal::flash_lock::arming::Event as Arming;
+
+    assert_eq!(GiveWayReason::unconfirmed(Record::Already), None);
+    let confirmed = Record::Confirmed {
+        healthy_ms: 30_000,
+        version: 0,
+    };
+    assert_eq!(GiveWayReason::unconfirmed(confirmed), None);
+    for (stage, reason) in [
+        (ErrorStage::Read, GiveWayReason::Read),
+        (ErrorStage::Write, GiveWayReason::Write),
+        (ErrorStage::Floor, GiveWayReason::Floor),
+    ] {
+        assert_eq!(
+            GiveWayReason::unconfirmed(Record::Error { stage }),
+            Some(reason)
+        );
+    }
+    for event in [
+        Arming::Timeout,
+        Arming::Clock,
+        Arming::Skip { marker: 0x100 },
+    ] {
+        assert_eq!(
+            GiveWayReason::unconfirmed(Record::Arming(event)),
+            Some(GiveWayReason::Arming)
+        );
+    }
 }
 
 /// The words the bench matches, as they were when these fields were plain

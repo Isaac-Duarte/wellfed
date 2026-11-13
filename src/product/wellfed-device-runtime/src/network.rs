@@ -32,7 +32,7 @@ use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use wellfed_core::settings::Saved;
 use wellfed_core::store::handover;
 use wellfed_core::store::slot::SlotIo;
-use wellfed_device::store::net::NetStore;
+use wellfed_device::store::net::{NetStatus, NetStore};
 use wellfed_device::store::reset;
 use wellfed_device_api::mailbox::{Stamp, WifiResult, WifiSource, WifiView};
 use wellfed_device_api::wifi::Credentials;
@@ -42,7 +42,7 @@ use wellfed_hal::cell::TaskCell;
 use wellfed_hal::handoff::{Handoff, Published, Taken};
 use wellfed_hal::interlock::INTERLOCK;
 pub use wellfed_hal::sdk::JoinCredentials;
-use wellfed_hal::{link, sdk};
+use wellfed_hal::{link, net_status, sdk};
 
 /// The credential slots within the storage region (`0x345000`).
 pub const NET_BASE: u32 = wellfed_hal::board::storage::NET.first;
@@ -278,6 +278,9 @@ pub unsafe fn reset() {
 struct Join {
     opened: bool,
     stored: Option<Credentials>,
+    /// The store read as holding no credentials (empty, or cleared), as
+    /// opposed to one that could not be read.
+    none_stored: bool,
     failures: u32,
     joined_once: bool,
 }
@@ -286,6 +289,7 @@ struct Join {
 static JOIN: TaskCell<Join> = TaskCell::new(Join {
     opened: false,
     stored: None,
+    none_stored: false,
     failures: 0,
     joined_once: false,
 });
@@ -336,6 +340,8 @@ fn stored(join: &mut Join) -> Option<Credentials> {
         let mut store = NetStore::default();
         store.open(MappedNet);
         join.stored = store.credentials;
+        join.none_stored = matches!(store.status, NetStatus::Empty | NetStatus::Loaded)
+            && store.credentials.is_none();
     }
     join.stored
 }
@@ -364,6 +370,9 @@ pub unsafe fn select(build: BuildWifi, out: &mut JoinCredentials) {
     }
     let stored = stored(join);
     let choice = choose(build, stored.is_some(), join.failures, join.joined_once);
+    // Only a store read as empty: one not yet read, or unreadable, may
+    // still hold a network.
+    net_status::set_unprovisioned(build == BuildWifi::Absent && join.none_stored);
     // Nothing to join reads as the build's source, as before any join: the
     // device API's view has no value for it.
     let code = choice.unwrap_or(WifiSource::Build).code();

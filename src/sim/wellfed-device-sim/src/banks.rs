@@ -200,6 +200,12 @@ impl Banks {
         self.register = trial::deliberate(self.register);
     }
 
+    /// `bank`'s trial build can never confirm this boot and gives way: its
+    /// count at KM0's limit, so the next boot gives way to bank 0.
+    pub fn spent(&mut self, bank: u8) {
+        self.register = trial::spent(self.register, &self.build(bank));
+    }
+
     /// A boot of `bank` ran long enough to end a storm's count.
     pub fn settle(&mut self, bank: u8) {
         self.register = trial::settled(self.register, &self.build(bank));

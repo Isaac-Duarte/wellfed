@@ -27,7 +27,7 @@ use wellfed_hal::flash::hooks::{self, HookProvider, HookTicket};
 use wellfed_hal::flash::park::Hardware;
 use wellfed_hal::flash_lock::arming::Hooks;
 use wellfed_hal::flash_lock::provider::{LeaseFault, Provider};
-use wellfed_hal::ota::confirm::{self, Confirm, HookedStorage};
+use wellfed_hal::ota::confirm::{self, Confirm, GiveWayReason, HookedStorage};
 use wellfed_hal::ota::update::{self as update, Floor, SdkFlash, StoreSlots, Update};
 use wellfed_hal::supervision::beat;
 use wellfed_hal::supervision::supervise::{self, Feeding, LIVENESS_MS, Startup};
@@ -136,6 +136,40 @@ pub fn request_reset() {
 fn restart() {
     // Asked for, so not a fault: the reset-storm count ends here.
     update_trial_register(trial::deliberate);
+    supervision::stopping();
+    RESTART.store(true, Ordering::Release);
+}
+
+/// Give this boot's trial build up for bank 0 at once, for `reason`: it can
+/// never confirm this boot, or the owner held Reset, which only a
+/// confirmed build's settings writer carries out. Nothing happens unless
+/// the boot runs an unconfirmed trial, and only the first call acts.
+///
+/// No flash is written: the trial register takes the trial's last count
+/// (`trial::spent`), and the restart hands the decision to KM0, which
+/// gives way as after a trial's last boot, and only onto a bank 0 whose
+/// headers check. So a corrupt update store, unarmed hooks or a failed
+/// confirmation write cannot stop it. The update store keeps what it
+/// held: a build bank 0 activated reads there as one that failed its
+/// trial. The line goes out before the feeding stops; the watchdog's
+/// expiry (at least 2.4 s) and the feeder's flush follow.
+pub fn give_way(reason: GiveWayReason) {
+    static GAVE_WAY: AtomicBool = AtomicBool::new(false);
+    if !confirming() || GAVE_WAY.swap(true, Ordering::AcqRel) {
+        return;
+    }
+
+    let identity = trial::identity();
+    update_trial_register(|register| trial::spent(register, &identity));
+    let mut report = startup::Report::new();
+    if let Ok(line) = report.record(format_args!(
+        "PLCNF1 {}\r\n",
+        ConfirmLine(confirm::Record::GiveWay { reason })
+    )) {
+        sdk::log(line);
+    }
+    sdk::log_flush();
+
     supervision::stopping();
     RESTART.store(true, Ordering::Release);
 }
@@ -667,6 +701,15 @@ fn confirm_step() -> u32 {
     let Some(mut confirm) = CONFIRM.enter_or_init(Confirm::default) else {
         return 0;
     };
+    // With no network to join the link never goes live, and only the
+    // settings writer, which waits for the confirmation, could save one.
+    // A network that is stored or built in but absent is not this: it may
+    // come back before the trial's deadline.
+    if confirming() && net_status::unprovisioned() {
+        CONFIRM_DONE.store(true, Ordering::Release);
+        give_way(GiveWayReason::NoNetwork);
+        return 0;
+    }
     let provider = PROVIDER.get();
     // A live link (associated, leased, its gateway answering) stands in for the
     // broker session the normal role no longer opens. Nothing here needs the
@@ -712,11 +755,13 @@ fn confirm_step() -> u32 {
                 sdk::log(line);
             }
         }
-        if matches!(
-            step.record,
-            Some(confirm::Record::Already | confirm::Record::Confirmed { .. })
-        ) {
-            start_settings();
+        match step.record.and_then(GiveWayReason::unconfirmed) {
+            // A trial that ended unconfirmed cannot confirm this boot, and
+            // its writer never starts: bank 0 takes over now rather than
+            // after its deadline and every boot it has left.
+            Some(reason) => give_way(reason),
+            None if step.record.is_some() => start_settings(),
+            None => {}
         }
     }
     step.delay_ms

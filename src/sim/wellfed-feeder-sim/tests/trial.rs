@@ -1,8 +1,10 @@
 //! What the runtime says of a boot reaches readiness on the simulator, in
 //! virtual time, as on the feeder: a trial build reads `Starting` until it
-//! confirms, and resets at its deadline if it never does or its
-//! confirmation fails, until KM0 gives way to bank 0; a boot a reset storm
-//! holds reads `Fault`, its feeding owner closed, until its hold has run.
+//! confirms, and resets at its deadline if it never does, until KM0 gives
+//! way to bank 0; one that can never confirm this boot (its confirmation
+//! failed, it has no network to join, or the owner held Reset) gives way
+//! at once; a boot a reset storm holds reads `Fault`, its feeding owner
+//! closed, until its hold has run.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -16,6 +18,7 @@ use wellfed_feeder_sim::banks::{Banks, TRIAL_LIMIT, Trial};
 use wellfed_feeder_sim::flash::{Flash, Region};
 use wellfed_feeder_sim::harness;
 use wellfed_feeder_sim::sim::{CONFIRM_MS, Record, Sim, TRIAL_MS};
+use wellfed_hal::ota::confirm::GiveWayReason;
 use wellfed_hal::ota::update::Floor;
 use wellfed_hal::trial::{self, Storm};
 use wellfed_proto::api::{Blocked, Readiness};
@@ -86,6 +89,17 @@ impl Feeder {
                 _ => None,
             })
             .expect("the first pass logs the boot")
+    }
+
+    /// The give-ways this boot made.
+    fn gave_way(&self) -> Vec<GiveWayReason> {
+        self.records
+            .iter()
+            .filter_map(|record| match record {
+                Record::GaveWay(reason) => Some(*reason),
+                _ => None,
+            })
+            .collect()
     }
 
     /// The confirmations this boot made.
@@ -175,34 +189,137 @@ fn a_build_that_never_confirms_reads_starting_until_its_deadline() {
     assert!(feeder.run(1_000), "reset at the trial's deadline");
 }
 
-/// A confirmation whose record cannot be written leaves the build in
-/// trial: it reads `Starting` on, resets at the deadline, and KM0 counts
-/// each reset until it gives way to bank 0.
+/// A confirmation whose record cannot be written leaves the build unable
+/// to confirm this boot, and its writer never starts: it gives way at
+/// once, and the next boot is bank 0's, with no trial boot run out.
 #[test]
-fn a_trial_whose_confirmation_fails_resets_until_bank_0_takes_over() {
+fn a_trial_whose_confirmation_fails_gives_way_at_once() {
     let flash = Flash::memory();
     flash.fail_programs(Some(storage::CONFIRM));
     let banks = Banks::new();
     banks.borrow_mut().bank1_build = UNCONFIRMED;
     let mut feeder = Feeder::boot(flash, banks);
 
-    for boot in 1..=TRIAL_LIMIT {
-        assert!(!feeder.run(TRIAL_MS - 10), "boot {boot}");
-        assert_eq!(feeder.booted(), (1, true, Storm::Normal), "boot {boot}");
-        assert_eq!(feeder.confirmations(), [Floor::Failed], "boot {boot}");
-        assert_eq!(
-            feeder.sim.readiness(),
-            Readiness::Blocked(Blocked::Starting),
-            "boot {boot}"
-        );
-        assert!(feeder.run(1_000), "boot {boot} resets at its deadline");
-        feeder.restart();
-    }
+    assert!(feeder.run(TRIAL_MS - 10), "restarts before its deadline");
+    assert_eq!(feeder.booted(), (1, true, Storm::Normal));
+    assert_eq!(feeder.confirmations(), [Floor::Failed]);
+    assert_eq!(feeder.gave_way(), [GiveWayReason::Write]);
 
+    feeder.restart();
     assert!(!feeder.run(TRIAL_MS + 10));
     assert_eq!(feeder.booted(), (0, false, Storm::Normal));
     assert!(!feeder.banks.borrow().bank1_valid());
     assert_eq!(feeder.sim.readiness(), Readiness::Ready);
+}
+
+/// Spoil both units of the update store, as an unreadable record leaves
+/// it.
+fn corrupt_update_store(flash: &Rc<Flash>) {
+    let update = Region::new(flash, storage::UPDATE);
+    for unit in 0..2 {
+        assert!(update.erase(unit));
+        assert!(update.program(unit, 0, &[0x42; 64]));
+    }
+}
+
+/// A trial over an update store it cannot read cannot raise its floor, so
+/// it cannot confirm: it gives way at once. Nothing is written for the
+/// give-way, so the store stays as it was, and bank 0, whose writer runs
+/// at once, serves.
+#[test]
+fn a_trial_over_a_corrupt_update_store_gives_way_at_once() {
+    let mut feeder = Feeder::on_trial();
+    corrupt_update_store(&feeder.flash);
+    let before = Region::new(&feeder.flash, storage::UPDATE);
+    let mut unit = [0u8; 64];
+    assert!(before.read(0, 0, &mut unit));
+    feeder.restart();
+
+    assert!(feeder.run(TRIAL_MS - 10), "restarts before its deadline");
+    assert_eq!(feeder.booted(), (1, true, Storm::Normal));
+    assert_eq!(feeder.confirmations(), [Floor::Failed]);
+    assert_eq!(feeder.gave_way(), [GiveWayReason::Floor]);
+    let mut after = [0u8; 64];
+    assert!(Region::new(&feeder.flash, storage::UPDATE).read(0, 0, &mut after));
+    assert_eq!(after, unit, "the give-way wrote nothing there");
+
+    feeder.restart();
+    assert!(!feeder.run(TRIAL_MS + 10));
+    assert_eq!(feeder.booted(), (0, false, Storm::Normal));
+    assert_eq!(feeder.sim.readiness(), Readiness::Ready);
+    assert!(
+        feeder.sim.platform().totals().is_some(),
+        "bank 0's writer runs"
+    );
+}
+
+/// A consumer image with no network stored has nothing to join, and only
+/// the settings writer, which waits for the confirmation, could save one:
+/// the trial gives way on its first turn, before any confirmation.
+#[test]
+fn a_trial_with_no_network_to_join_gives_way_at_once() {
+    use wellfed_device::store::net::BuildWifi;
+
+    let mut feeder = Feeder::on_trial();
+    feeder.sim.platform().set_build_wifi(BuildWifi::Absent);
+
+    assert!(feeder.run(CONFIRM_MS), "restarts before it would confirm");
+    assert_eq!(feeder.booted(), (1, true, Storm::Normal));
+    assert!(feeder.confirmations().is_empty());
+    assert_eq!(feeder.gave_way(), [GiveWayReason::NoNetwork]);
+
+    feeder.restart();
+    assert!(!feeder.run(1_000));
+    assert_eq!(feeder.booted(), (0, false, Storm::Normal));
+}
+
+/// A network stored, or built in, is not this, even one that is not there:
+/// the trial confirms as usual, or meets its deadline.
+#[test]
+fn a_trial_with_a_network_stored_does_not_give_way() {
+    use wellfed_device::store::net::{BuildWifi, NetStore};
+    use wellfed_device_api::wifi::Credentials;
+
+    let mut feeder = Feeder::on_trial();
+    let mut net = NetStore::default();
+    net.open(Region::new(&feeder.flash, storage::NET));
+    let away = Credentials::new(b"away", b"long gone").expect("valid credentials");
+    assert!(net.save(Some(&away)));
+    feeder.restart();
+    feeder.sim.platform().set_build_wifi(BuildWifi::Absent);
+
+    assert!(!feeder.run(TRIAL_MS - 10));
+    assert!(feeder.gave_way().is_empty());
+    assert_eq!(feeder.confirmations(), [Floor::Unchanged]);
+}
+
+/// A Reset hold on a trial still confirming is never queued for a writer
+/// that has not started: the trial gives way, and bank 0, where the owner
+/// holds Reset again, counts the build as one that failed its trial.
+#[test]
+fn a_reset_hold_on_a_trial_gives_way() {
+    use wellfed_core::buttons::{Button, Buttons, Gesture};
+    use wellfed_feeder::feeder::{self, owner};
+
+    let held = |button| Gesture::Hold {
+        chord: Buttons::of(button),
+        level: 1,
+    };
+    let mut feeder = Feeder::on_trial();
+    assert!(!feeder.run(100));
+    feeder.sim.gesture(held(Button::Lock));
+    assert!(!feeder.run(50));
+    feeder.sim.gesture(held(Button::Reset));
+    assert!(feeder.run(50), "the give-way's restart");
+
+    let gave_way = Record::Feeder(feeder::Record::Owner(owner::Record::ResetGaveWay));
+    assert!(feeder.records.contains(&gave_way), "{:?}", feeder.records);
+    assert_eq!(feeder.gave_way(), [GiveWayReason::Reset]);
+    assert!(feeder.confirmations().is_empty());
+
+    feeder.restart();
+    assert!(!feeder.run(1_000));
+    assert_eq!(feeder.booted(), (0, false, Storm::Normal));
 }
 
 /// Resets nobody asked for, soon after each boot, make a storm: bank 1

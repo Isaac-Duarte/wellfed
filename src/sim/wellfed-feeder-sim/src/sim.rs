@@ -35,6 +35,7 @@ use wellfed_device_sim::updates::{Booted, Updates};
 pub use wellfed_device_sim::updates::{CONFIRM_MS, TRIAL_MS};
 use wellfed_feeder::feeder::{self, Feeder};
 use wellfed_feeder::panel;
+use wellfed_hal::ota::confirm::GiveWayReason;
 use wellfed_hal::ota::update::{self as update, Floor};
 use wellfed_hal::trial::Storm;
 use wellfed_session::noise::Keypair;
@@ -58,8 +59,10 @@ pub enum Record {
         storm: Storm,
     },
     /// The trial build's confirmation: the floor it raised, or that it
-    /// failed and the build stays in trial.
+    /// failed.
     Confirmed(Floor),
+    /// The trial gave way to bank 0 before running out, for this reason.
+    GaveWay(GiveWayReason),
     /// The writer's turn applied a client store change.
     Keys(KeyResult),
     Update(update::Record),
@@ -89,6 +92,7 @@ impl fmt::Display for Record {
                 storm.name()
             ),
             Self::Confirmed(floor) => write!(f, "confirm floor={floor:?}"),
+            Self::GaveWay(reason) => write!(f, "PLCNF1 give_way=1 reason={reason}"),
             Self::Keys(result) => write!(f, "keys result={result}"),
             Self::Update(record) => {
                 write!(f, "{} ", record.tag())?;
@@ -157,6 +161,7 @@ impl Sim {
         let (confirming, held) = (self.updates.confirming(), self.updates.held());
         self.feeds.gate(confirming, held);
         self.platform().set_held(held);
+        self.platform().set_confirming(confirming);
     }
 
     /// The boot is a trial build's that has not confirmed yet.
@@ -351,10 +356,18 @@ impl Sim {
     /// The update stage's turn, as the service task gives it; whether it
     /// has work waiting.
     fn update(&mut self, now_ms: u32, record: &mut impl FnMut(Record)) -> bool {
-        let turn = self.updates.turn(now_ms);
+        let build_wifi = self.platform().build_wifi_of();
+        let mut turn = self.updates.turn(now_ms, build_wifi);
+        if self.platform().take_give_way() && self.updates.give_way(GiveWayReason::Reset) {
+            turn.gave_way = Some(GiveWayReason::Reset);
+            turn.restart = true;
+        }
         self.gate();
         if let Some(floor) = turn.confirmed {
             record(Record::Confirmed(floor));
+        }
+        if let Some(reason) = turn.gave_way {
+            record(Record::GaveWay(reason));
         }
         if let Some(event) = turn.record {
             record(Record::Update(event));

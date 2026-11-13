@@ -190,6 +190,12 @@ fn update_records_decode_their_words() {
         event("PLCNF1 confirmed=1 already=1"),
         Some(Event::Confirm(Confirm::Confirmed { healthy_ms: None }))
     );
+    assert_eq!(
+        event("PLCNF1 give_way=1 reason=no_network"),
+        Some(Event::Confirm(Confirm::GiveWay {
+            reason: "no_network"
+        }))
+    );
 }
 
 #[test]
