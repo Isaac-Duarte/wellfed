@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -123,12 +124,18 @@ void main() {
 
     test('a helper that hangs is killed and names nothing', () async {
       final watch = Stopwatch()..start();
-      expect(await WifiNames.runHelper('sh', ['-c', 'sleep 30']), isNull);
+      final (String shell, List<String> sleep) = Platform.isWindows
+          ? ('powershell', ['-NoProfile', '-Command', 'Start-Sleep 30'])
+          : ('sh', ['-c', 'sleep 30']);
+      expect(await WifiNames.runHelper(shell, sleep), isNull);
       expect(watch.elapsed, lessThan(WifiNames.helperWait * 2));
     });
 
     test('a helper that answers is read', () async {
-      expect(await WifiNames.runHelper('sh', ['-c', 'echo SSID']), 'SSID\n');
+      final (String shell, List<String> echo) = Platform.isWindows
+          ? ('cmd', ['/c', 'echo SSID'])
+          : ('sh', ['-c', 'echo SSID']);
+      expect((await WifiNames.runHelper(shell, echo))?.trim(), 'SSID');
     });
 
     test('Linux with neither tool names nothing', () async {
