@@ -1423,12 +1423,16 @@ fn a_known_feeder_that_answers_gets_nothing_unless_picked() {
 /// A feeder this phone paired and never saw join, with no record to name it,
 /// goes to the run as the owner's pick. Picked from a list, a feeder that does not
 /// answer stops the run at once; when the owner keeps waiting for the one this
-/// phone paired, the run waits for it to join, as it would for a record's.
+/// phone paired, the run waits for it to join, as it would for a record's. Once it
+/// joins it is still a pick: it takes no record for the device stock enrolled,
+/// whose trial a record would close on its word.
 #[test]
 fn keeping_waiting_for_a_paired_feeder_with_no_record_waits_for_it() {
     local(async {
         let fixture = Fixture::new(Provisioning::Consumer);
-        let hex = wellfed_session::hex::Lower(&[0x66; 32]).to_string();
+        let keys = Keypair::from_secret([0x51; 32]);
+        let sim = Running::start(&Flash::memory(), Some(*keys.public())).await;
+        let hex = wellfed_session::hex::Lower(&sim.identity).to_string();
         let spec = |unjoined| {
             let mut spec = fixture.spec(InstallStart::Bank0, "127.41.8.60");
             spec.known_feeders = vec![KnownFeeder {
@@ -1441,6 +1445,10 @@ fn keeping_waiting_for_a_paired_feeder_with_no_record_waits_for_it() {
             spec.unjoined = unjoined;
             spec
         };
+        let data = Path::new(&spec(UnjoinedFeeder::Wait).data_dir).to_path_buf();
+        std::fs::create_dir_all(&data).unwrap();
+        with_enrolled(&data, "AF_TEST");
+        let record = data.join("backups/installing.json");
 
         let (run, mut heard) = started(&fixture, spec(UnjoinedFeeder::Wait));
         let end = loop {
@@ -1458,10 +1466,13 @@ fn keeping_waiting_for_a_paired_feeder_with_no_record_waits_for_it() {
         assert_eq!(case, StopCase::NotAnswering);
 
         let (run, mut heard) = started(&fixture, spec(UnjoinedFeeder::WaitForPick));
+        let mut joining = false;
         loop {
             match next(&mut heard).await {
+                // Not on the network until the run has said it waits.
                 InstallUpdate::Ask { id, .. } => {
-                    run.answer(id, InstallAnswer::Located { address: None });
+                    let address = joining.then(|| sim.address.to_string());
+                    run.answer(id, InstallAnswer::Located { address });
                 }
                 InstallUpdate::Event {
                     event:
@@ -1473,14 +1484,24 @@ fn keeping_waiting_for_a_paired_feeder_with_no_record_waits_for_it() {
                 } => {
                     assert_eq!(wellfed_session::hex::Lower(&identity).to_string(), hex);
                     assert!(rebooting, "waited for as one still joining");
-                    break;
+                    joining = true;
                 }
+                InstallUpdate::Event {
+                    event: InstallEvent::Joined { .. },
+                } => break,
                 InstallUpdate::Ended { end } => panic!("{end:?}"),
                 InstallUpdate::Event { .. } => {}
             }
         }
+        assert!(joining, "joined before the run waited");
+        assert!(
+            !record.exists(),
+            "a pick that joined took the device's record"
+        );
         run.stop();
         ended(&mut heard).await;
+        assert!(!record.exists());
+        sim.stop().await;
     });
 }
 
@@ -1762,6 +1783,69 @@ fn picked_feeder_leaves_the_record(provisioning: Provisioning) {
         paired(&data, "AF_TEST", &sim.identity);
         pick_up().await;
         assert!(!wellfed_install::stock::open_request(&config));
+        sim.stop().await;
+    });
+}
+
+/// A bench feeder the owner picked whose key it no longer knows pairs through its
+/// recovery window. The code proves the owner is at that feeder's panel, not that
+/// stock's install went to it, so the record naming the device's real feeder stays.
+#[test]
+fn a_picked_bench_feeder_paired_by_its_window_leaves_the_record() {
+    local(async {
+        let fixture = Fixture::new(Provisioning::Bench);
+        let sim = Running::start(&Flash::memory(), None).await;
+        let hex = wellfed_session::hex::Lower(&sim.identity).to_string();
+        let mut spec = fixture.spec(InstallStart::Bank0, "127.41.8.61");
+        spec.known_feeders = vec![KnownFeeder {
+            identity: hex.clone(),
+            name: "Kitchen".into(),
+            address: Some(sim.address.to_string()),
+            manual_address: None,
+        }];
+        spec.feeder = Some(hex.clone());
+        let data = Path::new(&spec.data_dir).to_path_buf();
+        std::fs::create_dir_all(&data).unwrap();
+        with_enrolled(&data, "AF_TEST");
+        let replacement = [0x77; 32];
+        paired(&data, "AF_TEST", &replacement);
+        let recorded = || recorded_identity(&fixture.spec(InstallStart::Bank0, "127.41.8.61"));
+        let (run, mut heard) = started(&fixture, spec);
+
+        let paired_with = loop {
+            match next(&mut heard).await {
+                InstallUpdate::Ask {
+                    id,
+                    ask: InstallAsk::OpenRecoveryWindow,
+                } => {
+                    sim.type_line("hold lock").unwrap();
+                    sim.type_line("hold lock+dispense").unwrap();
+                    run.answer(id, InstallAnswer::Done);
+                }
+                InstallUpdate::Ask { id, .. } => {
+                    run.answer(id, InstallAnswer::Located { address: None });
+                }
+                InstallUpdate::Event {
+                    event: InstallEvent::Code { code, .. },
+                } => {
+                    let presses: Vec<String> = code.iter().map(u8::to_string).collect();
+                    sim.type_line(&format!("press {}", presses.join(" ")))
+                        .unwrap();
+                }
+                InstallUpdate::Event {
+                    event: InstallEvent::Paired { identity, .. },
+                } => break identity,
+                InstallUpdate::Ended { end } => panic!("{end:?}"),
+                InstallUpdate::Event { .. } => {}
+            }
+        };
+        let theirs = wellfed_session::hex::Lower(&replacement).to_string();
+        assert_eq!(paired_with, sim.identity.to_vec());
+        assert_eq!(recorded(), theirs);
+
+        run.stop();
+        ended(&mut heard).await;
+        assert_eq!(recorded(), theirs);
         sim.stop().await;
     });
 }

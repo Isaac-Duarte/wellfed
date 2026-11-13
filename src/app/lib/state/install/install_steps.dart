@@ -206,6 +206,8 @@ extension InstallSteps on InstallFlow {
       await resume();
       return;
     }
+    // Only a pick-up from bank 0 waits for a pick; any other way on starts over.
+    _keepWaiting = false;
     if (!await _permissions()) {
       _notify();
       return;

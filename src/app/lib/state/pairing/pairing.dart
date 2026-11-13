@@ -98,11 +98,16 @@ class PairingFlow extends ChangeNotifier {
       try {
         found = await _pick();
       } on TimeoutException {
+        // A scan with Bluetooth off finds nothing: that is no feeder's fault.
+        if (await _bluetoothIsOff()) {
+          if (!await _bluetoothOn()) return;
+          continue;
+        }
         _stop(PairingFailure.notFound, null);
         return;
       } on _Failed catch (failed) {
         // A scan stops when Bluetooth goes off: wait for it, and look again.
-        if (failed.why == PairingFailure.link && await _bluetoothIsOff()) {
+        if (failed.why == PairingFailure.link && await _bluetoothWentOff()) {
           if (!await _bluetoothOn()) return;
           continue;
         }
@@ -149,7 +154,7 @@ class PairingFlow extends ChangeNotifier {
         _Failed() || BridgeError() => false,
         _ => true,
       };
-      if (radio && await _bluetoothIsOff()) {
+      if (radio && await _bluetoothWentOff()) {
         _stop(PairingFailure.bluetoothOff, null);
         return;
       }
@@ -241,6 +246,8 @@ class PairingFlow extends ChangeNotifier {
   /// `false` when the screen went first.
   Future<bool> _bluetoothOn() async {
     if (!await _bluetoothIsOff()) return !_disposed;
+    // The screen may have gone while the plugin answered: nothing to wait for.
+    if (_disposed) return false;
     _set(PairingBluetoothOff(feederName: _feederName, network: _network));
     final on = Completer<void>();
     _bluetoothWait = on;
@@ -264,6 +271,8 @@ class PairingFlow extends ChangeNotifier {
   }
 
   Future<bool> _bluetoothIsOff() async => await bluetoothNow(_ports.bluetooth()) == BluetoothPower.off;
+
+  Future<bool> _bluetoothWentOff() => bluetoothOffSoon(_ports.bluetooth());
 
   /// Scan until the owner picks a feeder; a timeout when none shows up.
   Future<DiscoveredDevice> _pick() async {

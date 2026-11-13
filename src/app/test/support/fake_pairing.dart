@@ -108,10 +108,15 @@ class FakePairingPorts implements PairingPorts {
   @override
   Stream<DiscoveredDevice> scan() => scans.stream;
 
-  /// This phone's Bluetooth, and its changes to each listener.
-  BluetoothPower power = BluetoothPower.on;
+  /// This phone's Bluetooth, and its changes to each listener. `null` is the
+  /// plugin on a cold start, which says nothing until its first status
+  /// arrives (its "not known yet" never reaches the app).
+  BluetoothPower? power = BluetoothPower.on;
   final _powerChanges = StreamController<BluetoothPower>.broadcast();
   int turnOnAsks = 0;
+
+  /// Listeners to [bluetooth] not yet cancelled.
+  int powerListeners = 0;
 
   /// Turn Bluetooth to `to`, as the owner would in Android.
   void setPower(BluetoothPower to) {
@@ -121,9 +126,13 @@ class FakePairingPorts implements PairingPorts {
 
   @override
   Stream<BluetoothPower> bluetooth() => Stream.multi((listener) {
-    listener.add(power);
+    if (power case final now?) listener.add(now);
     final StreamSubscription<BluetoothPower> changes = _powerChanges.stream.listen(listener.add);
-    listener.onCancel = changes.cancel;
+    powerListeners++;
+    listener.onCancel = () {
+      powerListeners--;
+      return changes.cancel();
+    };
   });
 
   @override

@@ -148,6 +148,27 @@ void main() {
       await tester.pump();
       expect(find.text('Set it up'), findsOneWidget);
     });
+
+    testWidgets('Bluetooth going off during the look is no verdict either, and back on it looks again', (tester) async {
+      final ports = FakeRestorePorts();
+      await uncertain(tester, ports);
+      await tester.pump();
+      expect(find.text('Looking for it on your Wi-Fi and over Bluetooth…'), findsOneWidget);
+
+      ports.setPower(BluetoothPower.off);
+      await tester.pump(RestoreFlow.lookFor);
+      await tester.pump();
+      expect(find.text('Bluetooth is off'), findsOneWidget);
+      expect(find.textContaining('hold Reset', findRichText: true), findsNothing);
+
+      ports.setPower(BluetoothPower.on);
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Looking for it on your Wi-Fi and over Bluetooth…'), findsOneWidget);
+      await tester.pump(RestoreFlow.lookFor);
+      await tester.pump();
+      expect(find.text("It's probably on the original firmware"), findsOneWidget);
+    });
   });
 
   testWidgets('leaving after a stopped run forgets the key', (tester) async {

@@ -102,8 +102,10 @@ class FakeRestorePorts implements RestorePorts {
   @override
   Stream<void> setupHeard() => heard.stream;
 
-  /// This phone's Bluetooth, and its changes to each listener.
-  BluetoothPower power = BluetoothPower.on;
+  /// This phone's Bluetooth, and its changes to each listener. `null` is the
+  /// plugin on a cold start, which says nothing until its first status
+  /// arrives (its "not known yet" never reaches the app).
+  BluetoothPower? power = BluetoothPower.on;
   final _powerChanges = StreamController<BluetoothPower>.broadcast();
   int turnOnAsks = 0;
 
@@ -115,7 +117,7 @@ class FakeRestorePorts implements RestorePorts {
 
   @override
   Stream<BluetoothPower> bluetooth() => Stream.multi((listener) {
-    listener.add(power);
+    if (power case final now?) listener.add(now);
     final StreamSubscription<BluetoothPower> changes = _powerChanges.stream.listen(listener.add);
     listener.onCancel = changes.cancel;
   });

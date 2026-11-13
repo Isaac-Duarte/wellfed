@@ -223,12 +223,12 @@ How each case plays out:
 - **Request-ID ring: 32 per client** (512 B). A client retries a lost answer within seconds, and 32 outstanding or recent requests cover any realistic burst. A feed's ID also goes into its journal reservation, so the ring is not what stops a double feed.
 - **Frame: 1 KiB.** That covers every planned request and event batch. Firmware images move in 512-byte chunks.
 
-## Event history (7 days)
+## Event history
 
 - **Record:** 32 bytes: sequence, the ring's epoch, time, a 16-byte body (which carries the kind and source) and a CRC (`wellfed_device::store::events`).
 - **Rate:** about 8 to 12 events a day in normal use, for 2 to 4 meals: each meal's `Fed` and reminder, with a food-level change, a panel unlock and its relock, and a change from the app (static estimate, [device API](device-api.md#events-and-samples)). Lock changes, settings, boots and clock jumps add to it; clock steps and samples are never stored. We plan for 200 a day, so the ring lasts at least a week even for a busy feeder.
 - **Size:** 7 days at 200 a day is 1,400 records, 44.8 KB. That is 11 sectors, plus one being erased: **12 sectors**, holding 1,408 records.
-- **Wear:** each sector is erased about every 8 days, about 50 times a year, far inside NOR endurance.
+- **Wear:** at the 200-a-day bound, each sector is erased about every 8 days, about 50 times a year, far inside NOR endurance. At a normal day's rate it is a few times a year.
 
 ## The storage region
 

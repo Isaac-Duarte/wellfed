@@ -4,7 +4,7 @@ import 'package:clock/clock.dart';
 import 'package:flutter/foundation.dart';
 
 import 'package:wellfed/platform/install_ports.dart';
-import 'package:wellfed/platform/setup_link.dart' show BluetoothPower, bluetoothNow;
+import 'package:wellfed/platform/setup_link.dart' show BluetoothPower, bluetoothNow, bluetoothOffSoon;
 import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/setup.dart';

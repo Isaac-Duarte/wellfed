@@ -455,6 +455,11 @@ struct Run<P, B, D, K, R> {
     found: Option<SocketAddr>,
     /// The feeder's identity, once its key is known.
     identity: Option<[u8; 32]>,
+    /// The run's feeder is one the owner picked that no record names. It says
+    /// nothing about where stock's install went, so it is used but never
+    /// recorded as the device's install: the device's one record may name the
+    /// feeder this install really went to, and a record closes its trial.
+    pick_unrecorded: bool,
     /// Where the run is, for the report of a stop that ends it.
     track: Track,
     /// When this run's setup frame went out.
@@ -508,6 +513,7 @@ where
             refused: None,
             found: None,
             identity: None,
+            pick_unrecorded: false,
             track: Track::new(),
             frame_out: None,
         };
@@ -834,11 +840,10 @@ where
             Located::Given if self.feeder.is_none() => recorded,
             _ => self.io.keys.feeder(self.feeder.as_deref()),
         };
-        // As in setup: a feeder the owner picked from bank 0 says nothing about
-        // where stock's install went, so it never takes the device's one record,
-        // which may name the feeder this install really went to.
+        // As in setup: a feeder the owner picked from bank 0 is never recorded,
+        // unless the record already names it.
         let picking = self.located != Located::Stock && self.feeder.is_some();
-        let picked = |identity: [u8; 32]| picking && recorded != Some(identity);
+        let unrecorded_pick = |identity: [u8; 32]| picking && recorded != Some(identity);
         if let Some(identity) = known {
             let deadline = Instant::now() + REPLACEMENT_WAIT;
             loop {
@@ -853,10 +858,11 @@ where
                     Ok(_) => {
                         self.io.report.event(Event::KeyKnown);
                         self.identity = Some(identity);
+                        self.pick_unrecorded = unrecorded_pick(identity);
                         // As in setup: a feeder answering at a given address, or
                         // one the owner picked, is not recorded as this device's
                         // install.
-                        if self.located == Located::Given || picked(identity) {
+                        if self.located == Located::Given || self.pick_unrecorded {
                             self.found = Some(address);
                         } else {
                             self.record_paired(identity, Some(address))?;
@@ -900,12 +906,8 @@ where
                 // The feeder took this key after all: a session opened.
                 let identity = *identity;
                 self.io.report.event(Event::KeyKnown);
-                if picked(identity) {
-                    self.identity = Some(identity);
-                    self.found = Some(address);
-                } else {
-                    self.paired_at(identity, address)?;
-                }
+                self.pick_unrecorded = unrecorded_pick(identity);
+                self.paired_at(identity, address)?;
                 install.paired();
                 return Ok(());
             }
@@ -915,9 +917,8 @@ where
         };
         self.io.report.event(Event::Recovered { identity, outcome });
         self.identity = Some(identity);
-        if picked(identity) {
-            self.found = Some(address);
-        } else {
+        self.pick_unrecorded = unrecorded_pick(identity);
+        if !self.pick_unrecorded {
             self.record_paired(identity, Some(address))?;
         }
         install.paired();
@@ -958,18 +959,17 @@ where
                 // record is what closes the device's trial on a feeder's word,
                 // and a trial left open only makes a later run wait. A record
                 // that names it already is a `Recorded` lookup, not this.
-                if matches!(lookup, Lookup::Picked { .. }) {
-                    self.identity = Some(identity);
-                    self.found = Some(address);
-                } else {
-                    self.paired_at(identity, address)?;
-                }
+                self.pick_unrecorded = matches!(lookup, Lookup::Picked { .. });
+                self.paired_at(identity, address)?;
                 install.paired();
                 return Ok(());
             }
             Looked::Rejoining(identity) => {
                 self.io.report.event(Event::Rejoining { identity });
                 self.identity = Some(identity);
+                // A pick waited for as it joins is no more the device's for
+                // joining: `await_join` leaves it unrecorded too.
+                self.pick_unrecorded = matches!(lookup, Lookup::Picked { .. });
                 install.set_up();
                 return Ok(());
             }
@@ -1063,10 +1063,14 @@ where
         Ok(())
     }
 
-    /// The paired feeder answered at `address`: use it, and record it.
+    /// The paired feeder answered at `address`: use it, and record it unless
+    /// it is a pick no record names.
     fn paired_at(&mut self, identity: [u8; 32], address: SocketAddr) -> Result<(), Error> {
         self.identity = Some(identity);
         self.found = Some(address);
+        if self.pick_unrecorded {
+            return Ok(());
+        }
         self.record_paired(identity, Some(address))
     }
 

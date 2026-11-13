@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import 'package:wellfed/platform/restore_ports.dart';
-import 'package:wellfed/platform/setup_link.dart' show BluetoothPower, bluetoothNow;
+import 'package:wellfed/platform/setup_link.dart' show BluetoothPower;
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/restore.dart';
 import 'package:wellfed/state/install/install_state.dart' show CheckState;
@@ -276,24 +276,24 @@ class RestoreFlow extends ChangeNotifier {
     _lookEnd = Timer(lookFor, () => _looked(_sighted ? RestoreLook.sighted : RestoreLook.nothing));
     _setup = _ports.setupHeard().listen((_) => _looked(RestoreLook.setup), onError: (Object _) {});
     unawaited(_locate(_looks));
-    unawaited(_checkBluetooth());
+    _watchBluetooth();
   }
 
   /// Ask Android to turn this phone's Bluetooth on.
   Future<void> turnOnBluetooth() => _ports.turnOnBluetooth();
 
-  /// With Bluetooth off, say so until it comes on, then look again from the
-  /// start: the look so far could not have heard a feeder in setup mode.
-  Future<void> _checkBluetooth() async {
-    if (await bluetoothNow(_ports.bluetooth()) != BluetoothPower.off || _disposed) return;
-    _bluetoothOff = true;
-    _changed();
-    _power ??= _ports.bluetooth().listen((power) {
-      if (power == BluetoothPower.off) return;
-      _bluetoothOff = false;
-      unawaited(_power?.cancel());
-      _power = null;
-      if (_stage == _Stage.uncertain && _look != RestoreLook.wellfed) _startLook();
+  /// Follow this phone's Bluetooth while a look may need it. Off at any point,
+  /// the look could miss a feeder in setup mode, so its finding nothing says
+  /// nothing: the screen says Bluetooth is off. Back on, a look without a
+  /// verdict it could trust starts again from the start.
+  void _watchBluetooth() {
+    if (_power != null) return;
+    _power = _ports.bluetooth().listen((power) {
+      final bool wasOff = _bluetoothOff;
+      _bluetoothOff = power == BluetoothPower.off;
+      if (wasOff && !_bluetoothOff && _stage == _Stage.uncertain) {
+        if (_look case RestoreLook.looking || RestoreLook.nothing || RestoreLook.sighted) _startLook();
+      }
       _changed();
     }, onError: (Object _) {});
   }

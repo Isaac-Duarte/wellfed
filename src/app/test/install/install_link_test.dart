@@ -69,6 +69,35 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('a link lost as Bluetooth goes off says Bluetooth is off', (tester) async {
+    final ports = FakeInstallPorts();
+    final FakeRun run = await installAtClaim(tester, ports);
+    run.ask(3, const InstallAsk.openLink());
+    await settle(tester);
+    expect(run.answers[3], const InstallAnswer.done());
+
+    ports.setPower(BluetoothPower.off);
+    ports.onLost?.call();
+    await tester.pump(SetupLink.powerSettle);
+    await settle(tester);
+    expect(run.lost, 1);
+    expect(find.textContaining('Bluetooth is off.', findRichText: true), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('a screen that goes while the plugin answers leaves nothing listening', (tester) async {
+    final ports = FakeInstallPorts();
+    final FakeRun run = await installAtClaim(tester, ports);
+    ports.power = null;
+    run.ask(3, const InstallAsk.openLink());
+    await tester.pump();
+    await tester.pumpWidget(const SizedBox());
+    ports.setPower(BluetoothPower.off);
+    await tester.pump(SetupLink.powerWait);
+    expect(ports.powerListeners, 0);
+    expect(ports.linksOpened, 0);
+  });
+
   testWidgets('a link write with no link open fails, not done', (tester) async {
     final ports = FakeInstallPorts();
     final FakeRun run = await installAtClaim(tester, ports);
