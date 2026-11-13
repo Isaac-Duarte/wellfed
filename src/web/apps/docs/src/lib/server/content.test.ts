@@ -9,8 +9,6 @@ function rendered(file: string) {
   return render(file, markdown);
 }
 
-const TABS = "<!-- tabs -->\n\n### App\n\nTap it.\n\n### CLI\n\nRun it.\n\n<!-- /tabs -->\n";
-
 describe("publishing", () => {
   test("an unlisted doc is not rendered", () => {
     expect(docs.has("firmware/motor-and-feeds.md")).toBe(false);
@@ -58,36 +56,6 @@ describe("diagrams", () => {
 
     expect(html).toContain("%% svg: ../firmware/boot-flow.svg");
     expect(html).not.toContain('class="diagram"');
-  });
-});
-
-describe("tabs", () => {
-  test("each section becomes a panel under a tab", () => {
-    const { html } = render("guide/test.md", `# Page\n\n${TABS}`);
-
-    expect(html).toContain('role="tablist"');
-    expect(html).toContain('data-tab-panel="app"');
-    expect(html).toContain('data-tab-panel="cli"');
-    expect(html).toContain("Tap it.");
-    expect(html).toContain("Run it.");
-  });
-
-  test("the tab headings stay out of the outline", () => {
-    const { headings } = render("guide/test.md", `# Page\n\n## Steps\n\n${TABS}`);
-
-    expect(headings.map((h) => h.text)).toEqual(["Steps"]);
-  });
-
-  test.each([
-    ["no closing marker", "<!-- tabs -->\n\n### App\n\nA\n\n### CLI\n\nB\n", "without a <!-- /tabs -->"],
-    ["no opening marker", "### App\n\nA\n\n<!-- /tabs -->\n", "without a <!-- tabs -->"],
-    ["a nested marker", "<!-- tabs -->\n\n<!-- tabs -->\n\n<!-- /tabs -->\n", "inside another"],
-    ["a misspelled marker", "<!-- tab -->\n", "isn't a tabs marker"],
-    ["the wrong sections", "<!-- tabs -->\n\n### CLI\n\nB\n\n### App\n\nA\n\n<!-- /tabs -->\n", 'exactly "### App"'],
-    ["the wrong level", "<!-- tabs -->\n\n## App\n\nA\n\n## CLI\n\nB\n\n<!-- /tabs -->\n", "level 3"],
-    ["an empty section", "<!-- tabs -->\n\n### App\n\n### CLI\n\nB\n\n<!-- /tabs -->\n", "empty section"],
-  ])("%s fails the build", (_name, markdown, message) => {
-    expect(() => render("guide/test.md", markdown)).toThrow(message);
   });
 });
 
@@ -178,16 +146,10 @@ describe("portable markdown", () => {
     expect(portableMarkdown("guide/before-you-start.md")).toContain("(https://docs.well-fed.dev/devices)");
   });
 
-  test("an image is absolute, the tabs markers are dropped and both sections stay", () => {
+  test("an image is absolute", () => {
     const install = portableMarkdown("guide/install.md") ?? "";
 
-    const back = portableMarkdown("guide/going-back.md") ?? "";
-
     expect(install).toContain("(https://docs.well-fed.dev/app-installing.png)");
-    expect(back).not.toContain("<!-- tabs -->");
-    expect(back).not.toContain("<!-- /tabs -->");
-    expect(back).toContain("### App");
-    expect(back).toContain("### CLI");
   });
 
   test("code is left alone", () => {

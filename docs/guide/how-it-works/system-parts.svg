@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 440" role="img" aria-labelledby="system-parts-title system-parts-desc">
   <title id="system-parts-title">The feeder, and what talks to it</title>
-  <desc id="system-parts-desc">The feeder holds its meals, settings, who may connect and recent history. The Android app and the CLI each talk to it directly over an encrypted session on your Wi-Fi, and the app also uses Bluetooth in setup mode only. Your router gives it the time by default. Home Assistant, a proof of concept, pairs with the feeder as its own client and holds an encrypted session too.</desc>
+  <desc id="system-parts-desc">The feeder holds its meals, settings, who may connect and recent history. The app, on Android, macOS, Linux or Windows, talks to it directly over an encrypted session on your Wi-Fi, and also uses Bluetooth in setup mode only. Your router gives it the time by default. Home Assistant, a proof of concept, pairs with the feeder as its own client and holds an encrypted session too.</desc>
   <defs>
     <marker id="system-parts-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path class="d-head" d="M0,0 L10,5 L0,10 z"/>
@@ -20,16 +20,13 @@
   <text x="588" y="240" text-anchor="middle">Its own clock</text>
 
   <rect class="d-box" x="24" y="24" width="170" height="84" rx="8"/>
-  <text x="109" y="58" text-anchor="middle" class="d-title">The app</text>
-  <text x="109" y="78" text-anchor="middle" class="d-muted">Android</text>
+  <text x="109" y="52" text-anchor="middle" class="d-title">The app</text>
+  <text x="109" y="72" text-anchor="middle" class="d-muted">Android</text>
+  <text x="109" y="90" text-anchor="middle" class="d-muted">macOS, Linux, Windows</text>
 
-  <rect class="d-box" x="24" y="150" width="170" height="70" rx="8"/>
-  <text x="109" y="180" text-anchor="middle" class="d-title">The CLI</text>
-  <text x="109" y="199" text-anchor="middle" class="d-muted">Linux</text>
-
-  <rect class="d-unknown" x="24" y="262" width="170" height="76" rx="8"/>
-  <text x="109" y="294" text-anchor="middle" class="d-title">Home Assistant</text>
-  <text x="109" y="313" text-anchor="middle" class="d-muted">proof of concept</text>
+  <rect class="d-unknown" x="24" y="150" width="170" height="76" rx="8"/>
+  <text x="109" y="182" text-anchor="middle" class="d-title">Home Assistant</text>
+  <text x="109" y="201" text-anchor="middle" class="d-muted">proof of concept</text>
 
   <rect class="d-panel" x="480" y="356" width="216" height="70" rx="8"/>
   <text x="588" y="386" text-anchor="middle" class="d-title">Your router</text>
@@ -40,11 +37,8 @@
   <line class="d-wire d-dashed" x1="194" y1="88" x2="476" y2="88" marker-end="url(#system-parts-arrow)"/>
   <text x="335" y="108" text-anchor="middle" class="d-muted">Bluetooth, in setup mode only</text>
 
-  <line class="d-wire-accent" x1="194" y1="184" x2="476" y2="184" marker-end="url(#system-parts-arrow-accent)"/>
-  <text x="335" y="174" text-anchor="middle" class="d-muted">encrypted session over Wi-Fi</text>
-
-  <line class="d-wire d-dashed" x1="194" y1="300" x2="476" y2="300" marker-end="url(#system-parts-arrow)"/>
-  <text x="335" y="290" text-anchor="middle" class="d-muted">encrypted session over Wi-Fi</text>
+  <line class="d-wire d-dashed" x1="194" y1="188" x2="476" y2="188" marker-end="url(#system-parts-arrow)"/>
+  <text x="335" y="178" text-anchor="middle" class="d-muted">encrypted session over Wi-Fi</text>
 
   <line class="d-wire" x1="588" y1="356" x2="588" y2="318" marker-end="url(#system-parts-arrow)"/>
 </svg>

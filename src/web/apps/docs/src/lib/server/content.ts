@@ -5,7 +5,7 @@
 // its table of contents. It runs only during prerender, so none of it ships.
 // A doc nav.ts doesn't list stays on GitHub and is never rendered or searched.
 import { posix } from "node:path";
-import type { Element, ElementContent, Root as Hast } from "hast";
+import type { Element, Root as Hast } from "hast";
 import { toString } from "hast-util-to-string";
 import type { Root as Mdast, Paragraph, PhrasingContent, RootContent, Strong } from "mdast";
 import rehypeSlug from "rehype-slug";
@@ -262,136 +262,6 @@ const rewritePictures: Plugin<[string, string[]], Mdast> = (file, routes) => (tr
   });
 };
 
-// App | CLI tabs: `<!-- tabs -->` and `<!-- /tabs -->` on their own lines around
-// plain `### App` and `### CLI` sections. GitHub hides the comments and shows
-// both in order, and so does the site without JavaScript: only docs.css hides a
-// panel, and only under the root's data-tab, which tabs.ts sets. Pagefind reads
-// the built HTML and not the CSS, so it indexes both. A tabs widget that decides
-// what's visible from its own state would need JavaScript.
-const TABS_OPEN = "<!-- tabs -->";
-const TABS_CLOSE = "<!-- /tabs -->";
-const NEAR_MARKER = /^<!--.*\btabs?\b.*-->$/is;
-
-const isTabsMarker = (html: string) => html.trim() === TABS_OPEN || html.trim() === TABS_CLOSE;
-
-const markTabs: Plugin<[string], Mdast> = (file) => (tree) => {
-  visit(tree, "html", (node, index, parent) => {
-    if (!NEAR_MARKER.test(node.value.trim())) return;
-    if (!isTabsMarker(node.value))
-      throw new Error(`docs/${file}: "${node.value}" isn't a tabs marker: write ${TABS_OPEN} or ${TABS_CLOSE}`);
-    if (parent !== tree || index === undefined)
-      throw new Error(`docs/${file}: ${node.value} must be on its own line at the top level of the page`);
-
-    const dataTabs = node.value.trim() === TABS_OPEN ? "open" : "close";
-    parent.children[index] = { type: "thematicBreak", data: { hProperties: { dataTabs } } };
-  });
-};
-
-const TAB_NAMES = [
-  { label: "App", tab: "app" },
-  { label: "CLI", tab: "cli" },
-] as const;
-
-const TAB_HEADING = "tab-heading";
-
-function isTabHeading(node: Element): boolean {
-  return Array.isArray(node.properties.className) && node.properties.className.includes(TAB_HEADING);
-}
-
-function isHeading(node: ElementContent): node is Element {
-  return node.type === "element" && /^h[1-3]$/.test(node.tagName);
-}
-
-// One set of panels, built here because the Markdown holds their content. The
-// tablist's state in this HTML is the default; tabs.ts corrects it on hydration.
-function tabSet(content: ElementContent[], file: string, set: number): Element {
-  const blocks = content.filter((node) => node.type !== "text" || node.value.trim() !== "");
-  const headings = blocks.filter(isHeading);
-  const names = headings.map((heading) => toString(heading));
-  const first = headings[0];
-  const second = headings[1];
-  const fails = (why: string) => new Error(`docs/${file}: tabs ${String(set)} ${why}`);
-
-  if (first === undefined || second === undefined || names.join() !== "App,CLI" || blocks[0] !== first)
-    throw fails(`must hold exactly "### App" then "### CLI", and starts with: ${names.join(", ") || "no heading"}`);
-  if (first.tagName !== "h3" || second.tagName !== "h3")
-    throw fails('must use level 3 headings, "### App" and "### CLI"');
-
-  const middle = blocks.indexOf(second);
-  const sections = [blocks.slice(0, middle), blocks.slice(middle)];
-  if (sections.some((section) => section.length < 2)) throw fails("has an empty section");
-
-  for (const heading of headings) heading.properties.className = [TAB_HEADING];
-
-  const panels = TAB_NAMES.map(({ tab }, at): Element => ({
-    type: "element",
-    tagName: "div",
-    properties: {
-      className: ["tab-panel"],
-      role: "tabpanel",
-      id: `panel-${String(set)}-${tab}`,
-      ariaLabelledBy: [`tab-${String(set)}-${tab}`],
-      dataTabPanel: tab,
-    },
-    children: sections[at] ?? [],
-  }));
-
-  return {
-    type: "element",
-    tagName: "div",
-    properties: { className: ["tabs"] },
-    children: [
-      {
-        type: "element",
-        tagName: "div",
-        properties: { className: ["tab-bar"], role: "tablist", ariaLabel: "App or CLI", dataPagefindIgnore: "" },
-        children: TAB_NAMES.map(({ label, tab }, at) => ({
-          type: "element",
-          tagName: "button",
-          properties: {
-            type: "button",
-            className: ["tab"],
-            role: "tab",
-            id: `tab-${String(set)}-${tab}`,
-            ariaControls: [`panel-${String(set)}-${tab}`],
-            ariaSelected: at === 0 ? "true" : "false",
-            tabIndex: at === 0 ? 0 : -1,
-            dataTab: tab,
-          },
-          children: [{ type: "text", value: label }],
-        })),
-      },
-      ...panels,
-    ],
-  };
-}
-
-const wrapTabs: Plugin<[string], Hast> = (file) => (tree) => {
-  const out: Hast["children"] = [];
-  let open: ElementContent[] | undefined;
-  let sets = 0;
-
-  for (const node of tree.children) {
-    const marker = node.type === "element" ? node.properties.dataTabs : undefined;
-    if (marker === "open") {
-      if (open !== undefined) throw new Error(`docs/${file}: ${TABS_OPEN} inside another ${TABS_OPEN}`);
-      open = [];
-    } else if (marker === "close") {
-      if (open === undefined) throw new Error(`docs/${file}: ${TABS_CLOSE} without a ${TABS_OPEN} before it`);
-      sets += 1;
-      out.push(tabSet(open, file, sets));
-      open = undefined;
-    } else if (open === undefined) {
-      out.push(node);
-    } else if (node.type !== "doctype") {
-      open.push(node);
-    }
-  }
-
-  if (open !== undefined) throw new Error(`docs/${file}: ${TABS_OPEN} without a ${TABS_CLOSE} after it`);
-  tree.children = out;
-};
-
 // A mermaid block whose first line names its drawing, `%% svg: name.svg` (a
 // Mermaid comment, so GitHub hides it), becomes that SVG beside the page.
 // GitHub draws the Mermaid instead. The SVG is inlined so docs.css colors its
@@ -491,10 +361,6 @@ const decorate: Plugin<[Collected, string], Hast> = (out, file) => (tree) => {
     if (node.tagName === "p" && out.description === "" && parent?.type === "root")
       out.description = excerpt(toString(node));
 
-    // A tab's own heading names its panel: the tab says it already, and App, CLI,
-    // App, CLI in the outline would lead nowhere useful.
-    if (isTabHeading(node)) return SKIP;
-
     if (node.tagName === "h2" || node.tagName === "h3") {
       const id = typeof node.properties.id === "string" ? node.properties.id : "";
       out.headings.push({ depth: node.tagName === "h2" ? 2 : 3, id, text: toString(node) });
@@ -545,10 +411,8 @@ export function render(file: string, markdown: string): Doc {
     .use(rewritePictures, file, images)
     .use(alerts)
     .use(verdicts, file)
-    .use(markTabs, file)
     .use(remarkRehype)
     .use(rehypeSlug)
-    .use(wrapTabs, file)
     .use(decorate, out, file)
     // Only the diagrams are raw HTML: remarkRehype drops any in the Markdown.
     .use(rehypeStringify, { allowDangerousHtml: true })
@@ -570,8 +434,7 @@ export function render(file: string, markdown: string): Doc {
  * A doc's Markdown as it reads away from the repository, for "Copy as
  * Markdown" and the `.md` file beside each page: every link and image made
  * absolute, by the same rule as the page (a published doc to its page on this
- * site, anything else to GitHub), and the tabs markers dropped, so both
- * sections read in order. All of it is found with remark, so a `](` or a marker
+ * site, anything else to GitHub). All of it is found with remark, so a `](`
  * inside code is left alone. The source is the doc's own unless a test passes one.
  */
 export function portableMarkdown(file: string, markdown = files.get(file)): string | undefined {
@@ -583,11 +446,6 @@ export function portableMarkdown(file: string, markdown = files.get(file)): stri
     const end = node.position?.end.offset;
     if (start === undefined || end === undefined) return;
 
-    if (node.type === "html" && isTabsMarker(node.value)) {
-      const blank = /^\n*/.exec(markdown.slice(end))?.[0].length ?? 0;
-      edits.push({ start, end: end + blank, text: "" });
-      return;
-    }
     if (node.type !== "link" && node.type !== "definition" && node.type !== "image") return;
     refuseTitle(node, file);
 

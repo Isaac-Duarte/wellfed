@@ -21,7 +21,7 @@ flowchart TD
 - **No account.** Your phone talks directly to the feeder over your network, encrypted, and nothing goes to a cloud.
 - **Feeding you can check.** Each feed stops on time, a power cut never makes it feed twice, and a jam we injected ended the feed by name in the history. A real jam hasn't happened on our bench.
 - **A way back.** The install saves a checked copy of the vendor's firmware to your phone, and you can put it back over the air.
-- **Something to build on.** An Android app, Home Assistant, a command-line client and an encrypted local API all do the same things.
+- **One app, or Home Assistant.** The app runs on Android phones and on macOS, Linux and Windows computers. Home Assistant reaches the feeder through the same encrypted local API.
 
 ## What you give up
 

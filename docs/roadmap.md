@@ -16,9 +16,9 @@ What works today and what comes next, for the replacement firmware, the Android 
 | Install over stock's own updater | Works | No soldering or UART needed. See [consumer installation](firmware/consumer-installation.md). |
 | Go back to stock over the air | Works | Using a stock image we serve. |
 | Guided installer (the Android app) | Works | Run from stock on the research unit: setup frame, stock's install, Bluetooth setup, kept backup, promotion and confirmation. |
-| Roll back to your feeder's own stock image | Works | Run from the CLI and the app, then set up in the vendor's app; checked on the feeder once |
+| Roll back to your feeder's own stock image | Works | Run from the app, and from the developer CLI, then set up in the vendor's app; checked on the feeder once |
 | UART backup and recovery | Works | For developers. See [recovery](devices/plaf103/recovery.md). |
-| Updates over the air, with automatic rollback | Works | An image that fails to start or hangs gives way to the previous one. Each boot checks the recovery copy in bank 0, and the status (and the CLI and app) says why an update would be refused. After a UART write of bank 0 the bench tools finish the job so updates install again; both ran on the research unit, followed by an update. |
+| Updates over the air, with automatic rollback | Works | An image that fails to start or hangs gives way to the previous one. Each boot checks the recovery copy in bank 0, and the status (and the app) says why an update would be refused. After a UART write of bank 0 the bench tools finish the job so updates install again; both ran on the research unit, followed by an update. |
 
 ## Feeding
 
@@ -26,11 +26,11 @@ What works today and what comes next, for the replacement firmware, the Android 
 | --- | --- | --- |
 | Feeding with motor supervision | Works | Stops on time, survives a power cut without feeding twice. |
 | Dispense button | Works | Respects the child lock. |
-| Feed from the CLI | Works | |
-| Portion calibration | Works | Weighed once with a kitchen scale (`wellfed calibrate`); the weight survives reboots, installs and the Reset button. |
+| Feed from the app | Works | |
+| Portion calibration | Works | Weighed once with a kitchen scale; the weight survives reboots, installs and the Reset button. |
 | Jam and sensor fault handling | Works | A jam, blocked outlet or sensor fault ends the feed by name, never retried, and shows in the status and history. On the feeder, simulated jams end as `jammed` and `mark_stuck` and a blocked outlet stops the motor within about a second; kibble pressed into the rotor by hand did not jam it. |
 | Schedules | Works | Up to ten plans, run on the feeder with no phone or computer on. |
-| Feeding history | Partial | `wellfed feeds` lists each feed the feeder keeps, across reboots; the history is as long as the feeder's own record. |
+| Feeding history | Partial | The app's History lists each feed the feeder keeps, across reboots; the history is as long as the feeder's own record. |
 | Food level | Partial | The status and low-food light show the hopper's latest reading, taken by each feed and, on the adapter, a short window soon after a boot and every minute, so a refill shows with no feed. A feed on low food still runs, as stock's does, and its history says so. Checked on the feeder with and without food, and at rest with the beam clear and blocked by hand; the emitter current is unmeasured. The beam is a low warning, reading empty with about five portions left. |
 
 ## The feeder itself
@@ -53,22 +53,22 @@ What works today and what comes next, for the replacement firmware, the Android 
 | Statistics and per-feed traces | Experimental | |
 | Lights and sound settings | Works | Lights and sound windows, volume-0 mute and a beep on every button press, checked on the bench. |
 | Desiccant reminder | Works | Counted on the feeder from the last replacement; the period and the date survive a reboot. |
-| Alerts on the feeder | Experimental | The rules and the read run in simulation. `wellfed alerts` prints them, the Android app notifies them, and Home Assistant shows them. |
+| Alerts on the feeder | Experimental | The rules and the read run in simulation. The Android app notifies them, and Home Assistant shows them. |
 | Alerts at home | Experimental | The Android app catches up with each feeder about every 15 minutes, or each minute with "instant while home", notifies each alert once by level, clears it when the feeder does, and says when it can't reach a feeder while home. Mutes and dismissals stay on the phone. In simulation only: it has not run on a phone. |
 | Alerts away from home | Not started | Nothing reads a feeder's alerts from outside the home network. Planned: a Home Assistant automation that sends them to its phone app, and the app reaching feeders over a VPN such as Tailscale. |
 | Meal reminder | Works | An event on the event stream before each scheduled meal, repeated once after a reboot inside the lead. |
-| Skip a meal | Experimental | Skip a plan's next meal today, or undo it until it is due, from the app's Today tab or `wellfed plans skip`. On the research unit, from the CLI, skipped daily and one-time meals neither reminded nor fed, and an undone skip reminded and fed once. The feeder's refusals and the app ran in simulation only. |
-| Meal call | Works | Your own clip, uploaded from the app or CLI, plays before each meal whose plan asks for it, ending as the meal is due; muted with the sound off. Checked by ear on the feeder at low, middle and full volume. |
+| Skip a meal | Experimental | Skip a plan's next meal today, or undo it until it is due, from the app's Today tab. On the research unit, from the developer CLI, skipped daily and one-time meals neither reminded nor fed, and an undone skip reminded and fed once. The feeder's refusals and the app ran in simulation only. |
+| Meal call | Works | Your own clip, uploaded from the app, plays before each meal whose plan asks for it, ending as the meal is due; muted with the sound off. Checked by ear on the feeder at low, middle and full volume. |
 
 ## Apps
 
 | Capability | Status | Notes |
 | --- | --- | --- |
-| Command-line client (`wellfed`) | Partial | Every owner setting and action: pairing, status, settings, plans, the meal call, feeds, history, the desiccant reminder, lock, Wi-Fi, time and invites, with text for people and `--json` for scripts. See [the command overview](../src/tools/README.md#the-wellfed-command-line). |
+| Command-line client (`wellfed`) | Partial | A developer and bench tool on macOS and Linux, not one of the beta's owner apps and not packaged for owners. It speaks the whole device API, with `--json` for scripts; its Bluetooth setup has run on Linux only. See [the command overview](../src/tools/README.md#the-wellfed-command-line). |
 | Android app | Partial | Installs from stock through the feeder's own Wi-Fi after a Reset hold, sets up a feeder over Bluetooth or takes it back over the LAN, and has a screen for everything the device API offers: meals, history, settings, people and invites, updates and diagnostics. It talks to each feeder directly, and a feed whose answer was lost stays held, never resent, until the owner checks the bowl (host and simulation only). Its install and its return to the vendor's firmware ran end to end on the research unit several times, including from a feeder set up in the vendor's app, and every screen was walked there, including a power cut mid-feed, an interrupted recording and a damaged install record. Alerts at home are built and have run in simulation only. See [the app](../src/app/README.md). |
 | Desktop app (macOS and Linux) | Experimental | The same app as Android. The install, firmware updates and restores run on the desktops too, with the owner switching to the feeder's setup network by hand; that is host-tested only, and the window for switching back is not yet timed on a feeder. The Linux build starts and finds feeders on the LAN, and has not yet driven a feeder. The macOS build has a desktop layout of its own (a sidebar of feeders, dialogs for meals and invites, History with a feed beside the list) and the Mac's menu bar. It recovered the simulator over the LAN, and integration tests then drove it against the simulator: its screens at the smallest and a large window in both themes, a feed, meals added, edited and deleted, a setting, the time zone, the portion size, History with a button feed arriving, an invite made and a second key joining by its link, a meal call sent from a WAV the test handed over and played, and a restart asked through its confirmation dialog (the fault screen's button was not reached). All in simulation only. Recording, the file pickers and ⌘W have not been tried on a Mac. Bluetooth setup goes through the bridge's `btleplug` (the CLI's radio) on both desktops, and has not run against a feeder on either. |
 | iPhone app | Not started | The same app, for setup and daily use. Whether it can install is an open question, so you would install from Android or a computer. |
-| Windows app | Not started | Waits for a machine to test it on. |
+| Windows app | Experimental | The same app as on macOS and Linux, with its Windows runner and the install's Windows parts in the code. It hasn't run on a Windows machine. |
 | Home Assistant | Experimental | Directly as a member, by invite or zeroconf: feeds and cancels, the day's meals and portions, settings, plan switches, repairs for a lost feed, the portion weight and the feeder's alerts. Simulation only. See [the guide](guide/home-assistant.md). |
 
 ## More devices
