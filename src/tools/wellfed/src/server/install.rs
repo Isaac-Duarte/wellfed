@@ -149,7 +149,7 @@ fn open(failure: InstallFailure) -> bool {
         | InstallFailure::Stopped { .. }
         | InstallFailure::Lost
         | InstallFailure::Unreachable { offered: false }
-        | InstallFailure::Interrupted,
+        | InstallFailure::Interrupted
         | InstallFailure::RolledBack
         | InstallFailure::WrongBuild => false,
         // An older server recorded an answer it could not read after the

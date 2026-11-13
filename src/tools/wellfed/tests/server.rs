@@ -467,7 +467,7 @@ fn install_with_no_verdict_exits_3() {
         };
         let kitchen = http.adopt(&request).await.unwrap().id;
         let file = release::signed(&release::project(), 7, BUILD, 16 * release::SECTOR);
-        let Uploaded::New(kept) = http.upload_release(file).await.unwrap() else {
+        let Kept::New(kept) = http.upload_release(file).await.unwrap() else {
             panic!("a first upload is new");
         };
         until("the server reads the feeder", || async {
