@@ -9,7 +9,7 @@
 //   node ../../scripts/serve.ts   (from an app's folder, after its build)
 import { createReadStream, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
-import { extname, join, normalize } from "node:path";
+import { extname, join, normalize, sep } from "node:path";
 
 const root = join(process.cwd(), "build");
 const port = Number(process.env.PORT ?? 4173);
@@ -74,7 +74,7 @@ function isFile(path: string): boolean {
 
 function resolve(pathname: string): string | undefined {
   const path = join(root, normalize(decodeURIComponent(pathname)));
-  if (!path.startsWith(root)) return undefined;
+  if (path !== root && !path.startsWith(root + sep)) return undefined;
   return [path, `${path}.html`, join(path, "index.html")].find(isFile);
 }
 

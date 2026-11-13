@@ -145,7 +145,7 @@ pub const CONFIG: OwnerConfig = OwnerConfig {
         // drive (50 ms of it the driver's deadtime) count toward no jam, and
         // only a reading past twice the highest surge stops at once.
         //
-        // Risk: sound feeds peak close to 300. Empty, full-hopper and battery
+        // Risk: sound feeds peak close to 300. Empty, food and battery
         // feeds have peaked between 236 and 289, and one empty feed at 324
         // still finished, so a sound feed can back off (and end after three
         // reversals). A real stall's current is unmeasured: one over 1000

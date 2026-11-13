@@ -73,6 +73,12 @@ const TEST_LINES: usize = 600;
 /// Host crate roots allowed `unsafe`: the virtual feeder worker runs the
 /// firmware's own ports on the fake SDK, through their C-shaped interface.
 const UNSAFE_HOST_ROOTS: [&str; 1] = ["src/sim/wellfed-sim/src/main.rs"];
+/// The one host root whose attribute is conditional: Home Assistant's bridge
+/// forbids `unsafe` except when built with PyO3, whose macros expand to it.
+const CONDITIONAL_HOST_ROOT: (&str, &str) = (
+    "src/integrations/homeassistant/bridge/src/lib.rs",
+    r#"#![cfg_attr(not(feature = "python"), forbid(unsafe_code))]"#,
+);
 /// Sources under `src/` that must not cite a board card.
 const CARD_FREE: [&str; 13] = [
     "rs", "c", "h", "toml", "md", "ts", "py", "dart", "svelte", "kt", "sh", "yml", "yaml",
@@ -118,6 +124,7 @@ regex!(
     r#"(?m)^\s*(?:wellfed-flash\s*[=.]|\[[^\]#]*\.wellfed-flash\s*\]|[^#\n]*\bpackage\s*=\s*"wellfed-flash")"#
 );
 
+regex!(FORBIDS_UNSAFE, r"(?m)^#!\[forbid\(unsafe_code\)\]");
 // A host crate's root: the crates under these folders run only on a
 // computer or phone, so they have no C interface or MMIO edge.
 regex!(
@@ -594,13 +601,17 @@ pub(crate) fn normalize(path: &Path) -> PathBuf {
 }
 
 /// A host crate's root (`src/lib.rs`, `src/main.rs`, or a binary under
-/// `src/bin/`) that doesn't forbid `unsafe`, and isn't a listed exception.
-/// A `cfg_attr` form counts: Home Assistant's bridge forbids it except when
-/// built with PyO3, whose macros expand to `unsafe`.
+/// `src/bin/`) without the inner attribute on a line of its own, and not a
+/// listed exception. The text in a comment or a module's outer attribute
+/// doesn't count.
 fn allows_unsafe(name: &str, source: &str) -> bool {
-    HOST_ROOT.is_match(name)
-        && !UNSAFE_HOST_ROOTS.contains(&name)
-        && !source.contains("forbid(unsafe_code)")
+    if !HOST_ROOT.is_match(name) || UNSAFE_HOST_ROOTS.contains(&name) {
+        return false;
+    }
+    let (conditional, attribute) = CONDITIONAL_HOST_ROOT;
+    let forbids = FORBIDS_UNSAFE.is_match(source)
+        || (name == conditional && source.lines().any(|line| line.trim_end() == attribute));
+    !forbids
 }
 
 /// A Rust source under [`SIZED`] longer than its limit: [`TEST_LINES`] under
@@ -778,7 +789,28 @@ mod tests {
         ] {
             assert!(allows_unsafe(root, "//! A crate.\n"), "{root}");
             assert!(!allows_unsafe(root, forbidden), "{root}");
+            for only_the_text in [
+                "//! Roots carry #![forbid(unsafe_code)].\n",
+                "// #![forbid(unsafe_code)]\n",
+                "#[forbid(unsafe_code)]\nmod inner;\n",
+                "#![cfg_attr(any(), forbid(unsafe_code))]\n",
+            ] {
+                assert!(
+                    allows_unsafe(root, only_the_text),
+                    "{root}: {only_the_text}"
+                );
+            }
         }
+
+        let conditional = "#![cfg_attr(not(feature = \"python\"), forbid(unsafe_code))]\n";
+        assert!(!allows_unsafe(
+            "src/integrations/homeassistant/bridge/src/lib.rs",
+            conditional
+        ));
+        assert!(allows_unsafe(
+            "src/server/wellfed-webhook/src/lib.rs",
+            conditional
+        ));
 
         for not_held in [
             "src/server/wellfed-webhook/src/body.rs",
