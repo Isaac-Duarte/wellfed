@@ -5,10 +5,13 @@
 //! - A filtered discovery once crashed BlueZ's bluetoothd (5.87), so on
 //!   Linux the scan names no service and the service is checked here.
 //!   `btleplug` still sets a discovery filter there, with no service in it.
-//! - BlueZ keeps devices it heard before and lists them before they are
-//!   heard again, so only a device with a signal strength counts as
-//!   advertising now. A feeder still linked from a run before stops
-//!   advertising; when the caller named it, being connected counts.
+//! - Every stack lists devices it heard before, so only one heard lately
+//!   counts as advertising now ([`Scan::heard`]). A feeder still linked
+//!   from a run before stops advertising; when the caller named it, being
+//!   connected counts.
+//! - CoreBluetooth and WinRT forget a device when its link closes, so a
+//!   feeder named by its id is listened for again ([`Radio::heard_as`]).
+//! - The adapter has one discovery, shared by every scan ([`Scans`]).
 //! - BlueZ connects only to a device it has heard since it last forgot it,
 //!   so a connection always follows a scan, even to a named feeder.
 //! - A notification sent as soon as notifications are enabled must have
@@ -17,22 +20,29 @@
 //!   it, so the connection goes through the same [`Radio`] that scanned.
 
 use std::pin::Pin;
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex as StdMutex, PoisonError, Weak};
+use std::time::{Duration, Instant};
 
 use btleplug::api::{
-    Central, CentralEvent, CentralState, Characteristic, Manager as _, Peripheral as _, ScanFilter,
-    WriteType,
+    Central, CentralEvent, CentralState, Characteristic, Manager as _, Peripheral as _,
+    PeripheralProperties, ScanFilter, WriteType,
 };
 use btleplug::platform::{Adapter, Manager, Peripheral};
 use futures_util::{Stream, StreamExt, stream};
+use tokio::runtime::Handle;
 use tokio::time::timeout;
 use uuid::Uuid;
 use wellfed_client::setup::{CONTROL, SERVICE};
 
-use crate::{Address, CLOSE_TIMEOUT, CONNECT_TIMEOUT, Control, Error, FIND_TIMEOUT, Notifications};
+use crate::shared::{Discovery, Scans, Sightings, look_again};
+use crate::{
+    Address, CLOSE_TIMEOUT, CONNECT_TIMEOUT, Control, Error, FIND_TIMEOUT, Notifications,
+    RESCAN_WAIT,
+};
 
 /// How often a scan reads what the adapter has heard.
-const HEARING: Duration = Duration::from_millis(500);
+pub(crate) const HEARING: Duration = Duration::from_millis(500);
 
 /// Whether the adapter is on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -54,10 +64,13 @@ impl Power {
     }
 }
 
-/// This computer's first Bluetooth adapter.
+/// This computer's first Bluetooth adapter, shared by every scan and
+/// connection made through it.
 #[derive(Clone)]
 pub struct Radio {
     adapter: Adapter,
+    sightings: Arc<StdMutex<Sightings>>,
+    scans: Arc<Scans<AdapterDiscovery>>,
 }
 
 impl Radio {
@@ -72,12 +85,22 @@ impl Radio {
             .into_iter()
             .next()
             .ok_or(Error::NoAdapter)?;
-        Ok(Self { adapter })
+
+        let sightings = Arc::new(StdMutex::new(Sightings::default()));
+        let events = adapter.events().await.map_err(Error::State)?;
+        tokio::spawn(record_sightings(events, Arc::downgrade(&sightings)));
+        Ok(Self {
+            scans: Arc::new(Scans::new(AdapterDiscovery {
+                adapter: adapter.clone(),
+            })),
+            adapter,
+            sightings,
+        })
     }
 
     /// Whether the adapter is on now; `None` while the stack can't say.
     pub async fn power_now(&self) -> Result<Option<Power>, Error> {
-        let state = self.adapter.adapter_state().await.map_err(Error::Open)?;
+        let state = self.adapter.adapter_state().await.map_err(Error::State)?;
         Ok(Power::of(&state))
     }
 
@@ -85,7 +108,7 @@ impl Radio {
     /// the stack doesn't know is left out.
     pub async fn power(&self) -> Result<impl Stream<Item = Power> + Send + 'static, Error> {
         // The changes first, so one between the two reads is not lost.
-        let events = self.adapter.events().await.map_err(Error::Open)?;
+        let events = self.adapter.events().await.map_err(Error::State)?;
         let now = self.power_now().await?;
         let changes = events.filter_map(|event| async move {
             match event {
@@ -97,22 +120,16 @@ impl Radio {
     }
 
     /// Start listening for feeders in setup mode, or `address` alone.
+    /// Discovery is shared: it runs while any scan does.
     pub async fn scan(&self, address: Option<Address>) -> Result<Scan, Error> {
         if self.power_now().await? == Some(Power::Off) {
             return Err(Error::Off);
         }
-        let services = if cfg!(target_os = "linux") {
-            Vec::new()
-        } else {
-            vec![Uuid::from_u128(SERVICE)]
-        };
-        self.adapter
-            .start_scan(ScanFilter { services })
-            .await
-            .map_err(Error::Scan)?;
+        self.scans.join().await?;
         Ok(Scan {
-            adapter: self.adapter.clone(),
+            radio: self.clone(),
             address,
+            left: false,
         })
     }
 
@@ -133,16 +150,38 @@ impl Radio {
         found.map_err(|_| Error::NotFound)?
     }
 
-    /// The feeder a scan reported as `id` ([`Heard::id`]), if the adapter
-    /// still knows it.
+    /// The feeder a scan reported as `id` ([`Heard::id`]). macOS and Windows
+    /// forget a device when its link closes, so a feeder the adapter no
+    /// longer knows is listened for again, for at most [`RESCAN_WAIT`].
     pub async fn heard_as(&self, id: &str) -> Result<Heard, Error> {
+        let (found, scan) = look_again(
+            || self.known_as(id),
+            || self.scan(None),
+            HEARING,
+            RESCAN_WAIT,
+        )
+        .await;
+        if let Some(scan) = scan {
+            scan.stop().await;
+        }
+        found?.ok_or_else(|| Error::Gone(id.to_owned()))
+    }
+
+    async fn known_as(&self, id: &str) -> Result<Option<Heard>, Error> {
         for peripheral in self.adapter.peripherals().await.map_err(Error::Scan)? {
             if peripheral.id().to_string() == id {
                 let properties = peripheral.properties().await.map_err(Error::Scan)?;
-                return Ok(Heard::new(peripheral, properties.as_ref()));
+                return Ok(Some(Heard::new(peripheral, properties.as_ref())));
             }
         }
-        Err(Error::Gone(id.to_owned()))
+        Ok(None)
+    }
+
+    /// Connect to the feeder a scan heard as `id`, as [`Self::connect`].
+    /// Every step is bounded, so this ends within [`OPEN_LIMIT`].
+    pub async fn open_heard(&self, id: &str) -> Result<(Connection, Notifications), Error> {
+        let feeder = self.heard_as(id).await?;
+        self.connect(&feeder).await
     }
 
     /// Connect to `feeder`, find its control characteristic and turn its
@@ -150,12 +189,61 @@ impl Radio {
     pub async fn connect(&self, feeder: &Heard) -> Result<(Connection, Notifications), Error> {
         let peripheral = feeder.peripheral.clone();
         // Before connecting, so a drop during the setup is not missed.
-        let events = self.adapter.events().await.map_err(Error::Connect)?;
+        let events = self.adapter.events().await.map_err(Error::State)?;
         let opened = open(&peripheral, events).await;
         if opened.is_err() {
             let _ = timeout(CLOSE_TIMEOUT, peripheral.disconnect()).await;
         }
         opened
+    }
+}
+
+/// Note when each device is heard advertising, until the radio goes.
+async fn record_sightings(
+    mut events: Pin<Box<dyn Stream<Item = CentralEvent> + Send>>,
+    sightings: Weak<StdMutex<Sightings>>,
+) {
+    while let Some(event) = events.next().await {
+        let id = match event {
+            CentralEvent::DeviceDiscovered(id)
+            | CentralEvent::DeviceUpdated(id)
+            | CentralEvent::ManufacturerDataAdvertisement { id, .. }
+            | CentralEvent::ServiceDataAdvertisement { id, .. }
+            | CentralEvent::ServicesAdvertisement { id, .. }
+            | CentralEvent::RssiUpdate { id, .. } => id,
+            _ => continue,
+        };
+        let Some(sightings) = sightings.upgrade() else {
+            return;
+        };
+        sightings
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .heard(id.to_string(), Instant::now());
+    }
+}
+
+/// The adapter's own discovery, which [`Scans`] shares out.
+struct AdapterDiscovery {
+    adapter: Adapter,
+}
+
+impl Discovery for AdapterDiscovery {
+    async fn start(&self) -> Result<(), Error> {
+        let services = if cfg!(target_os = "linux") {
+            Vec::new()
+        } else {
+            vec![Uuid::from_u128(SERVICE)]
+        };
+        self.adapter
+            .start_scan(ScanFilter { services })
+            .await
+            .map_err(Error::Scan)
+    }
+
+    async fn stop(&self) {
+        // A stack that fails to stop has nothing more to say.
+        let _ = self.adapter.stop_scan().await;
     }
 }
 
@@ -200,6 +288,8 @@ async fn open(
     let connection = Connection {
         peripheral: peripheral.clone(),
         control,
+        runtime: Handle::try_current().ok(),
+        closed: AtomicBool::new(false),
     };
     Ok((connection, Box::pin(notifications)))
 }
@@ -215,10 +305,12 @@ fn control(peripheral: &Peripheral) -> Result<Characteristic, Error> {
         .ok_or(Error::NoSetupService)
 }
 
-/// A scan running on the adapter, until [`Self::stop`].
+/// One scan on the adapter, until [`Self::stop`]. Dropped unstopped, it
+/// lets go of discovery on the runtime it is dropped on, if any.
 pub struct Scan {
-    adapter: Adapter,
+    radio: Radio,
     address: Option<Address>,
+    left: bool,
 }
 
 impl Scan {
@@ -227,7 +319,13 @@ impl Scan {
     pub async fn heard(&self) -> Result<Vec<Heard>, Error> {
         let service = Uuid::from_u128(SERVICE);
         let mut heard = Vec::new();
-        for peripheral in self.adapter.peripherals().await.map_err(Error::Scan)? {
+        let peripherals = self
+            .radio
+            .adapter
+            .peripherals()
+            .await
+            .map_err(Error::Scan)?;
+        for peripheral in peripherals {
             if self
                 .address
                 .is_some_and(|address| !address.names(&peripheral))
@@ -240,7 +338,7 @@ impl Scan {
             if !properties.services.contains(&service) {
                 continue;
             }
-            let advertising = properties.rssi.is_some()
+            let advertising = self.advertising(&peripheral, &properties)
                 || (self.address.is_some()
                     && peripheral.is_connected().await.map_err(Error::Scan)?);
             if advertising {
@@ -250,9 +348,39 @@ impl Scan {
         Ok(heard)
     }
 
-    /// Stop scanning. A stack that fails to stop has nothing more to say.
-    pub async fn stop(self) {
-        let _ = self.adapter.stop_scan().await;
+    /// Whether `peripheral` is advertising now. BlueZ drops a device's
+    /// signal strength when discovery stops, and reports a change only past
+    /// 8 dBm, so a feeder lying still may go quiet there for long: a signal
+    /// strength is the test on Linux. CoreBluetooth and WinRT keep the last
+    /// one for good, but report every advertisement, so elsewhere it is a
+    /// sighting in the last [`crate::shared::RECENT`].
+    fn advertising(&self, peripheral: &Peripheral, properties: &PeripheralProperties) -> bool {
+        if cfg!(target_os = "linux") {
+            return properties.rssi.is_some();
+        }
+        self.radio
+            .sightings
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .recent(&peripheral.id().to_string(), Instant::now())
+    }
+
+    /// Stop this scan; discovery stops with the last one.
+    pub async fn stop(mut self) {
+        self.left = true;
+        self.radio.scans.leave().await;
+    }
+}
+
+impl Drop for Scan {
+    fn drop(&mut self) {
+        if self.left {
+            return;
+        }
+        if let Ok(runtime) = Handle::try_current() {
+            let scans = self.radio.scans.clone();
+            runtime.spawn(async move { scans.leave().await });
+        }
     }
 }
 
@@ -285,7 +413,8 @@ impl Heard {
         }
     }
 
-    /// The stack's own name for it, which [`Radio::heard_as`] takes back:
+    /// The stack's own name for it, which [`Radio::heard_as`] and
+    /// [`Radio::open_heard`] take back:
     /// a UUID on macOS, the address elsewhere (on Linux, BlueZ's path).
     pub fn id(&self) -> &str {
         &self.id
@@ -308,16 +437,35 @@ impl Heard {
     }
 }
 
-/// One connected feeder's control characteristic.
+/// One connected feeder's control characteristic. Dropped without
+/// [`Self::disconnect`], it hangs up on the runtime it was opened on, so a
+/// link nobody holds never keeps the feeder's only connection.
 pub struct Connection {
     peripheral: Peripheral,
     control: Characteristic,
+    runtime: Option<Handle>,
+    closed: AtomicBool,
 }
 
 impl Connection {
     /// Hang up, waiting at most [`CLOSE_TIMEOUT`].
     pub async fn disconnect(&self) {
+        self.closed.store(true, Ordering::SeqCst);
         let _ = timeout(CLOSE_TIMEOUT, self.peripheral.disconnect()).await;
+    }
+}
+
+impl Drop for Connection {
+    fn drop(&mut self) {
+        if self.closed.load(Ordering::SeqCst) {
+            return;
+        }
+        if let Some(runtime) = &self.runtime {
+            let peripheral = self.peripheral.clone();
+            runtime.spawn(async move {
+                let _ = timeout(CLOSE_TIMEOUT, peripheral.disconnect()).await;
+            });
+        }
     }
 }
 

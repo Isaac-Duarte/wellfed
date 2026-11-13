@@ -68,8 +68,12 @@ class _FakeLink with FakeOpaque implements BluetoothLink {
   @override
   Stream<Uint8List> notifications() => notified.stream;
 
+  /// Writes that never answer.
+  bool hangWrites = false;
+
   @override
   Future<void> write({required List<int> piece}) async {
+    if (hangWrites) return Completer<void>().future;
     if (failWrites case final error?) throw error;
     written.add(piece);
   }
@@ -186,6 +190,25 @@ void main() {
         [9, 8],
       ]);
       expect(link.closes, 1);
+    });
+
+    testWidgets('a write the bridge never answers gives up after its own wait', (tester) async {
+      final link = _FakeLink()..hangWrites = true;
+      final radio = DesktopBluetooth(openLink: (id) async => link);
+      Object? failed;
+
+      final BleLink opened = await radio.open(feederNearby('feeder-1'));
+      unawaited(
+        opened
+            .write([
+              [1],
+            ])
+            .catchError((Object error) => failed = error),
+      );
+      await tester.pump(SetupLink.connectTimeout);
+      expect(failed, isNull, reason: "the bridge's own timeout comes first");
+      await tester.pump(DesktopBluetooth.writeWait - SetupLink.connectTimeout);
+      expect(failed, isA<TimeoutException>());
     });
 
     test("a failed connection or write is the radio's failure", () async {

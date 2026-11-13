@@ -11,7 +11,7 @@ publish.workspace = true
 btleplug.workspace = true
 futures-util.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["time"] }
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
 uuid.workspace = true
 wellfed-client.workspace = true
 

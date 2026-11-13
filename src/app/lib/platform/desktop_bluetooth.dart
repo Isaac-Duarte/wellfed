@@ -36,10 +36,16 @@ class DesktopBluetooth {
   });
 
   /// How long a connection may take before it is taken as lost. The bridge
-  /// bounds the connection, the discovery of the feeder's services and the
-  /// subscription at [SetupLink.connectTimeout] each, so past all three and
-  /// some margin it is not coming.
-  static const openWait = Duration(seconds: 50);
+  /// bounds its own open at 75 s (opening the radio, listening again for a
+  /// feeder the stack forgot, connecting, discovering its services and
+  /// subscribing, each bounded), so its own error comes first; this only
+  /// catches a bridge that never answers. A link it opens after this is
+  /// hung up when it is dropped.
+  static const openWait = Duration(seconds: 90);
+
+  /// How long one write may take. The bridge bounds it at
+  /// [SetupLink.connectTimeout]; the margin lets its error come first.
+  static const writeWait = Duration(seconds: 20);
 
   /// Starts one scan.
   final SetupScan Function() newScan;
@@ -177,7 +183,7 @@ class DesktopLink implements BleLink {
   Future<void> write(List<List<int>> pieces) async {
     for (final piece in pieces) {
       try {
-        await _link.write(piece: piece).timeout(SetupLink.connectTimeout);
+        await _link.write(piece: piece).timeout(DesktopBluetooth.writeWait);
       } on BridgeError catch (error) {
         throw BluetoothFailure(error.message);
       }

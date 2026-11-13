@@ -20,6 +20,7 @@
 mod address;
 mod framed;
 mod radio;
+mod shared;
 
 use std::pin::Pin;
 use std::time::Duration;
@@ -35,6 +36,14 @@ pub const FIND_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long a feeder gets to answer a connection, its services' discovery,
 /// the subscription and each write.
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+/// How long [`Radio::heard_as`] listens again for a feeder the stack forgot.
+pub const RESCAN_WAIT: Duration = Duration::from_secs(10);
+/// The most [`Radio::open_heard`] takes: listening again, then connecting,
+/// discovering the services and subscribing, each bounded, and hanging up
+/// after a failure.
+pub const OPEN_LIMIT: Duration = Duration::from_secs(
+    RESCAN_WAIT.as_secs() + 3 * CONNECT_TIMEOUT.as_secs() + CLOSE_TIMEOUT.as_secs() + 2,
+);
 /// How long a hang-up may take: a stack can stall disconnecting a device the
 /// feeder already dropped.
 pub const CLOSE_TIMEOUT: Duration = Duration::from_secs(3);
@@ -46,6 +55,14 @@ pub const PIECE: usize = 20;
 /// It ends when the link drops.
 pub type Notifications = Pin<Box<dyn Stream<Item = Vec<u8>> + Send>>;
 
+/// How to turn this computer's Bluetooth on: nothing here turns it on.
+#[cfg(target_os = "linux")]
+const TURN_ON: &str = "turn it on with `bluetoothctl power on`";
+#[cfg(target_os = "macos")]
+const TURN_ON: &str = "turn it on in System Settings, Bluetooth";
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+const TURN_ON: &str = "turn it on in Settings, Bluetooth & devices";
+
 /// What went wrong on the radio. Every `btleplug` failure is kept whole.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -53,10 +70,14 @@ pub enum Error {
         "this computer's Bluetooth could not be opened: check it is on, and that this app may use it"
     )]
     Open(#[source] btleplug::Error),
+    #[error("this computer's Bluetooth did not open in time")]
+    OpenTimeout,
     #[error("this computer has no Bluetooth adapter")]
     NoAdapter,
-    #[error("this computer's Bluetooth is off")]
+    #[error("this computer's Bluetooth is off: {TURN_ON}")]
     Off,
+    #[error("this computer's Bluetooth did not say what state it is in")]
+    State(#[source] btleplug::Error),
     #[error("the scan for feeders failed")]
     Scan(#[source] btleplug::Error),
     #[error(

@@ -51,7 +51,9 @@ class Discovery {
         browse?.stop();
         await heard?.cancel();
         browse?.dispose();
-        await out.close();
+        // Not closed here: a browse that ended by itself gets here from its
+        // own close, which would then wait on this, and its listener would
+        // never hear it end.
       },
     );
     return out.stream;
