@@ -20,6 +20,7 @@ analyzer:
     - lib/theme/tokens.g.dart
     - linux/**
     - macos/**
+    - windows/**
 
 linter:
   rules:
