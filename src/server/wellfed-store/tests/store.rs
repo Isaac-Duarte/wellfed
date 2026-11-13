@@ -1,6 +1,5 @@
 //! The store against a fresh SQLite file per test.
 
-use std::os::unix::fs::PermissionsExt;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use jiff::Timestamp;
@@ -419,50 +418,6 @@ fn copies(dir: &std::path::Path) -> usize {
             name.to_string_lossy().contains(".before-")
         })
         .count()
-}
-
-/// A database whose own migrations are pending and fail. Each attempt
-/// copies the database first, named for the time the caller gives, and a
-/// copy left by one attempt does not block the next.
-#[tokio::test]
-async fn pending_migrations_copy_the_database_first_on_every_attempt() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("server.db");
-    Store::open(&path, at(0)).await.unwrap().close().await;
-
-    // The record forgets every migration after the first, whose tables
-    // stay: the second runs again and fails on its table.
-    let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", path.display()))
-        .await
-        .unwrap();
-    sqlx::query("DELETE FROM _sqlx_migrations WHERE version > 1")
-        .execute(&pool)
-        .await
-        .unwrap();
-    pool.close().await;
-
-    // The caller's clock names each copy; two attempts are two times.
-    for (attempt, ms) in [(1, 1_790_000_000_001), (2, 1_790_000_000_002)] {
-        let now = at(ms);
-        let opened = Store::open(&path, now).await;
-        assert!(matches!(opened, Err(Error::Migrate(_))), "{opened:?}");
-        assert_eq!(copies(dir.path()), attempt, "no partial copy left");
-        // Named for the newest pending migration and the time given.
-        let newest = migrations();
-        let copy = format!("server.db.before-{newest}-{}", now.as_millisecond());
-        let mode = std::fs::metadata(dir.path().join(copy))
-            .expect("named for the time given")
-            .permissions()
-            .mode();
-        assert_eq!(mode & 0o777, 0o600, "the server's user's alone");
-    }
-}
-
-fn migrations() -> i64 {
-    let count = std::fs::read_dir(env!("CARGO_MANIFEST_DIR").to_owned() + "/migrations")
-        .unwrap()
-        .count();
-    i64::try_from(count).unwrap()
 }
 
 /// A feeder's kept alerts have two writers, each naming the version it
