@@ -171,6 +171,22 @@ void main() {
     });
   });
 
+  testWidgets('a run that ends uncertain after the owner left looks for nothing', (tester) async {
+    final ports = FakeRestorePorts();
+    await restoreOpen(tester, ports);
+    final FakeRestoreRun run = await restoreStarted(tester, ports);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    run.end(const RestoreEnd.uncertain(why: UncertainWhy.gone, detail: 'gone'));
+    await tester.pump();
+
+    expect(ports.powerListeners, 0);
+    ports.setPower(BluetoothPower.off);
+    ports.setPower(BluetoothPower.on);
+    await tester.pump(RestoreFlow.lookFor);
+    expect(ports.powerListeners, 0);
+  });
+
   testWidgets('leaving after a stopped run forgets the key', (tester) async {
     final ports = FakeRestorePorts();
     await restoreOpen(tester, ports);

@@ -259,6 +259,9 @@ class PairingFlow extends ChangeNotifier {
       onError: (Object _) {
         if (!on.isCompleted) on.complete();
       },
+      onDone: () {
+        if (!on.isCompleted) on.complete();
+      },
     );
     try {
       await on.future;
