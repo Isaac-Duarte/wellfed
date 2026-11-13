@@ -349,13 +349,7 @@ fn a_left_install_is_listed_and_a_renamed_flash_client_is_refused() {
     let flash_bin = renamed.display().to_string();
     let error = run_in(
         root.path(),
-        &[
-            "serve",
-            "--device",
-            "plaf103",
-            "--flash-bin",
-            &flash_bin,
-        ],
+        &["serve", "--device", "plaf103", "--flash-bin", &flash_bin],
     )
     .unwrap_err();
     assert_matches!(
