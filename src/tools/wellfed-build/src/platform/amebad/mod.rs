@@ -21,12 +21,13 @@ use wellfed_formats::device::AmebadMains;
 use wellfed_formats::lock::SdkLock;
 use wellfed_formats::manifest::{Artifact, Audits, CompiledArchive};
 
-use self::audit::{Archives, Binutils, park, word};
-use self::sdk::{Overrides, check_sdk_worktree, prepare, rust_archive};
+use self::audit::{Archives, Binutils, park};
+use self::sdk::{Overrides, Staged, check_sdk_worktree, checked_worktree, prepare, rust_archive};
 use self::toolchain::{toolchain_lock, verify_toolchain};
 use super::{Built, Job};
 use crate::device::StockPaths;
-use crate::environment::{BOARD_VARIABLE, Environment};
+use crate::environment::{BOARD_VARIABLE, BUILD_WIFI_VARIABLE, Environment, OTA_KEY_VARIABLE};
+use crate::firmware::Runtime;
 use crate::{Error, Firmware, Profile, Provisioning, Repo, Result, Stage, digest, relative, text};
 use wellfed_formats::require;
 use wellfed_proto::device::Model;
@@ -45,12 +46,8 @@ pub enum AmebadError {
     RustBuild { status: std::process::ExitStatus },
     #[error("Rust firmware lint failed: Clippy refused the target code")]
     RustLint { status: std::process::ExitStatus },
-    #[error("OTA container is shorter than its header")]
-    ShortContainer,
     #[error("OTA container does not match the combined image")]
     Container,
-    #[error("OTA container checksum does not match")]
-    Checksum,
     #[error("Missing build artifact: {}", path.display())]
     MissingArtifact { path: PathBuf },
     /// The Rust banner is in the image exactly when the profile links Rust.
@@ -58,6 +55,15 @@ pub enum AmebadError {
     Banner,
     #[error("Linked image is missing the source-bound startup identity")]
     NoIdentity,
+    /// The image does not carry the update key its manifest will name, so
+    /// something other than the build chose the key it compiled in.
+    #[error("Linked image does not carry the update key {key} the build set")]
+    OtaKey { key: String },
+    /// A bare firmware's manifest names no update key or policy, so an
+    /// image that links the updater anyway would install updates nothing
+    /// declared.
+    #[error("A bare firmware's image links the updater ({symbol})")]
+    BareUpdater { symbol: String },
     #[error("Linked image is missing required application/core symbols")]
     ImageSymbols,
     #[error("Rust archive is missing expected symbols: {}", missing.join(", "))]
@@ -78,11 +84,6 @@ pub(crate) const TOOL_LOCK: &str = "src/firmware/vendor/probe/toolchain.lock.jso
 /// The application entry's generated-header input: read from an ignored
 /// private file; only its hash reaches the manifest.
 const WIFI_CREDENTIALS: &str = "private/hotspot.json";
-/// Set, with no meaningful value, exactly when the image has build Wi-Fi;
-/// the feeder runtime reads its presence (`network::BUILD_WIFI`). The
-/// header's presence macro has the same name.
-const BUILD_WIFI_VARIABLE: &str = credentials::PRESENCE;
-
 /// The generated credentials header for `provisioning`, and the private
 /// file it was generated from, if any.
 pub(crate) fn credentials_header(
@@ -181,11 +182,14 @@ pub(crate) fn lock(repo: &Repo) -> Result<SdkLock> {
     Ok(wellfed_formats::load(&repo.path(SDK_LOCK))?)
 }
 
-/// The pinned toolchain's binutils directory.
+/// The pinned toolchain's binutils directory, once every pinned file in the
+/// toolchain matches: the audits a frozen review reruns run only the pinned
+/// objdump, nm, readelf and objcopy, as the build's do.
 pub fn binutils(repo: &Repo) -> Result<PathBuf> {
-    Ok(toolchains(repo)
-        .join(&lock(repo)?.toolchain.directory)
-        .join("bin"))
+    let lock = lock(repo)?;
+    let toolchain = toolchains(repo).join(&lock.toolchain.directory);
+    verify_toolchain(&toolchain, &toolchain_lock(repo, &lock)?)?;
+    Ok(toolchain.join("bin"))
 }
 
 /// A manifest's archives, by core.
@@ -253,9 +257,9 @@ fn cargo_environment(
             .display()
             .to_string(),
     );
-    environment.remove("WELLFED_OTA_PUBLIC_KEY");
+    environment.remove(OTA_KEY_VARIABLE);
     if let Some(key) = ota_key {
-        environment.insert("WELLFED_OTA_PUBLIC_KEY".into(), key.into());
+        environment.insert(OTA_KEY_VARIABLE.into(), key.into());
     }
     environment.remove(BUILD_WIFI_VARIABLE);
     if wifi_credentials(provisioning).is_some() {
@@ -427,41 +431,12 @@ fn staged_diagnostics(log: &Path, profile: Profile) -> Vec<String> {
     found
 }
 
-/// The OTA container must hold exactly the combined image, with its checksum.
+/// The OTA container must hold exactly the combined image, by the parser the
+/// installers and the review use.
 fn check_container(ota: &[u8], combined: &[u8]) -> Result<()> {
-    let header: Vec<u64> = (0..8).filter_map(|i| word(ota, i * 4)).collect();
-    let [
-        version,
-        count,
-        magic,
-        entry,
-        checksum,
-        size,
-        offset,
-        address,
-    ] = header[..]
-    else {
-        return Err(AmebadError::ShortContainer.into());
-    };
-    require(
-        (version, count, magic, entry, offset, address)
-            == (
-                0xffff_ffff,
-                1,
-                u64::from(u32::from_le_bytes(*b"OTA1")),
-                24,
-                32,
-                0xffff_ffff,
-            )
-            && size == combined.len() as u64
-            && &ota[32..] == combined,
-        || AmebadError::Container,
-    )?;
-
-    let sum = combined
-        .iter()
-        .fold(0u32, |s, b| s.wrapping_add(u32::from(*b)));
-    require(u64::from(sum) == checksum, || AmebadError::Checksum)?;
+    require(wellfed_image::ota::container(ota)? == combined, || {
+        AmebadError::Container
+    })?;
     Ok(())
 }
 
@@ -480,8 +455,9 @@ const ARTIFACTS: [(Core, &str); 4] = [
     (Core::Hp, "OTA_All.bin"),
 ];
 
-/// An audit as the manifest records it: the same serialization
-/// `wellfed-build audit` prints, which the frozen review compares.
+/// The packaged artifacts' bytes, by file name.
+type Packaged = BTreeMap<&'static str, Vec<u8>>;
+
 /// One profile's build in its SDK worktree.
 struct Build<'a> {
     job: &'a Job<'a>,
@@ -568,47 +544,53 @@ impl Build<'_> {
         Ok(archives)
     }
 
-    fn artifacts(&self) -> Result<Vec<Artifact>> {
+    /// The packaged artifacts as the manifest records them, and their bytes
+    /// by file name: each is read once, so the bytes the image checks read
+    /// are the bytes the manifest hashed.
+    fn artifacts(&self) -> Result<(Vec<Artifact>, Packaged)> {
         let mut artifacts = Vec::new();
+        let mut files = BTreeMap::new();
         for (core, name) in ARTIFACTS {
             let path = self
                 .sdk
                 .join(PROJECT)
                 .join(format!("project_{}/asdk/image", core.dir()))
                 .join(name);
-            let bytes = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-            require(path.is_file() && bytes > 0, || {
-                AmebadError::MissingArtifact { path: path.clone() }
+            let bytes = fs::read(&path).unwrap_or_default();
+            require(!bytes.is_empty(), || AmebadError::MissingArtifact {
+                path: path.clone(),
             })?;
             artifacts.push(Artifact {
                 path: relative(&path, &self.job.output)?,
-                bytes,
-                sha256: digest(&path)?,
+                bytes: bytes.len() as u64,
+                sha256: wellfed_formats::canonical::sha256(&bytes),
             });
+            files.insert(name, bytes);
         }
-        Ok(artifacts)
+        Ok((artifacts, files))
     }
 
     /// The OTA container holds the combined image, which runs the requested
-    /// application and embeds the identity. Returns the OTA and whether the
-    /// Rust banner is present.
-    fn check_image(&self) -> Result<(Vec<u8>, bool)> {
-        let combined = fs::read(self.image_directory().join("km0_km4_image2.bin"))?;
-        let ota = fs::read(self.image_directory().join("OTA_All.bin"))?;
-        check_container(&ota, &combined)?;
+    /// application, embeds the identity and carries the update key the
+    /// build set. Returns whether the Rust banner is present.
+    fn check_image(&self, files: &Packaged) -> Result<bool> {
+        let file = |name: &str| files.get(name).map_or(&[][..], Vec::as_slice);
+        let (combined, ota) = (file("km0_km4_image2.bin"), file("OTA_All.bin"));
+        check_container(ota, combined)?;
 
         let rust = self.job.profile.has(Stage::Rust);
-        let banner = contains(&combined, b"Wellfed local firmware: Rust bringup");
+        let banner = contains(combined, b"Wellfed local firmware: Rust bringup");
         require(banner == rust, || AmebadError::Banner)?;
         require(
             !rust
                 || contains(
-                    &combined,
+                    combined,
                     format!("{} start build={} ", Tag::Start, self.job.identity).as_bytes(),
                 ),
             || AmebadError::NoIdentity,
         )?;
-        Ok((ota, banner))
+        carries_key(combined, self.job.ota_key)?;
+        Ok(banner)
     }
 
     /// The linked KM4 image must contain the Rust application entry and the
@@ -628,6 +610,7 @@ impl Build<'_> {
             required.iter().all(|s| names.iter().any(|n| n == s)),
             || AmebadError::ImageSymbols,
         )?;
+        links_no_updater(&names, self.job.firmware.runtime())?;
 
         let mut compiled = Vec::new();
         for (core, archive) in archives {
@@ -658,7 +641,12 @@ impl Build<'_> {
 
     /// Nothing the build read changed while it compiled. Returns the
     /// toolchain's file pins.
-    fn recheck(&self, overrides: &Overrides, lock: &SdkLock) -> Result<BTreeMap<String, String>> {
+    fn recheck(
+        &self,
+        overrides: &Overrides,
+        staged: &Staged,
+        lock: &SdkLock,
+    ) -> Result<BTreeMap<String, String>> {
         let job = self.job;
         (job.recheck)()?;
         for (path, checksum) in overrides {
@@ -666,6 +654,7 @@ impl Build<'_> {
                 AmebadError::OverrideChanged { path: path.clone() }
             })?;
         }
+        staged.recheck()?;
         check_sdk_worktree(&self.sdk, job.profile)?;
 
         let pins = toolchain_lock(job.repo, lock)?;
@@ -784,26 +773,29 @@ impl Amebad {
             None
         };
 
-        let (sdk, overrides) = prepare(job, self, stock.as_ref(), &lock)?;
+        let sdk = checked_worktree(job, &lock)?;
+        let staged = Staged::new(job, &sdk);
+        let overrides = prepare(job, self, stock.as_ref(), &sdk, &staged)?;
         let build = Build {
             job,
             stock,
             log: job.log.clone(),
-            sdk,
+            sdk: sdk.clone(),
             binutils: Binutils {
                 dir: job.toolchain.join("bin"),
             },
         };
 
         let archives = build.compile()?;
-        let artifacts = build.artifacts()?;
-        let (ota, banner) = build.check_image()?;
+        let (artifacts, files) = build.artifacts()?;
+        let banner = build.check_image(&files)?;
+        let ota = files.get("OTA_All.bin").cloned().unwrap_or_default();
         let (required_symbols, compiled_archives) = if job.profile.has(Stage::Rust) {
             build.check_symbols(&archives)?
         } else {
             Default::default()
         };
-        let toolchain_files = build.recheck(&overrides, &lock)?;
+        let toolchain_files = build.recheck(&overrides, &staged, &lock)?;
         let audits = build.audits(&ota, &archives)?;
 
         Ok(Built {
@@ -820,9 +812,73 @@ impl Amebad {
     }
 }
 
+/// Refuse an image that lacks the update key the build set. `wellfed-hal`
+/// keeps the key as the 64 hex characters it was given, so the packaged
+/// updater holds them; anything that compiled in another key (a cargo
+/// `[env]` entry the environment check missed) leaves them out. A bare
+/// firmware links no updater, so the build sets it no key.
+fn carries_key(combined: &[u8], key: Option<&str>) -> Result<()> {
+    let Some(key) = key else {
+        return Ok(());
+    };
+    require(contains(combined, key.as_bytes()), || AmebadError::OtaKey {
+        key: key.to_string(),
+    })?;
+    Ok(())
+}
+
+/// The mangled path of `wellfed_hal::ota::update`, the same in the v0 and
+/// legacy schemes: every function the updater links carries it.
+const UPDATER: &str = "11wellfed_hal3ota6update";
+
+/// Refuse a bare firmware's image that links the updater: only the SDK
+/// runtime starts it, and a bare image's manifest names no update key.
+fn links_no_updater(names: &[String], runtime: Runtime) -> Result<()> {
+    if runtime == Runtime::Sdk {
+        return Ok(());
+    }
+    match names.iter().find(|name| name.contains(UPDATER)) {
+        Some(symbol) => Err(AmebadError::BareUpdater {
+            symbol: symbol.clone(),
+        }
+        .into()),
+        None => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_bare_image_that_links_the_updater_is_refused() {
+        let updater =
+            "_RNvMNtNtCsduCGiX4Semn_11wellfed_hal3ota6updateNtB2_6Update4step".to_string();
+        let names = vec!["wellfed_app_start".to_string(), updater.clone()];
+        links_no_updater(&names, Runtime::Sdk).unwrap();
+        links_no_updater(&names[..1], Runtime::Bare).unwrap();
+
+        let error = links_no_updater(&names, Runtime::Bare).unwrap_err();
+        assert!(
+            matches!(&error, Error::Amebad(AmebadError::BareUpdater { symbol }) if symbol == &updater),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn an_image_without_the_key_the_build_set_is_refused() {
+        let key = "ab".repeat(32);
+        let image = format!("code{key}data").into_bytes();
+        carries_key(&image, Some(&key)).unwrap();
+        carries_key(&image, None).unwrap();
+
+        let other = "cd".repeat(32);
+        let error = carries_key(&image, Some(&other)).unwrap_err();
+        assert!(
+            matches!(&error, Error::Amebad(AmebadError::OtaKey { key }) if key == &other),
+            "{error:?}"
+        );
+    }
 
     /// The archive build's lints are the root Makefile's production lints,
     /// with warnings denied: one rule set for host and target code.

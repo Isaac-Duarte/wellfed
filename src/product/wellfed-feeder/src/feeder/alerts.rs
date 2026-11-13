@@ -346,7 +346,8 @@ impl Alerts {
         self.table.iter().flatten()
     }
 
-    /// Whether the boot read is done.
+    /// Whether the boot read is done. The simulator's tests read it.
+    #[doc(hidden)]
     pub const fn is_restored(&self) -> bool {
         self.restored
     }

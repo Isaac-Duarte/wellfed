@@ -243,8 +243,14 @@ fn uncertain(what: impl std::fmt::Display + Send + Sync + 'static) -> anyhow::Er
 
 /// The passphrase: typed at a terminal with no echo, or piped in by a script.
 fn passphrase() -> Result<String> {
+    secret("Password for the feeder's Wi-Fi")
+}
+
+/// A secret from standard input: asked for after `prompt`, unechoed, at a
+/// terminal, and otherwise its first line, as a test or a script pipes it.
+fn secret(prompt: &str) -> Result<String> {
     if std::io::stdin().is_terminal() {
-        eprint!("Password for the feeder's Wi-Fi (it won't show as you type): ");
+        eprint!("{prompt} (it won't show as you type): ");
         return rpassword::read_password().context("read the password");
     }
 
@@ -315,19 +321,13 @@ async fn connect_via(
 ) -> Result<(OwnerKey, [u8; 32], Connection)> {
     let keys = target.keys()?;
     if let Some(bench) = bench::Bench::find(rendezvous).await? {
-        let lent = bench::lend(
-            bench,
-            &keys,
-            target.feeder.as_deref(),
-            target.address.as_deref(),
-        )
-        .await?;
+        let lent = bench::lend(bench, &keys, target.address.as_deref()).await?;
         let key = OwnerKey::open(&keys, None, Missing::Refuse)?;
         let identity = key.feeder(target.feeder.as_deref())?;
         if wellfed_session::hex::Lower(&identity).to_string() != lent.identity() {
             bail!(
                 "the bench server's session is with feeder {}, not {}",
-                &lent.identity()[..16],
+                bench::short(lent.identity()),
                 fingerprint(&identity)
             );
         }

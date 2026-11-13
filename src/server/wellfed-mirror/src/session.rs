@@ -30,6 +30,7 @@
 //! [`Timing::time_sync`]: crate::Timing::time_sync
 
 use std::time::Duration;
+use wellfed_connect::Samples;
 
 use jiff::tz::TimeZone;
 use tokio::time::Instant;
@@ -196,7 +197,10 @@ impl Task {
             epoch: synced.epoch,
             seq: synced.seq,
         });
-        let resume = connection.subscribe(from, true).await.map_err(End::Lost)?;
+        let resume = connection
+            .subscribe(from, Samples::On)
+            .await
+            .map_err(End::Lost)?;
         self.opened.send_replace(Some(Opened {
             epoch: connection.epoch(),
             kind: connection.kind(),

@@ -14,7 +14,7 @@
 use std::time::Duration;
 
 use wellfed_client::update::{Image, InstallError, Installer, Next, Sent};
-use wellfed_model::{Answer, Op, UpdateView};
+use wellfed_model::{Answer, Op, Refusal, UpdatePhase, UpdateView};
 
 /// Sessions a push reopens in a row with no byte written between them: a
 /// feeder that keeps dropping them without taking any more is not coming
@@ -97,6 +97,57 @@ pub enum Pushed {
     /// the feeder can tell, so every caller reports it as uncertain and
     /// offers nothing again. Without, nothing reached bank 0.
     Gone { offered: bool },
+}
+
+/// What stands in an offer's way, once [`clear_stale`] has looked.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Way {
+    /// Nothing pending but the offer's own manifest, if anything: the
+    /// state, read before or after a cancel.
+    Clear(UpdateView),
+    /// An install is under way. It is not stale, so nothing was cancelled.
+    Running(UpdatePhase),
+    /// The feeder refused the cancel; the candidate stays.
+    Refused(Refusal),
+    /// The cancel's answer did not show the candidate gone, so it may or
+    /// may not have landed.
+    CancelUnknown,
+}
+
+/// Clear the way for an offer of the manifest whose digest is `ours`, from
+/// `view`, the update state just read. An install that stopped before
+/// activation (a cut, a kill, a server restart) leaves its candidate
+/// pending, and bank 0 refuses every other manifest until a client cancels
+/// it, while the same manifest is offered again as it is. So a candidate
+/// naming another (any, with `ours` `None`, as a restore's manifest never
+/// is one already offered) is cancelled once, after `cancelling`, and any
+/// doubt about the cancel is the caller's to stop on: the one offer is not
+/// to be spent on a refusal. The server's installs and the owner's restore
+/// share this rule.
+pub async fn clear_stale<S: Steps>(
+    steps: &mut S,
+    view: UpdateView,
+    ours: Option<[u8; 32]>,
+    cancelling: impl FnOnce(),
+) -> Result<Way, S::Error> {
+    if view.phase != UpdatePhase::Idle {
+        return Ok(Way::Running(view.phase));
+    }
+    let stale = view.digest.is_some_and(|digest| Some(digest.0) != ours);
+    if !stale {
+        return Ok(Way::Clear(view));
+    }
+
+    cancelling();
+    Ok(match steps.step(Op::CancelUpdate).await? {
+        Some(Answer::Update(after))
+            if after.phase == UpdatePhase::Idle && after.digest.is_none() =>
+        {
+            Way::Clear(after)
+        }
+        Some(Answer::Refused(refusal)) => Way::Refused(refusal),
+        _ => Way::CancelUnknown,
+    })
 }
 
 /// Push `image` until bank 1 is activated (or already runs it), the
@@ -214,6 +265,85 @@ mod tests {
         }
 
         fn progress(&mut self, _: &UpdateView) {}
+    }
+
+    /// An idle feeder's update state, holding `digest`'s candidate.
+    fn idle(digest: Option<[u8; 32]>) -> UpdateView {
+        UpdateView {
+            phase: UpdatePhase::Idle,
+            bank: 0,
+            min_version: 4,
+            digest: digest.map(wellfed_model::Hex),
+            version: 1,
+            image_len: 0,
+            written: 0,
+            wanted: Vec::new(),
+            stopped: None,
+            bank0: Bank0Check::Unchecked,
+        }
+    }
+
+    fn clear(view: UpdateView, ours: Option<[u8; 32]>, answer: Option<Answer>) -> (Way, Vec<Op>) {
+        let mut feeder = Answering {
+            answer: answer.unwrap_or(Answer::Unreadable),
+            sent: Vec::new(),
+        };
+        let cancelling = std::cell::Cell::new(0);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        let way = runtime
+            .block_on(clear_stale(&mut feeder, view, ours, || {
+                cancelling.set(cancelling.get() + 1);
+            }))
+            .unwrap();
+        let cancels = feeder
+            .sent
+            .iter()
+            .filter(|op| **op == Op::CancelUpdate)
+            .count();
+        assert_eq!(cancelling.get(), cancels, "told before each cancel");
+        (way, feeder.sent)
+    }
+
+    /// The rule the server's installs and the owner's restore share: a
+    /// candidate naming another manifest is cancelled once, the offer's own
+    /// or none is clear, a running install is left alone, and a cancel the
+    /// feeder refused or did not clear is the caller's to stop on.
+    #[test]
+    fn a_stale_candidate_is_cancelled_once_and_any_doubt_is_the_caller_s() {
+        let (way, sent) = clear(idle(None), None, None);
+        assert_eq!((way, sent), (Way::Clear(idle(None)), Vec::new()));
+        let (way, sent) = clear(idle(Some([1; 32])), Some([1; 32]), None);
+        assert_eq!((way, sent), (Way::Clear(idle(Some([1; 32]))), Vec::new()));
+
+        let mut running = idle(Some([1; 32]));
+        running.phase = UpdatePhase::Receiving;
+        let (way, sent) = clear(running, None, None);
+        assert_eq!(
+            (way, sent),
+            (Way::Running(UpdatePhase::Receiving), Vec::new())
+        );
+
+        // Another manifest's, or any with no offer of its own (a restore).
+        for ours in [Some([2; 32]), None] {
+            let answer = Some(Answer::Update(idle(None)));
+            let (way, sent) = clear(idle(Some([1; 32])), ours, answer);
+            assert_eq!(
+                (way, sent),
+                (Way::Clear(idle(None)), vec![Op::CancelUpdate])
+            );
+        }
+
+        let refused = Some(Answer::Refused(Refusal::Busy));
+        let (way, _) = clear(idle(Some([1; 32])), None, refused);
+        assert_eq!(way, Way::Refused(Refusal::Busy));
+        let still = Some(Answer::Update(idle(Some([1; 32]))));
+        assert_eq!(
+            clear(idle(Some([1; 32])), None, still).0,
+            Way::CancelUnknown
+        );
+        assert_eq!(clear(idle(Some([1; 32])), None, None).0, Way::CancelUnknown);
     }
 
     /// Bank 0 receiving an image of `chunks` chunks, which activates it

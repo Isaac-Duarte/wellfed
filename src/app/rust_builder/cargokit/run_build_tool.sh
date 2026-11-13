@@ -31,7 +31,12 @@ environment:
 dependencies:
   build_tool:
     path: "$BUILD_TOOL_PKG_DIR"
+
 EOF
+
+# Local change: pin every package build_tool's lockfile resolved, which pub
+# would otherwise ignore here (see build_tool/runner_overrides.yaml).
+cat "$BUILD_TOOL_PKG_DIR/runner_overrides.yaml" >> "pubspec.yaml"
 
 mkdir -p "bin"
 

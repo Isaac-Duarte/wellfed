@@ -1,7 +1,9 @@
 //! The stock server's private configuration (`private/installer.json`, or a
 //! captured file named by `--config`; format version 1): stock's captured
-//! device credentials and plans, if any, and the server's own secrets and
-//! addresses.
+//! device credentials, if any, and the server's own secrets and addresses.
+//! It holds no plan table: stock replaces its stored plans with whatever a
+//! reply carries, so the server never sends one, and a config with a `plans`
+//! key is refused.
 //!
 //! It holds working device credentials, so it is written mode 0600 and has
 //! no `Debug`. Edit it only while the service is
@@ -20,14 +22,61 @@ use std::{
     path::Path,
 };
 
-use anyhow::{Context, Result, bail, ensure};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use uuid::Uuid;
+use wellfed_formats::require;
 
 use crate::protocol::{self, plaf103};
-use crate::{enroll::Enrollment, storage};
+use crate::{Result, enroll::Enrollment, storage};
+
+/// Why a config was refused.
+#[derive(Debug, thiserror::Error)]
+pub enum ConfigError {
+    #[error("unsupported configuration version {version}")]
+    Version { version: u32 },
+    #[error("the HTTP API must bind to loopback, not {address}")]
+    HttpNotLoopback { address: SocketAddr },
+    #[error("MQTT must bind to a specific IPv4 address, not {address}")]
+    MqttAddress { address: SocketAddr },
+    #[error("server secrets must have at least 32 characters")]
+    ShortSecrets,
+    #[error("invalid device identifier")]
+    DeviceId,
+    #[error("device credentials missing")]
+    DeviceCredentials,
+    #[error("invalid hotspot interface")]
+    Interface,
+    #[error("invalid target MAC")]
+    Mac,
+    #[error("this config names no hotspot interface and feeder MAC (an installer's)")]
+    NoHotspot,
+    #[error(
+        "{path}: no feeder has enrolled yet; start serve with --enroll-minutes during the install"
+    )]
+    NotEnrolled { path: std::path::PathBuf },
+    #[error("the config names a captured device and a feeder enrolled beside it; keep one")]
+    DeviceAndEnrollment,
+    #[error("read configuration {path}")]
+    Read {
+        path: std::path::PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("invalid enrollment {path}")]
+    Enrollment {
+        path: std::path::PathBuf,
+        #[source]
+        source: wellfed_formats::Error,
+    },
+    #[error("invalid server configuration {path}")]
+    Invalid {
+        path: std::path::PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+}
 
 /// The field a config with a captured device has, and an installer's lacks.
 const DEVICE_FIELD: &str = "device_id";
@@ -49,15 +98,6 @@ pub struct Config {
     pub http_listen: SocketAddr,
 
     pub timezone: Tz,
-    /// Stock's plan table as a capture recorded the cloud sending it,
-    /// replayed verbatim to `GET_FEEDING_PLAN_EVENT`. `None` when nothing
-    /// was captured (an installer's config): the request then goes
-    /// unanswered, since stock erases and rewrites its stored table on any
-    /// reply with a `plans` key, and an empty list would erase the owner's
-    /// plans before the installer imports them. `Some([])` is a captured
-    /// empty table, answered as captured.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub plans: Option<Vec<Value>>,
     /// The captured cloud `BINDING` reply, replayed verbatim.
     #[serde(default)]
     pub binding_response: Option<Map<String, Value>>,
@@ -91,25 +131,26 @@ fn validate_server(
     mqtt_listen: SocketAddr,
     api_token: &str,
     server_password: &str,
-) -> Result<()> {
-    ensure!(version == 1, "unsupported configuration version");
-    ensure!(
-        http_listen.ip().is_loopback(),
-        "HTTP API must bind to loopback"
-    );
-    ensure!(
+) -> Result<(), ConfigError> {
+    require(version == 1, || ConfigError::Version { version })?;
+    require(http_listen.ip().is_loopback(), || {
+        ConfigError::HttpNotLoopback {
+            address: http_listen,
+        }
+    })?;
+    require(
         mqtt_listen.is_ipv4() && !mqtt_listen.ip().is_unspecified(),
-        "MQTT must bind to a specific IPv4 address"
-    );
-    ensure!(
-        api_token.len() >= 32 && server_password.len() >= 32,
-        "server secrets must have at least 32 characters"
-    );
-    Ok(())
+        || ConfigError::MqttAddress {
+            address: mqtt_listen,
+        },
+    )?;
+    require(api_token.len() >= 32 && server_password.len() >= 32, || {
+        ConfigError::ShortSecrets
+    })
 }
 
 impl Config {
-    pub fn validate(&self) -> Result<()> {
+    pub fn validate(&self) -> Result<(), ConfigError> {
         validate_server(
             self.version,
             self.http_listen,
@@ -117,32 +158,29 @@ impl Config {
             &self.api_token,
             &self.server_password,
         )?;
-        ensure!(
-            valid_device_id(&self.device_id),
-            "invalid device identifier"
-        );
-        ensure!(
+        require(valid_device_id(&self.device_id), || ConfigError::DeviceId)?;
+        require(
             !self.device_password.is_empty() && !self.device_username.is_empty(),
-            "device credentials missing"
-        );
+            || ConfigError::DeviceCredentials,
+        )?;
 
         if let Some(interface) = &self.hotspot_interface {
-            ensure!(
+            require(
                 interface
                     .bytes()
                     .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
                     && !interface.is_empty(),
-                "invalid hotspot interface"
-            );
+                || ConfigError::Interface,
+            )?;
         }
         if let Some(mac) = &self.target_mac {
-            ensure!(
+            require(
                 mac.split(':').count() == 6
                     && mac
                         .split(':')
                         .all(|part| part.len() == 2 && u8::from_str_radix(part, 16).is_ok()),
-                "invalid target MAC"
-            );
+                || ConfigError::Mac,
+            )?;
         }
 
         Ok(())
@@ -150,10 +188,10 @@ impl Config {
 
     /// The hotspot interface and the feeder's MAC on it, which only a
     /// bench config has.
-    pub fn hotspot(&self) -> Result<(&str, &str)> {
+    pub fn hotspot(&self) -> Result<(&str, &str), ConfigError> {
         match (&self.hotspot_interface, &self.target_mac) {
             (Some(interface), Some(mac)) => Ok((interface, mac)),
-            _ => bail!("this config names no hotspot interface and feeder MAC (an installer's)"),
+            _ => Err(ConfigError::NoHotspot),
         }
     }
 
@@ -185,7 +223,7 @@ pub struct InstallConfig {
 }
 
 impl InstallConfig {
-    pub fn validate(&self) -> Result<()> {
+    pub fn validate(&self) -> Result<(), ConfigError> {
         validate_server(
             self.version,
             self.http_listen,
@@ -204,7 +242,7 @@ pub fn init_installer(output: &Path, mqtt_listen: SocketAddr, timezone: Tz) -> R
         server_password: Uuid::new_v4().simple().to_string(),
         api_token: Uuid::new_v4().simple().to_string(),
         mqtt_listen,
-        http_listen: "127.0.0.1:8765".parse()?,
+        http_listen: SocketAddr::from(([127, 0, 0, 1], 8765)),
         timezone,
     };
     config.validate()?;
@@ -223,20 +261,28 @@ pub enum State {
 pub fn load(path: &Path) -> Result<Config> {
     match state(path)? {
         State::Device(config) => Ok(*config),
-        State::Unenrolled(_) => bail!(
-            "{}: no feeder has enrolled yet; start serve with --enroll-minutes during the install",
-            path.display()
-        ),
+        State::Unenrolled(_) => Err(ConfigError::NotEnrolled { path: path.into() }.into()),
     }
 }
 
 /// The config at `path`, and whether it has a device yet.
 pub fn state(path: &Path) -> Result<State> {
-    let bytes = fs::read(path).context("read configuration")?;
+    let bytes = fs::read(path).map_err(|source| ConfigError::Read {
+        path: path.into(),
+        source,
+    })?;
     let record = Enrollment::path(path);
-    let enrollment = Enrollment::load(&record)
-        .with_context(|| format!("invalid enrollment {}", record.display()))?;
-    let state = parse_state(&bytes, enrollment).context("invalid server configuration")?;
+    let enrollment = Enrollment::load(&record).map_err(|source| ConfigError::Enrollment {
+        path: record.clone(),
+        source,
+    })?;
+    let state = parse_state(&bytes, enrollment).map_err(|error| match error {
+        Parsed::Json(source) => ConfigError::Invalid {
+            path: path.into(),
+            source,
+        },
+        Parsed::Both => ConfigError::DeviceAndEnrollment,
+    })?;
     match &state {
         State::Device(config) => config.validate()?,
         State::Unenrolled(config) => config.validate()?,
@@ -247,16 +293,27 @@ pub fn state(path: &Path) -> Result<State> {
 /// A config's fields with the device taken from `enrollment` when the file
 /// has none of its own; both at once is refused, since which feeder the
 /// server answers would then be a guess.
-fn parse_state(bytes: &[u8], enrollment: Option<Enrollment>) -> Result<State> {
+/// Why [`parse_state`] gave no state.
+#[derive(Debug)]
+enum Parsed {
+    Json(serde_json::Error),
+    Both,
+}
+
+impl From<serde_json::Error> for Parsed {
+    fn from(error: serde_json::Error) -> Self {
+        Self::Json(error)
+    }
+}
+
+fn parse_state(bytes: &[u8], enrollment: Option<Enrollment>) -> Result<State, Parsed> {
     let UniqueKeys(mut fields) = serde_json::from_slice(bytes)?;
 
     match (fields.contains_key(DEVICE_FIELD), enrollment) {
         (true, None) => Ok(State::Device(Box::new(serde_json::from_value(
             Value::Object(fields),
         )?))),
-        (true, Some(_)) => {
-            bail!("the config names a captured device and a feeder enrolled beside it; keep one")
-        }
+        (true, Some(_)) => Err(Parsed::Both),
         (false, None) => Ok(State::Unenrolled(serde_json::from_value(Value::Object(
             fields,
         ))?)),
@@ -322,7 +379,7 @@ mod tests {
         "server_password":"ssssssssssssssssssssssssssssssss",
         "api_token":"tttttttttttttttttttttttttttttttt",
         "mqtt_listen":"127.0.0.1:1883","http_listen":"127.0.0.1:8765",
-        "timezone":"UTC","plans":[],"binding_response":null,
+        "timezone":"UTC","binding_response":null,
         "hotspot_interface":"wlan1","target_mac":"02:00:00:00:00:01""#;
 
     const INSTALLER: &str = r#"{"version":1,
@@ -332,10 +389,10 @@ mod tests {
         "timezone":"UTC"}"#;
 
     /// A config with its own device.
-    fn parse(bytes: &[u8]) -> Result<Config> {
+    fn parse(bytes: &[u8]) -> Result<Config, Parsed> {
         match parse_state(bytes, None)? {
             State::Device(config) => Ok(*config),
-            State::Unenrolled(_) => bail!("no device"),
+            State::Unenrolled(_) => panic!("no device"),
         }
     }
 
@@ -366,10 +423,6 @@ mod tests {
         assert_eq!(config.device_password, "its-own");
         assert_eq!(config.device_address, Some("192.168.4.20".parse().unwrap()));
         assert!(config.hotspot().is_err(), "no redirect for an installer");
-        assert_eq!(
-            config.plans, None,
-            "no snapshot: stock's plans are left alone"
-        );
     }
 
     #[test]
@@ -380,10 +433,36 @@ mod tests {
         assert_eq!(config.hotspot().unwrap(), ("wlan1", "02:00:00:00:00:01"));
     }
 
+    /// A caller matches a refusal by its variant, not its text.
+    #[test]
+    fn refusals_are_typed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("installer.json");
+        fs::write(&path, INSTALLER).unwrap();
+        assert!(matches!(
+            load(&path),
+            Err(crate::Error::Config(ConfigError::NotEnrolled { .. }))
+        ));
+
+        assert!(matches!(
+            state(&dir.path().join("absent.json")),
+            Err(crate::Error::Config(ConfigError::Read { .. }))
+        ));
+
+        let loud = INSTALLER.replace("127.0.0.1:8765", "10.0.0.1:8765");
+        fs::write(&path, loud).unwrap();
+        assert!(matches!(
+            state(&path),
+            Err(crate::Error::Config(ConfigError::HttpNotLoopback { .. }))
+        ));
+    }
+
     #[test]
     fn a_repeated_key_is_refused_as_the_struct_parse_did() {
         let version_twice = format!("{{{STOCK},\"version\":1}}");
-        let error = parse(version_twice.as_bytes()).err().unwrap();
+        let Err(Parsed::Json(error)) = parse(version_twice.as_bytes()) else {
+            panic!("a repeated key parses");
+        };
         assert!(error.to_string().contains("duplicate field `version`"));
     }
 

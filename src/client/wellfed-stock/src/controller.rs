@@ -14,7 +14,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Result, ensure};
+use crate::{Error, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -30,7 +30,7 @@ use crate::{
         report::{self, REPORT_LIMIT},
         trial::{ORIGINAL_VERSION, Phase as TrialPhase, REPLACEMENT_VERSION},
     },
-    protocol::{Channel, Message, Reply},
+    protocol::{Message, Reply},
     storage,
 };
 
@@ -84,15 +84,19 @@ pub enum Rejection {
     Offline,
     #[error("request ID conflicts with a different operation")]
     Conflict,
+    /// The operator's note is empty or longer than 512 bytes.
+    #[error("the note must be 1 to 512 bytes and not blank")]
+    InvalidNote,
+    /// No trial has this request ID.
+    #[error("no trial has this request ID")]
+    UnknownRequest,
     #[error("operation ledger is full; archive it explicitly before continuing")]
     Full,
     #[error("persistent storage failed; command was not authorized")]
     Storage,
     #[error("this server was started with the install trial disabled")]
     OtaDisabled,
-    #[error(
-        "trial requires valid IDs, recent original-version and external-power reports and no plans"
-    )]
+    #[error("trial requires valid IDs and recent original-version and external-power reports")]
     InvalidOta,
     #[error("an install trial is active, uncertain or failed; resolve it first")]
     OtaActive,
@@ -120,10 +124,20 @@ pub enum Rejection {
 /// however that device is reached and however often its trust is forgotten and
 /// given again, so it still holds back a second request. The name is a digest,
 /// since a device ID is whatever a client on the LAN said it was.
+/// The ledger at `path`, read whole.
+fn read_ledger(path: &Path) -> Result<Ledger> {
+    serde_json::from_slice(&fs::read(path)?).map_err(|source| Error::Ledger {
+        path: path.into(),
+        source,
+    })
+}
+
 pub fn ledger_path(config_path: &Path, device: &str) -> Result<PathBuf> {
-    let directory = config_path.parent().context("config directory missing")?;
+    let directory = config_path.parent().ok_or_else(|| Error::NoParent {
+        path: config_path.into(),
+    })?;
     let digest = wellfed_formats::canonical::sha256(device.as_bytes());
-    let name = digest.get(..16).context("a digest is 64 hex digits")?;
+    let name = digest.get(..16).unwrap_or(&digest);
     Ok(directory.join(format!("stock-ledger.{name}.json")))
 }
 
@@ -139,8 +153,7 @@ pub fn open_request(config_path: &Path) -> Result<bool> {
     if !path.exists() {
         return Ok(false);
     }
-    let ledger: Ledger =
-        serde_json::from_slice(&fs::read(&path)?).context("invalid stock ledger")?;
+    let ledger: Ledger = read_ledger(&path)?;
     Ok(unsettled(&ledger))
 }
 
@@ -177,7 +190,9 @@ pub fn unreadable_ledgers(config_path: &Path) -> Result<Vec<PathBuf>> {
 
 /// Every device's ledger beside the config.
 fn ledger_files(config_path: &Path) -> Result<Vec<PathBuf>> {
-    let directory = config_path.parent().context("config directory missing")?;
+    let directory = config_path.parent().ok_or_else(|| Error::NoParent {
+        path: config_path.into(),
+    })?;
     let entries = match fs::read_dir(directory) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -216,8 +231,7 @@ pub fn latest_sequence(config_path: &Path, device: &str) -> Result<Option<usize>
     if !path.exists() {
         return Ok(None);
     }
-    let ledger: Ledger =
-        serde_json::from_slice(&fs::read(&path)?).context("invalid stock ledger")?;
+    let ledger: Ledger = read_ledger(&path)?;
     Ok(ledger.ota_trials.values().map(|r| r.sequence).max())
 }
 
@@ -244,8 +258,7 @@ pub fn close_answered(
         return Ok(false);
     }
     let _lease = storage::lock(&path)?;
-    let mut ledger: Ledger =
-        serde_json::from_slice(&fs::read(&path)?).context("invalid stock ledger")?;
+    let mut ledger: Ledger = read_ledger(&path)?;
     let Some(record) = ledger.ota_trials.values_mut().max_by_key(|r| r.sequence) else {
         return Ok(false);
     };
@@ -275,8 +288,7 @@ pub fn stock_restored(config_path: &Path, device: &str, sequence: usize) -> Resu
         return Ok(false);
     }
     let _lease = storage::lock(&path)?;
-    let mut ledger: Ledger =
-        serde_json::from_slice(&fs::read(&path)?).context("invalid stock ledger")?;
+    let mut ledger: Ledger = read_ledger(&path)?;
     let Some(record) = ledger.ota_trials.values_mut().max_by_key(|r| r.sequence) else {
         return Ok(false);
     };
@@ -311,7 +323,7 @@ impl Controller {
     pub fn load(config: Config, path: PathBuf, build: Build) -> Result<Self> {
         let lease = storage::lock(&path)?;
         let mut ledger = if path.exists() {
-            serde_json::from_slice::<Ledger>(&fs::read(&path)?).context("invalid stock ledger")?
+            read_ledger(&path)?
         } else {
             Ledger {
                 device_id: config.device_id.clone(),
@@ -319,10 +331,9 @@ impl Controller {
             }
         };
 
-        ensure!(
-            ledger.device_id == config.device_id,
-            "ledger belongs to another device"
-        );
+        wellfed_formats::require(ledger.device_id == config.device_id, || {
+            Error::LedgerDevice { path: path.clone() }
+        })?;
 
         // A trial in flight when the last process stopped may or may not have
         // reached the device: mark it uncertain rather than resend it.
@@ -357,6 +368,18 @@ impl Controller {
         storage::write_json(&self.path, &self.ledger)
     }
 
+    /// Save a change the device or the clock caused. A failure does not end
+    /// the server: stock's telemetry keeps flowing to the status, and every
+    /// later operation is refused as `Storage`. The ledger on disk stays
+    /// conservative, since a submitted trial reads as uncertain at the next
+    /// load.
+    fn save_observed(&mut self) {
+        if let Err(error) = self.save() {
+            tracing::warn!(error = %error, "stock ledger not saved; refusing operations from now on");
+            self.storage_failed = true;
+        }
+    }
+
     fn telemetry_current(&self, now: DateTime<Utc>) -> bool {
         self.status.broker_connected
             && self.status.last_seen.is_some_and(|seen| {
@@ -388,7 +411,7 @@ impl Controller {
         self.telemetry_since = now;
     }
 
-    pub fn disconnected(&mut self, now: DateTime<Utc>) -> Result<()> {
+    pub fn disconnected(&mut self, now: DateTime<Utc>) {
         self.status.broker_connected = false;
         self.status.last_seen = None;
         self.status.version_reported_at = None;
@@ -405,13 +428,12 @@ impl Controller {
         }
 
         if changed {
-            self.save()?;
+            self.save_observed();
         }
         self.refresh(now);
-        Ok(())
     }
 
-    pub fn expire(&mut self, now: DateTime<Utc>) -> Result<()> {
+    pub fn expire(&mut self, now: DateTime<Utc>) {
         let mut changed = false;
         for trial in self.ledger.ota_trials.values_mut() {
             if trial.phase == TrialPhase::Submitted && (now - trial.created_at).num_seconds() >= 600
@@ -423,10 +445,9 @@ impl Controller {
         }
 
         if changed {
-            self.save()?;
+            self.save_observed();
         }
         self.refresh(now);
-        Ok(())
     }
 
     pub fn enable_ota_trial(&mut self) {
@@ -472,9 +493,6 @@ impl Controller {
 
         if input.request_id.is_nil()
             || input.server_token.is_nil()
-            // A captured table would be replayed to stock; with none,
-            // stock's own plans are left for the installer to import.
-            || self.config.plans.as_ref().is_some_and(|plans| !plans.is_empty())
             || !Self::fresh(self.status.version_reported_at, now)
             || !Self::fresh(self.status.power_reported_at, now)
             || reported_version(&self.status) != Some(ORIGINAL_VERSION)
@@ -554,7 +572,7 @@ impl Controller {
             return Err(Rejection::Storage);
         }
         if answer.note.trim().is_empty() || answer.note.len() > 512 {
-            return Err(Rejection::Conflict);
+            return Err(Rejection::InvalidNote);
         }
 
         self.refresh(now);
@@ -569,7 +587,7 @@ impl Controller {
             .ledger
             .ota_trials
             .get_mut(&answer.request_id)
-            .ok_or(Rejection::Conflict)?;
+            .ok_or(Rejection::UnknownRequest)?;
         if record.phase == TrialPhase::ReplacementHealthy
             && record.resolution_note.as_ref() == Some(&answer.note)
             && record.build == answer.build
@@ -614,7 +632,7 @@ impl Controller {
             return Err(Rejection::Storage);
         }
         if request.note.trim().is_empty() || request.note.len() > 512 {
-            return Err(Rejection::Conflict);
+            return Err(Rejection::InvalidNote);
         }
 
         self.refresh(now);
@@ -631,7 +649,7 @@ impl Controller {
             .ledger
             .ota_trials
             .get_mut(&request.request_id)
-            .ok_or(Rejection::Conflict)?;
+            .ok_or(Rejection::UnknownRequest)?;
         if !matches!(
             record.phase,
             TrialPhase::Uncertain | TrialPhase::ReportedError
@@ -649,7 +667,8 @@ impl Controller {
 
         let phase = match reported_version(status) {
             _ if !evidence => return Err(Rejection::ResolutionEvidence),
-            Some(REPLACEMENT_VERSION) => TrialPhase::VersionReported,
+            // Only stock's own version resolves a trial: the replacement
+            // speaks no MQTT, so a report of its version is no device's word.
             Some(ORIGINAL_VERSION) => TrialPhase::NotInstalled,
             _ => return Err(Rejection::ResolutionEvidence),
         };
@@ -667,19 +686,13 @@ impl Controller {
         Ok(result)
     }
 
-    pub fn observe(
-        &mut self,
-        channel: Channel,
-        message: &Message,
-        now: DateTime<Utc>,
-    ) -> Result<()> {
+    pub fn observe(&mut self, message: &Message, now: DateTime<Utc>) {
         self.observe_telemetry(message, now);
 
-        if self.observe_trial(channel, message, now) {
-            self.save()?;
+        if self.observe_trial(message, now) {
+            self.save_observed();
         }
         self.refresh(now);
-        Ok(())
     }
 
     fn observe_telemetry(&mut self, message: &Message, now: DateTime<Utc>) {
@@ -702,8 +715,10 @@ impl Controller {
             self.status.ota_reports.push(report);
         }
 
+        // `ts` is whatever the device sent: one out of range leaves no offset.
         if let Some(ts) = message.ts {
-            self.status.clock_offset_seconds = Some((now.timestamp_millis() - ts) / 1000);
+            self.status.clock_offset_seconds =
+                now.timestamp_millis().checked_sub(ts).map(|ms| ms / 1000);
         }
 
         // Only expose documented telemetry. Never reflect credentials, SSIDs,
@@ -734,7 +749,7 @@ impl Controller {
     }
 
     /// The latest trial's download, precheck-error and startup reports.
-    fn observe_trial(&mut self, channel: Channel, message: &Message, now: DateTime<Utc>) -> bool {
+    fn observe_trial(&mut self, message: &Message, now: DateTime<Utc>) -> bool {
         let Some(trial) = self
             .ledger
             .ota_trials
@@ -764,10 +779,7 @@ impl Controller {
             trial.updated_at = now;
             return true;
         }
-        if matches!(
-            trial.phase,
-            TrialPhase::VersionReported | TrialPhase::ReplacementHealthy
-        ) {
+        if trial.phase == TrialPhase::ReplacementHealthy {
             return false;
         }
 
@@ -804,19 +816,6 @@ impl Controller {
             // from fresh version evidence before another can be submitted.
             tracing::info!(error, "install trial reported an error");
             trial.phase = TrialPhase::ReportedError;
-            trial.updated_at = now;
-            changed = true;
-        }
-
-        if channel == Channel::Event
-            && message.cmd == "DEVICE_START_EVENT"
-            && message.report.software_version.as_deref() == Some(REPLACEMENT_VERSION)
-            && message.ts.is_some_and(|ts| {
-                ts >= trial.created_at.timestamp_millis()
-                    && ts <= now.timestamp_millis().saturating_add(10_000)
-            })
-        {
-            trial.phase = TrialPhase::VersionReported;
             trial.updated_at = now;
             changed = true;
         }

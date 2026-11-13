@@ -7,12 +7,10 @@ use core::ptr;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use wellfed_core::clock::tick::TickClock;
-use wellfed_core::flash_coord::FlashCoord;
 use wellfed_core::{HALF_RANGE, interval_valid};
 
 use crate::active_pointer;
 use crate::sdk::{self, IrqGuard};
-use crate::stopped::outputs_blocked;
 
 /// The vendor-register fields `open` programs: divisor (bits 0..15), count ID
 /// (bits 25..28), enable and reset mode.
@@ -353,7 +351,10 @@ impl Watchdog {
         self.checked().is_some()
     }
 
-    fn checkpoint_with(&mut self, progress: u64, flash: Option<*const FlashCoord>) -> bool {
+    /// Owner only, AFTER a completed verified frame. Increasing nonzero token
+    /// and advancing hardware time required. Failures latch until shutdown.
+    #[must_use]
+    pub fn checkpoint(&mut self, progress: u64) -> bool {
         let task = context();
         let _guard = IrqGuard::lock();
         let now = if task {
@@ -368,35 +369,17 @@ impl Watchdog {
             return self.fail(WatchdogFault::Progress);
         }
 
-        if flash.is_none_or(|flash| !outputs_blocked(flash)) {
-            self.progress = progress;
-            self.progress_at = now;
-            if now.wrapping_sub(self.refresh_at) >= self.config.min_refresh_ms {
-                // SAFETY: the claimant feeds what it opened.
-                unsafe { sdk::wdg_refresh() };
-                self.refresh_at = now;
-                if !self.registers() {
-                    return self.fail(WatchdogFault::Register);
-                }
+        self.progress = progress;
+        self.progress_at = now;
+        if now.wrapping_sub(self.refresh_at) >= self.config.min_refresh_ms {
+            // SAFETY: the claimant feeds what it opened.
+            unsafe { sdk::wdg_refresh() };
+            self.refresh_at = now;
+            if !self.registers() {
+                return self.fail(WatchdogFault::Register);
             }
         }
         true
-    }
-
-    /// Owner only, AFTER a completed verified frame. Increasing nonzero token
-    /// and advancing hardware time required. Failures latch until shutdown.
-    #[must_use]
-    pub fn checkpoint(&mut self, progress: u64) -> bool {
-        self.checkpoint_with(progress, None)
-    }
-
-    /// Permission is tested under the refresh critical section. A hold
-    /// returns healthy without extending progress/expiry. Requires an authority.
-    ///
-    /// # Safety
-    /// `flash` is null or a live authority for the duration of the call.
-    pub unsafe fn checkpoint_if_ready(&mut self, progress: u64, flash: *const FlashCoord) -> bool {
-        !flash.is_null() && self.checkpoint_with(progress, Some(flash))
     }
 
     /// Explicit cooperative shutdown only, after events close and verified

@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use wellfed_core::ota::{CONFIRM_LEN, confirm_record};
 use wellfed_emu::factory::{self, Entry, execute, inputs, selected};
-use wellfed_emu::{BANKS, Error};
+use wellfed_emu::{BANKS, Error, FLASH_BYTES};
 use wellfed_formats::canonical::sha256;
 use wellfed_formats::review::{FactoryRun, Stop};
 use wellfed_hal_common::trial::{self, Decision};
@@ -130,13 +130,13 @@ fn a_mismatched_km4_signature_stops_at_the_warning_loop() {
     assert_eq!(run.stop, Stop::Warning);
 }
 
+/// Refused before any instruction runs, so no fixture is needed: a byte
+/// short of the reviewed 8 MiB.
 #[test]
-#[ignore = "needs the private baseline, SDK ROM and stock OTA"]
 fn an_unreviewed_flash_size_is_refused_before_execution() {
-    let f = fixture();
-    let short = &f.flash[..f.flash.len() - 1];
+    let short = vec![0xFF; FLASH_BYTES - 1];
     assert!(matches!(
-        execute(short, &f.rom, Entry::Select),
+        execute(&short, &[], Entry::Select),
         Err(Error::Factory(factory::FactoryError::FlashSize { .. }))
     ));
 }
@@ -216,17 +216,6 @@ fn every_ota_step_and_marker_cut_keeps_a_bootable_bank() {
             Some(0),
         ),
     ];
-    // A cut during the 8-byte marker write leaves a prefix programmed.
-    for n in 1..MARKER.len() {
-        steps.push((
-            format!("cut: bank 1 marker {n}/8 bytes"),
-            Box::new(move |f| {
-                place(f, 0, image, MARKER, true);
-                place(f, 1, image, &MARKER[..n], true)
-            }),
-            Some(0),
-        ));
-    }
     // With no recovery image, giving way leaves nothing to boot, which is
     // why the design forbids it.
     steps.push((
@@ -237,11 +226,10 @@ fn every_ota_step_and_marker_cut_keeps_a_bootable_bank() {
         }),
         None,
     ));
-    assert_eq!(
-        steps.len(),
-        14,
-        "every step, seven cuts, and the forbidden state"
-    );
+    // Installed and activate, and give way and fallback, are one flash
+    // state each, reached by two flows; a cut inside the marker's write is
+    // `every_partial_marker_write_gives_way_to_bank_0`'s.
+    assert_eq!(steps.len(), 7, "every step and the forbidden state");
 
     for (label, build, expected) in &steps {
         let mut flash = f.flash.clone();
@@ -250,20 +238,89 @@ fn every_ota_step_and_marker_cut_keeps_a_bootable_bank() {
     }
 }
 
+/// Every value a byte can hold partway through programming toward `target`
+/// from erased: NOR only clears bits, so each subset of the bits `target`
+/// clears, from none (still erased) to all (`target` itself).
+fn partial_bytes(target: u8) -> Vec<u8> {
+    let cleared = !target;
+    (0..=u8::MAX)
+        .filter(|subset| subset & !cleared == 0)
+        .map(|subset| !subset)
+        .collect()
+}
+
+/// A cut anywhere in the 8-byte marker's write: the bytes before it whole,
+/// the byte it cut at any partial value, the rest erased. Every such state
+/// but the whole marker selects bank 0.
 #[test]
 #[ignore = "needs the private baseline, SDK ROM and stock OTA"]
-fn any_single_cleared_marker_bit_gives_way_to_bank_0() {
+fn every_partial_marker_write_gives_way_to_bank_0() {
+    let f = fixture();
+    let mut flash = f.flash.clone();
+    place(&mut flash, 0, &f.stock, MARKER, true);
+
+    let mut states = 0;
+    for n in 0..MARKER.len() {
+        for byte in partial_bytes(MARKER[n]) {
+            let mut marker = [0xFF; 8];
+            marker[..n].copy_from_slice(&MARKER[..n]);
+            marker[n] = byte;
+            if marker == *MARKER {
+                continue;
+            }
+            place(&mut flash, 1, &f.stock, &marker, true);
+            assert_eq!(
+                selected(&flash, &f.rom).unwrap(),
+                Some(0),
+                "cut at byte {n}: {marker:02x?}"
+            );
+            states += 1;
+        }
+    }
+    assert!(states > 100, "{states}");
+}
+
+/// Clearing marker bits gives way: any one set bit of any byte, and any
+/// part of the give-way's clear of the first byte to zero, as a cut leaves
+/// it.
+#[test]
+#[ignore = "needs the private baseline, SDK ROM and stock OTA"]
+fn any_cleared_marker_bits_give_way_to_bank_0() {
     let f = fixture();
     let mut flash = f.flash.clone();
     place(&mut flash, 0, &f.stock, MARKER, true);
     place(&mut flash, 1, &f.stock, MARKER, true);
     assert_eq!(selected(&flash, &f.rom).unwrap(), Some(1));
 
+    let mut markers = Vec::new();
     for index in 0..MARKER.len() {
+        for bit in 0..8 {
+            if MARKER[index] & (1 << bit) != 0 {
+                let mut marker = *MARKER;
+                marker[index] &= !(1 << bit);
+                markers.push(marker);
+            }
+        }
+    }
+    assert_eq!(
+        markers.len(),
+        MARKER
+            .iter()
+            .map(|b| b.count_ones() as usize)
+            .sum::<usize>()
+    );
+    // The give-way clears the first byte to zero: any subset of its set
+    // bits cleared is where a cut can leave it.
+    let set = MARKER[0];
+    for subset in (1..=u8::MAX).filter(|subset| subset & !set == 0) {
         let mut marker = *MARKER;
-        marker[index] &= marker[index] - 1; // The lowest set bit, as NOR programs.
+        marker[0] = set & !subset;
+        markers.push(marker);
+    }
+
+    for marker in markers {
         place(&mut flash, 1, &f.stock, &marker, true);
-        assert_eq!(selected(&flash, &f.rom).unwrap(), Some(0), "byte {index}");
+        assert_eq!(selected(&flash, &f.rom).unwrap(), Some(0), "{marker:02x?}");
     }
 }
 

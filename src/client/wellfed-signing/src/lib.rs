@@ -449,6 +449,12 @@ impl Frozen {
         let Some(manifest) = &self.manifest else {
             return Ok(Model::Plaf103);
         };
+        // A build from before manifests recorded the device, which
+        // `review::frozen` reads as the PLAF103's first-boot build (bank 0's
+        // recovery image is one).
+        if manifest.device.is_empty() && manifest.profile == "plaf103-firstboot" {
+            return Ok(Model::Plaf103);
+        }
         let model = Model::ALL
             .into_iter()
             .find(|model| model.name() == manifest.device)
@@ -685,6 +691,22 @@ mod tests {
                 .offer(&key, 9, Motion::Refused)
                 .is_err()
         );
+    }
+
+    /// A review frozen before manifests recorded the device opens, as
+    /// `wellfed-flash` reads it, and signs as the PLAF103's: the signer and
+    /// the flash client agree on it.
+    #[test]
+    fn a_review_from_before_the_device_was_recorded_signs_as_the_feeder() {
+        let image = build_image();
+        let (checkout, review) = freeze_with(
+            &image,
+            &json!({"startup_identity": BUILD, "firmware": "feeder", "device": "",
+                    "profile": "plaf103-firstboot"}),
+        );
+        let frozen = Frozen::open(checkout.path(), &review).unwrap();
+        assert_eq!(frozen.model().unwrap(), Model::Plaf103);
+        assert!(frozen.offer(&bench_key(3), 9, Motion::Refused).is_ok());
     }
 
     /// An OTA container of `len` payload bytes starting with the marker.

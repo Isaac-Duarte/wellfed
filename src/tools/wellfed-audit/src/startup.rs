@@ -1,9 +1,7 @@
 //! A finalized receive-only diagnostic startup against its build artifact.
 //!
-//! Port of `audit-firmware-startup.py`: the same policies, record formats,
-//! outcomes and report fields, less the retired flash-coordination records,
-//! which it now refuses. Only fixed public fields are parsed; arbitrary device
-//! text is never returned.
+//! The retired flash-coordination records are refused. Only fixed public
+//! fields are parsed; arbitrary device text is never returned.
 //!
 //! `load` binds the evidence before anything is classified: the manifest's
 //! `startup_identity` is the hash of its profile and inputs, the image is the
@@ -12,9 +10,11 @@
 //! record formats linked into the image, mostly both ways, so a build cannot
 //! be audited under a different probe's rules. One startup passes when its
 //! start record names the build and its live bank mapping, outputs were
-//! stopped, the synthetic diagnostic passed, and every declared probe's
-//! records classify as pass. Record formats and policies are described in
-//! docs/firmware/startup-diagnostics.md.
+//! stopped, the synthetic diagnostic passed, and every graded probe's
+//! records classify as pass. The bring-up probes it only binds (Wi-Fi,
+//! transport, optics, motion, trial, ADC) are listed as not classified, and
+//! their known failure records fail the startup. Record formats and policies
+//! are described in docs/firmware/startup-diagnostics.md.
 
 use std::fs;
 use std::path::Path;
@@ -50,7 +50,7 @@ pub enum StartupError {
 }
 
 fn re(pattern: &str) -> Regex {
-    // Byte-wise ASCII semantics, as Python's bytes patterns.
+    // Byte-wise ASCII semantics: device text is bytes, not UTF-8.
     Regex::new(&format!("(?-u){pattern}")).expect("audit pattern")
 }
 
@@ -176,6 +176,7 @@ outcomes! {
         SharedPadMalformed => "shared_pad_malformed",
         SharedPadFailed => "shared_pad_failed",
         SharedPadOrder => "shared_pad_order",
+        ProbeFailed => "probe_failed",
     }
 }
 
@@ -731,6 +732,13 @@ pub(crate) struct StartupReport {
     pub(crate) routing: Option<RoutingReport>,
     #[serde(flatten)]
     pub(crate) power: Option<PowerReport>,
+    /// Declared probes whose records are bound to the image but not graded,
+    /// so a pass says nothing about what they measured. Their terminal
+    /// failure records still fail the startup.
+    pub(crate) probes_not_classified: Vec<Probe>,
+    /// The first of those whose failure record the startup carries.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) probe_failed: Option<Probe>,
 }
 
 impl StartupReport {
@@ -825,6 +833,43 @@ fn led_before_pass(rx: &[u8]) -> bool {
     begin < pass_end
 }
 
+/// Whether the startup carries a terminal failure record of a probe this
+/// audit does not otherwise grade: the probe could not start, opened without
+/// what it needs to run (the open record's last flag is 0, which ends it),
+/// timed out binding its authority, stopped on an error, or failed a
+/// readback. The
+/// Wi-Fi, transport and trial probes' sources are gone, so none of their
+/// records is known to be a failure and they are only listed.
+fn probe_failed(rx: &[u8], probe: Probe) -> bool {
+    pattern!(ADC_STATUS, r"PLADC1 (?:clock|open) [ -~]*status=fail\r\n");
+    pattern!(
+        MOTION_UNOPENED,
+        r"PLMOT1 open board=[01] ready=[01] attached=[01] events=[01] capture=0 ms="
+    );
+    pattern!(
+        OPTICS_UNOPENED,
+        r"PLOPT1 open board=[01] ready=[01] attached=[01] events=[01] inputs=0 ms="
+    );
+    let any = |tag: &str, bodies: &[&str]| {
+        bodies
+            .iter()
+            .any(|body| contains(rx, format!("{tag} {body}").as_bytes()))
+    };
+
+    match probe {
+        Probe::Motion => {
+            any("PLMOT1", &["start created=0", "timeout ms=", "error "])
+                || MOTION_UNOPENED.is_match(rx)
+        }
+        Probe::Optics => {
+            any("PLOPT1", &["start created=0", "timeout ms=", "error "])
+                || OPTICS_UNOPENED.is_match(rx)
+        }
+        Probe::Adc => any("PLADC1", &["start created=0", "error "]) || ADC_STATUS.is_match(rx),
+        Probe::Wifi | Probe::Transport | Probe::Trial => false,
+    }
+}
+
 /// Classify one startup segment under every policy the manifest declares.
 pub(crate) fn startup(
     rx: &[u8],
@@ -842,6 +887,8 @@ pub(crate) fn startup(
         led: None,
         routing: None,
         power: None,
+        probes_not_classified: policies.unclassified.clone(),
+        probe_failed: None,
     };
 
     if policies.clock {
@@ -881,6 +928,16 @@ pub(crate) fn startup(
         report.power = report.merge(classify_power(rx, version));
     }
 
+    if report.passed()
+        && let Some(&failed) = policies
+            .unclassified
+            .iter()
+            .find(|&&probe| probe_failed(rx, probe))
+    {
+        report.outcome = Outcome::ProbeFailed;
+        report.probe_failed = Some(failed);
+    }
+
     Ok(report)
 }
 
@@ -907,7 +964,7 @@ impl StartupVerdict {
     }
 }
 
-/// The startup audit of one capture, as `verify` in the Python auditor.
+/// The startup audit of one capture.
 pub fn verify(
     capture: &Path,
     manifest: &Path,

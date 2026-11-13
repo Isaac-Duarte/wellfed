@@ -18,6 +18,7 @@ mod support;
 
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::{Duration, Instant};
+use wellfed_connect::Samples;
 
 use wellfed_client::api::Invite;
 use wellfed_connect::{Connection, Timing};
@@ -274,7 +275,7 @@ fn the_backlog_sets_the_last_feed_and_is_not_news() {
         )
         .await
         .unwrap();
-        connection.subscribe(None, false).await.unwrap();
+        connection.subscribe(None, Samples::Off).await.unwrap();
         loop {
             if let Pushed::Event(event) = connection.next(WAIT).await.unwrap()
                 && matches!(

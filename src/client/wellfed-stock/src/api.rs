@@ -74,9 +74,10 @@ impl From<Rejection> for ApiError {
     fn from(error: Rejection) -> Self {
         let status = match error {
             Rejection::Offline => StatusCode::SERVICE_UNAVAILABLE,
-            Rejection::InvalidOta | Rejection::ResolutionEvidence => {
+            Rejection::InvalidOta | Rejection::ResolutionEvidence | Rejection::InvalidNote => {
                 StatusCode::UNPROCESSABLE_ENTITY
             }
+            Rejection::UnknownRequest => StatusCode::NOT_FOUND,
             Rejection::ImageServer => StatusCode::PRECONDITION_FAILED,
             Rejection::OtaDisabled => StatusCode::FORBIDDEN,
             Rejection::Storage => StatusCode::INTERNAL_SERVER_ERROR,
@@ -208,5 +209,18 @@ mod tests {
             r#"{"build_clean":true,"build_commit":"abc","service":"wellfed-stock","version":"0.1.0"}"#
         );
         assert_eq!(body(&ErrorBody { error: "x" }), r#"{"error":"x"}"#);
+    }
+
+    /// A bad note and an unknown request are their own refusals, not a
+    /// request ID conflict.
+    #[test]
+    fn refusals_answer_with_their_own_status() {
+        for (rejection, status) in [
+            (Rejection::InvalidNote, StatusCode::UNPROCESSABLE_ENTITY),
+            (Rejection::UnknownRequest, StatusCode::NOT_FOUND),
+            (Rejection::Conflict, StatusCode::CONFLICT),
+        ] {
+            assert_eq!(ApiError::from(rejection).status, status, "{rejection:?}");
+        }
     }
 }

@@ -111,9 +111,40 @@ fn refused_words(refusal: &Refusal) -> String {
         Refusal::Update(UpdateRefusal::Fallback { reason }) => {
             return format!("{} (reason={})", blocked_words(*reason), reason.code());
         }
+        Refusal::Update(refusal @ UpdateRefusal::Pending) => {
+            return named(
+                "bank 1 already gave way for another update: \
+                 cancel the stopped update, then offer again",
+                *refusal,
+            );
+        }
+        Refusal::Update(refusal @ UpdateRefusal::Attempt) => {
+            return named(
+                "an install reset the feeder since it was last powered up: \
+                 unplug the adapter and take out the batteries, then power it up and offer again",
+                *refusal,
+            );
+        }
+        Refusal::Update(refusal @ UpdateRefusal::Battery) => {
+            return named(
+                "it is running on its batteries: plug the adapter in, then offer again",
+                *refusal,
+            );
+        }
+        Refusal::Update(refusal @ UpdateRefusal::Target) => {
+            return named(
+                "this firmware is not built for this feeder model or does not fit its bank",
+                *refusal,
+            );
+        }
         other => return format!("{other:?}"),
     };
     words.to_owned()
+}
+
+/// `words`, with the refusal's name after them for a bug report to quote.
+fn named(words: &str, refusal: UpdateRefusal) -> String {
+    format!("{words} ({refusal:?})")
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
@@ -452,6 +483,33 @@ mod tests {
             "the feeder refused the update: bank 0, the recovery copy, changed since it \
              recorded itself: start the feeder from bank 0 once, then offer again \
              (reason=changed)"
+        );
+    }
+
+    #[test]
+    fn a_refusal_the_owner_can_clear_says_how() {
+        let says = |refusal| InstallError::Refused(Refusal::Update(refusal)).to_string();
+
+        assert_eq!(
+            says(UpdateRefusal::Pending),
+            "the feeder refused the update: bank 1 already gave way for another update: \
+             cancel the stopped update, then offer again (Pending)"
+        );
+        assert_eq!(
+            says(UpdateRefusal::Attempt),
+            "the feeder refused the update: an install reset the feeder since it was last \
+             powered up: unplug the adapter and take out the batteries, then power it up and \
+             offer again (Attempt)"
+        );
+        assert_eq!(
+            says(UpdateRefusal::Battery),
+            "the feeder refused the update: it is running on its batteries: plug the adapter \
+             in, then offer again (Battery)"
+        );
+        assert_eq!(
+            says(UpdateRefusal::Target),
+            "the feeder refused the update: this firmware is not built for this feeder model \
+             or does not fit its bank (Target)"
         );
     }
 }

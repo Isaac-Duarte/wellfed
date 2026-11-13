@@ -46,9 +46,10 @@ use tokio::time::Instant;
 use wellfed_client::install::{InstallError, StockBackup};
 use wellfed_client::update::{Image, InstallError as UpdateError};
 use wellfed_client::update_key::{EnrollError, Enrolled};
+use wellfed_connect::update::{self, Opened, Steps, Way};
 use wellfed_connect::{AskError, Connection};
 use wellfed_formats::credentials::KeyScope;
-use wellfed_model::{Answer, ClientRole, Op, UpdatePhase, UpdateView};
+use wellfed_model::{Answer, ClientRole, Op, UpdateView};
 use wellfed_session::noise::Keypair;
 use wellfed_signing::{Frozen, Key, Motion};
 
@@ -71,6 +72,46 @@ pub enum Signing {
     Fresh,
     /// A key the feeder already trusts; nothing is enrolled.
     Given(Box<Key>),
+}
+
+/// What a stock restore sends, signed.
+#[derive(Debug)]
+pub struct Signed {
+    /// The manifest offering the image as stock.
+    pub manifest: Vec<u8>,
+    /// The statement that lets the feeder take it below its floor.
+    pub downgrade: Vec<u8>,
+    /// The version the manifest carries.
+    pub version: u32,
+}
+
+/// Sign `image` as stock for the feeder `identity`, whose update floor is
+/// `floor`. The one rule for every caller, the app's, the CLI's and the
+/// server path's: the version is one above the floor unless given, and the
+/// release key, which stays on offline media, never signs a restore.
+pub fn sign(
+    image: &Frozen,
+    key: &Key,
+    identity: &[u8; 32],
+    floor: u32,
+    version: Option<u32>,
+) -> Result<Signed, Error> {
+    wellfed_formats::require(key.scope() != KeyScope::Release, || {
+        Error::RestoreReleaseKey
+    })?;
+    let version = match version {
+        Some(version) => version,
+        None => floor
+            .checked_add(1)
+            .ok_or(Error::Steps(InstallError::NoVersionAbove { floor }))?,
+    };
+    let manifest = image.offer(key, version, Motion::Refused)?.to_vec();
+    let downgrade = key.downgrade(&manifest, identity, floor)?;
+    Ok(Signed {
+        manifest,
+        downgrade,
+        version,
+    })
 }
 
 /// Which feeder a restore is for, and how it signs.
@@ -257,14 +298,11 @@ async fn drive(
     // before anything can raise it.
     let floor = clear_floor(&mut session, report).await?;
     report.event(Event::Floor(floor));
-    let version = match target.version {
-        Some(version) => version,
-        None => floor
-            .checked_add(1)
-            .ok_or(Error::Steps(InstallError::NoVersionAbove { floor }))?,
-    };
-    let manifest = image.offer(key, version, Motion::Refused)?;
-    let downgrade = key.downgrade(&manifest, &target.identity, floor)?;
+    let Signed {
+        manifest,
+        downgrade,
+        version,
+    } = sign(image, key, &target.identity, floor, target.version)?;
     report.event(Event::RestoreSigned {
         version,
         floor,
@@ -491,31 +529,43 @@ async fn state(session: &mut Connection) -> Result<UpdateView, Error> {
     }
 }
 
-/// The floor, with the way clear for this run's offer. A running install is
-/// left alone. A candidate a cut or kill left pending refuses every other
-/// manifest, and a restore's is always another, so it is cancelled once; a
-/// cancel with any doubt about it stops the run, since the one offer is not
-/// to be spent on a refusal.
+/// The floor, with the way clear for this run's offer, by the rule every
+/// client shares ([`wellfed_connect::update::clear_stale`]): a restore's
+/// manifest is never one already offered, so any candidate pending is
+/// stale and cancelled once. A running install is left alone, and a cancel
+/// with any doubt about it stops the run, since the one offer is not to be
+/// spent on a refusal.
 async fn clear_floor(session: &mut Connection, report: &impl Report) -> Result<u32, Error> {
     let view = state(session).await?;
-    if view.phase != UpdatePhase::Idle {
-        return Err(Error::RestoreInstallRunning { phase: view.phase });
+    let cancelling = || report.event(Event::StaleInstallCancelled);
+    match update::clear_stale(&mut Asking(session), view, None, cancelling).await? {
+        Way::Clear(view) => Ok(view.min_version),
+        Way::Running(phase) => Err(Error::RestoreInstallRunning { phase }),
+        Way::Refused(_) | Way::CancelUnknown => Err(Error::RestoreCancelUnknown),
     }
-    if view.digest.is_none() {
-        return Ok(view.min_version);
+}
+
+/// The restore's session, as the shared driver's steps: one request at a
+/// time on the session it signs on, never reopened. A request that fails
+/// is a lost answer, which the cancel's rule reads as doubt.
+struct Asking<'a>(&'a mut Connection);
+
+impl Steps for Asking<'_> {
+    type Error = Error;
+
+    async fn step(&mut self, op: Op) -> Result<Option<Answer>, Error> {
+        Ok(self.0.ask(random()?, &op).await.ok())
     }
 
-    report.event(Event::StaleInstallCancelled);
-    let cancelled = session.ask(random()?, &Op::CancelUpdate).await;
-    if !matches!(cancelled, Ok(Answer::Update(_))) {
-        return Err(Error::RestoreCancelUnknown);
+    async fn reopen(&mut self) -> Result<Option<Opened>, Error> {
+        Ok(None)
     }
-    match state(session).await {
-        Ok(view) if view.phase == UpdatePhase::Idle && view.digest.is_none() => {
-            Ok(view.min_version)
-        }
-        _ => Err(Error::RestoreCancelUnknown),
+
+    fn activated(&mut self, _: &Opened) -> bool {
+        false
     }
+
+    fn progress(&mut self, _: &UpdateView) {}
 }
 
 /// Sessions with the feeder, wherever it answers now: a restart may move it.
@@ -565,7 +615,7 @@ mod tests {
     use wellfed_feeder_sim::flash::Flash;
     use wellfed_feeder_sim::harness::Running;
     use wellfed_feeder_sim::serve::Control;
-    use wellfed_model::{Refusal, UpdateRefusal};
+    use wellfed_model::{Refusal, UpdatePhase, UpdateRefusal};
     use wellfed_signed::{MARKER, SECTOR};
 
     use super::*;
@@ -858,6 +908,39 @@ mod tests {
             assert!(!rig.key_file().exists());
             rig.sim.stop().await;
         });
+    }
+
+    /// One signing rule for every restore, the app's, the CLI's and the
+    /// server path's: the version is one above the floor unless given, and
+    /// the release key never signs one.
+    #[test]
+    fn a_restore_signs_above_the_floor_and_never_with_the_release_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let image = Frozen::synthetic_stock(synthetic().bytes().to_vec());
+        let owner = dir.path().join("owner.json");
+        wellfed_signing::keygen(&owner, KeyScope::Owner).unwrap();
+        let owner = Key::load(&owner).unwrap();
+
+        let signed = sign(&image, &owner, &[7; 32], 4, None).unwrap();
+        assert_eq!(signed.version, 5);
+        assert_eq!(
+            sign(&image, &owner, &[7; 32], 4, Some(9)).unwrap().version,
+            9
+        );
+        assert!(matches!(
+            sign(&image, &owner, &[7; 32], u32::MAX, None),
+            Err(Error::Steps(InstallError::NoVersionAbove {
+                floor: u32::MAX
+            }))
+        ));
+
+        let release = dir.path().join("release.json");
+        wellfed_signing::release_keygen(&release).unwrap();
+        let release = Key::load(&release).unwrap();
+        assert!(matches!(
+            sign(&image, &release, &[7; 32], 4, None),
+            Err(Error::RestoreReleaseKey)
+        ));
     }
 
     /// No press: the feeder refuses the key, the run ends with nothing

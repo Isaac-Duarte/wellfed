@@ -3,6 +3,7 @@
 //! one session when a server runs for this checkout ([`crate::bench`]).
 
 use std::net::SocketAddr;
+use wellfed_connect::Samples;
 
 use anyhow::{Context, Result};
 use wellfed_connect::{AskError, Cursor, DISCOVERY};
@@ -71,7 +72,7 @@ impl Connection {
     }
 
     /// Events after `after`, counted in the feeder's current epoch.
-    pub(crate) async fn subscribe(&mut self, after: Option<u64>, samples: bool) -> Result<()> {
+    pub(crate) async fn subscribe(&mut self, after: Option<u64>, samples: Samples) -> Result<()> {
         match self {
             Self::Direct(connection) => {
                 let epoch = connection.epoch();

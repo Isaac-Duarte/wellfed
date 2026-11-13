@@ -10,7 +10,7 @@ use wellfed_model::{
 };
 
 use super::log::Log;
-use super::scenarios::ended_for;
+use super::scenarios::{Scenario, ended_for};
 use super::*;
 use wellfed_core_feeder::feed::storage::OwnerOutcome;
 use wellfed_rig::commands::ota::Variant;
@@ -125,6 +125,10 @@ struct Feeder {
     push_error: Option<Arc<PushError>>,
     /// What the suite told the bench's ledger, in order.
     written: Vec<(Bank, Content)>,
+    /// The operator interrupts once the clock reaches this.
+    interrupt_at: Option<f64>,
+    /// A cut mid-download boots bank 1, not bank 0: the power cuts fail.
+    cut_boots_bank_1: bool,
     admits_strangers: bool,
     settings_lost_on_boot: bool,
     /// A hotspot bounce changes the volume, which nothing in it checks.
@@ -194,6 +198,8 @@ impl Feeder {
             silent: false,
             push_error: None,
             written: Vec::new(),
+            interrupt_at: None,
+            cut_boots_bank_1: false,
             admits_strangers: false,
             volume_drifts: false,
             settings_lost_on_boot: false,
@@ -966,9 +972,10 @@ impl Rig for Feeder {
             // downloads whatever is offered from the start.
             Some((at, _)) if (20.0..100.0).contains(&at) => {
                 self.pending.clear();
+                let bank = u8::from(self.cut_boots_bank_1);
                 self.line(
                     3.0,
-                    &format!("PLFW1 start build={OLD} bank=0 reset=0x0 mmu=0"),
+                    &format!("PLFW1 start build={OLD} bank={bank} reset=0x0 mmu=0"),
                 );
                 // The push reconnects to bank 0 and offers again.
                 if let Some((offer, fault)) = self.offered.clone() {
@@ -1009,6 +1016,9 @@ impl Rig for Feeder {
 
     fn wait(&mut self, span: Duration) -> Result<()> {
         self.now += span.as_secs_f64();
+        if self.interrupt_at.is_some_and(|at| self.now >= at) {
+            return Err(wellfed_rig::Error::Interrupted.into());
+        }
         Ok(())
     }
 
@@ -1033,10 +1043,16 @@ fn args(extra: &[&str]) -> ItestArgs {
 }
 
 fn suite(feeder: &mut Feeder, flags: &[&str]) -> (Vec<Report>, Option<Silent>) {
+    let ran = interrupted_suite(feeder, flags);
+    assert!(ran.interrupted.is_none(), "{:?}", ran.interrupted);
+    (ran.reports, ran.silent)
+}
+
+fn interrupted_suite(feeder: &mut Feeder, flags: &[&str]) -> Ran {
     let args = args(flags);
     let scenarios = select(&args).unwrap();
     let mut ctx = Ctx::new(feeder, &args);
-    run(&mut ctx, &scenarios).unwrap()
+    run(&mut ctx, &scenarios)
 }
 
 /// The firmware queues its lines, so a record of what just happened can come
@@ -1181,6 +1197,23 @@ fn without_power_or_build_those_scenarios_are_skipped_not_passed() {
     assert!(!feeder.actions.iter().any(|a| a.ends_with(" feed")));
 }
 
+/// `ota-recovery` cuts no power, so a run with images but no relay runs
+/// it, and still never power-cycles the feeder.
+#[test]
+fn ota_recovery_runs_without_the_relay() {
+    let mut feeder = Feeder::new(GOOD);
+    let (reports, silent) = suite(&mut feeder, &["--build", "--only", "ota-recovery"]);
+
+    assert!(silent.is_none());
+    assert_eq!(
+        verdicts(&reports),
+        [("ota-update", "pass"), ("ota-recovery", "pass")],
+        "{:#?}",
+        feeder.notes
+    );
+    assert!(!feeder.actions.iter().any(|a| a == "power cycle"));
+}
+
 #[test]
 fn tiers_take_on_more_of_the_suite() {
     let names = |tier: &str| -> Vec<&str> {
@@ -1281,6 +1314,39 @@ fn an_unplanned_restart_at_rest_halts_the_sustained_run_with_relay_1_cut() {
 
     let reason = halted(&feeder, &report);
     assert!(reason.contains("rest"), "{reason}");
+}
+
+/// A failed update cut halts the sustained run at once: relay 1 is cut
+/// and nothing is cold-booted, cancelled or pushed after the failure, where
+/// `ota-power-cuts` alone would put the baseline back.
+#[test]
+fn a_failed_update_cut_halts_the_sustained_run_before_any_recovery_install() {
+    let mut feeder = Feeder::new(GOOD);
+    feeder.cut_boots_bank_1 = true;
+    let report = sustained(&mut feeder, "8");
+
+    let reason = halted(&feeder, &report);
+    assert!(reason.contains("booted bank"), "{reason}");
+    let failed = feeder
+        .notes
+        .iter()
+        .position(|note| note.contains("halting before any recovery install"))
+        .unwrap_or_else(|| panic!("{:#?}", feeder.notes));
+    assert!(
+        !feeder.notes[failed..]
+            .iter()
+            .any(|note| note.contains("Cold-booting")),
+        "{:#?}",
+        feeder.notes
+    );
+    assert!(
+        !feeder
+            .actions
+            .iter()
+            .any(|action| action == "ask cancel-update"),
+        "{:?}",
+        feeder.actions
+    );
 }
 
 #[test]
@@ -1490,6 +1556,55 @@ fn a_push_error_after_the_activation_leaves_the_trial_to_decide() {
         "{:?}",
         feeder.written
     );
+}
+
+/// A scenario that halts on a feeder it found silent: the halt decides that
+/// nothing is restored, and the silence still reaches the record and the
+/// exit status, with the way back over UART.
+#[test]
+fn a_halt_on_a_silent_feeder_still_reports_the_silence() {
+    fn halts_on_silence(ctx: &mut Ctx) -> Result<()> {
+        ctx.went_silent = Some(Silent);
+        ctx.halted = Some("a feed did not end".into());
+        Ok(())
+    }
+    static HALTS: Scenario = Scenario::new("ota-update", halts_on_silence);
+
+    let mut feeder = Feeder::new(GOOD);
+    let args = args(&["--review", "r", "--feeds"]);
+    let mut ctx = Ctx::new(&mut feeder, &args);
+    let ran = run(&mut ctx, &[&HALTS]);
+
+    assert!(
+        matches!(&ran.reports[0].verdict, Verdict::Fail(reason) if reason == "a feed did not end"),
+        "{:?}",
+        ran.reports
+    );
+    assert!(ran.silent.is_some());
+    assert_eq!(exit_code(&ran.reports, ran.silent.as_ref()), 2);
+}
+
+/// The operator's interrupt ends the run but keeps every verdict reached,
+/// the scenario in progress recorded as interrupted.
+#[test]
+fn an_interrupt_keeps_the_verdicts_already_reached() {
+    let mut feeder = Feeder::new(GOOD);
+    let (done, _) = suite(&mut feeder, &["--review", "r"]);
+    assert!(done.len() > 2, "{done:?}");
+    let mut feeder = Feeder::new(GOOD);
+    // Well into the run, but before its end.
+    feeder.interrupt_at = Some(done[0].took.as_secs_f64() + 1.0);
+
+    let ran = interrupted_suite(&mut feeder, &["--review", "r"]);
+    assert!(ran.interrupted.as_ref().is_some_and(Error::interrupted));
+    assert_eq!(ran.reports[0].verdict, Verdict::Pass);
+    let last = ran.reports.last().unwrap();
+    assert_eq!(
+        last.verdict,
+        Verdict::Skip("interrupted by the operator".into())
+    );
+    let record = summary("run1", &ran.reports, ran.silent.as_ref(), &[]);
+    assert_eq!(record.scenarios.len(), ran.reports.len());
 }
 
 #[test]

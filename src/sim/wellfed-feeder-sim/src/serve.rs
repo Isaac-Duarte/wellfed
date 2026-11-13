@@ -58,6 +58,10 @@ pub enum Control {
     /// Leave a queued plans change in the writer's slot (`true`), as a slow
     /// flash write would, or let the writer take it.
     HoldPlans(bool),
+    /// Leave a queued client change (a join's enrollment) in the writer's
+    /// slot (`true`), as a key-store write made late, or let the writer
+    /// take it.
+    HoldKeys(bool),
     /// The adapter fitted (`true`) or pulled, from now on and across
     /// restarts.
     Adapter(bool),
@@ -72,6 +76,9 @@ pub enum Control {
     Hopper(bool),
     /// End the next feed on this fault once it has driven a portion.
     FaultFeed(FeedFault),
+    /// Drive each portion for this many milliseconds, from now on and
+    /// across restarts: the feeder's motor takes about 10 000.
+    PortionMs(u32),
     /// Stop serving.
     Quit,
 }
@@ -155,6 +162,7 @@ pub async fn serve(
     let mut boots = 1;
     let mut supply = SimSupply::MAINS;
     let mut sends_blocked = false;
+    let mut portion_ms = None;
     let mut booted = Booted::start(&feeder, boots, advertise, &mut log)?;
     let mut control = Some(control);
     let mut delay = Duration::ZERO;
@@ -178,6 +186,7 @@ pub async fn serve(
                     }
                 }
                 Some(Control::HoldPlans(held)) => booted.sim.platform().hold_plans(held),
+                Some(Control::HoldKeys(held)) => booted.sim.platform().hold_keys(held),
                 Some(Control::Adapter(adapter)) => {
                     supply.adapter = adapter;
                     booted.sim.platform().set_supply(supply);
@@ -192,6 +201,10 @@ pub async fn serve(
                 }
                 Some(Control::Hopper(food)) => booted.sim.fill_hopper(food),
                 Some(Control::FaultFeed(fault)) => booted.sim.fault_feed(fault.reason()),
+                Some(Control::PortionMs(ms)) => {
+                    portion_ms = Some(ms);
+                    booted.sim.set_portion_ms(ms);
+                }
                 Some(Control::Quit) => return Ok(()),
                 None => control = None,
             },
@@ -228,6 +241,9 @@ pub async fn serve(
             booted = Booted::start(&feeder, boots, advertise, &mut log)?;
             booted.sim.platform().set_supply(supply);
             booted.sim.platform().block_sends(sends_blocked);
+            if let Some(ms) = portion_ms {
+                booted.sim.set_portion_ms(ms);
+            }
             delay = Duration::ZERO;
         }
     }

@@ -1,8 +1,16 @@
 # Cargokit builds the bridge for Android with rustup's `stable` unless told
 # otherwise; this pins the repository's toolchain instead. It must match
-# rust-toolchain.toml (a bridge test checks).
+# rust-toolchain.toml (a bridge test checks), for every configuration
+# Flutter builds: one left out would fall back to `stable`. `--locked` builds
+# the graph cargo-deny checked, as every other build here does, rather than
+# one re-resolved when the lockfile lags a manifest.
 cargo:
   debug:
     toolchain: 1.99.1
+    extra_flags: [--locked]
+  profile:
+    toolchain: 1.99.1
+    extra_flags: [--locked]
   release:
     toolchain: 1.99.1
+    extra_flags: [--locked]

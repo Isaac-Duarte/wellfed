@@ -24,7 +24,7 @@ PLFW1 result diagnostic=pass backend=unopened
 - **`bank`** comes from live RSIP mapping entry 0: virtual `0x0c000000` mapped to `0x08006000` is bank 0, to `0x08186000` bank 1, and anything else unknown.
 - **`mmu`** is the raw mapping, and **`reset`** the factory-preserved reset flags. A zero reset word doesn't establish a particular physical reset cause.
 
-`wellfed-audit startup --device plaf103` ([src/tools/wellfed-audit](../../src/tools/wellfed-audit)) checks a capture against its build: the frozen OTA image and manifest, the embedded identity, the finalized receive-only capture hashes, event coverage, the actual bank mapping, ordering and the observation interval. A missing or wrong build, faults, incomplete or malformed records, a repeated startup and each policy's own failures are distinct failing outcomes. It emits fixed fields, never arbitrary device text. With your own complete evidence bundle:
+`wellfed-audit startup --device plaf103` ([src/tools/wellfed-audit](../../src/tools/wellfed-audit)) checks a capture against its build: the frozen OTA image and manifest, the embedded identity, the finalized receive-only capture hashes, event coverage, the actual bank mapping, ordering and the observation interval. A missing or wrong build, faults, incomplete or malformed records, a repeated startup and each graded policy's own failures are distinct failing outcomes. A bring-up probe the audit binds but doesn't grade is listed under `probes_not_classified`, and its failure records fail the startup as `probe_failed` ([bring-up probes](bring-up-probes.md)). It emits fixed fields, never arbitrary device text. With your own complete evidence bundle:
 
 ```sh
 cargo run --locked -p wellfed-audit -- startup --device plaf103 \

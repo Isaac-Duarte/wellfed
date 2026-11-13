@@ -14,8 +14,8 @@ use regex::Regex;
 use wellfed_formats::audit::{HookAudit, HookImage, Route, Symbol};
 
 use super::{
-    Archives, Binutils, DIRECT_TRANSFER, HEADING, INSTRUCTION, archive_record, elf, hex, index,
-    parse_hex, tool, word,
+    Archives, Binutils, DIRECT_TRANSFER, HEADING, INSTRUCTION, archive_record, code_sections, elf,
+    hex, index, parse_hex, tool, word,
 };
 use crate::Result;
 use crate::platform::amebad::Core;
@@ -323,11 +323,14 @@ pub(crate) fn audit(sdk: &Path, binutils: &Binutils, objects: &Archives) -> Resu
         }
 
         let pointer = verify_ipc_table(&elf, &objdump, &names)?;
-        let listing = tool(
-            &objdump,
-            &["-d", "-j", ".ram_image2.text", "-j", ".xip_image2.text"],
-            &elf,
-        )?;
+        // Every code section, whatever the link calls it: a route from one
+        // left out would be no route at all to this audit.
+        let sections = code_sections(&tool(&objdump, &["-h"], &elf)?);
+        let mut args = vec!["-d"];
+        for section in &sections {
+            args.extend(["-j", section.as_str()]);
+        }
+        let listing = tool(&objdump, &args, &elf)?;
         let routes = legacy_routes(&listing, &names)?;
 
         let archive = archive_record(core, &elf, objects, sdk)?;

@@ -347,8 +347,14 @@ pub(crate) async fn time_command(args: TimeArgs) -> Result<()> {
         }
     };
     if zone.is_none() && args.ntp.is_none() {
-        let sync = wellfed_client::time::sync(now, &jiff::tz::TimeZone::system());
-        return ask_and_print(&args.target, &Op::TimeSync(sync)).await;
+        // Stamped once the session is open, not before discovery and the
+        // handshake, which take seconds the feeder's clock would be set
+        // behind by.
+        let (_, _, mut connection) = connect(&args.target).await?;
+        let sync =
+            wellfed_client::time::sync(jiff::Timestamp::now(), &jiff::tz::TimeZone::system());
+        let answer = connection.ask(&Op::TimeSync(sync)).await?;
+        return print_answer(&answer);
     }
 
     let (_, _, mut connection) = connect(&args.target).await?;

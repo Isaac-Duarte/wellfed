@@ -14,6 +14,7 @@
 
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
+use wellfed_client::api::Samples;
 
 use serde::{Deserialize, Serialize};
 use wellfed_client::api::Skew;
@@ -568,7 +569,7 @@ fn a_pre_revision_build_is_sent_the_frozen_part_alone() {
             "{op:?}: {refused:?}"
         );
     }
-    let refused = client.connection.subscribe(client.now, None, false);
+    let refused = client.connection.subscribe(client.now, None, Samples::Off);
     assert!(
         matches!(refused, Err(wellfed_client::api::Error::Legacy)),
         "{refused:?}"

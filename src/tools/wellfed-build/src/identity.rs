@@ -17,6 +17,7 @@ use wellfed_formats::manifest::IdentitySnapshot;
 use wellfed_formats::require;
 use wellfed_session::hex;
 
+use crate::firmware::Runtime;
 use crate::{
     Device, Firmware, Profile, Provisioning, Repo, Result, Stage, Variant, digest, relative,
 };
@@ -51,6 +52,12 @@ pub enum IdentityError {
     NoReleaseKey { path: PathBuf },
     #[error("Release key file version {version} is not {RELEASE_KEY_VERSION}")]
     ReleaseKeyVersion { version: u32 },
+    /// A Cargo manifest the builder's crates are read from is not TOML.
+    #[error("{} is not a Cargo manifest: {source}", path.display())]
+    Manifest {
+        path: PathBuf,
+        source: toml::de::Error,
+    },
 }
 
 /// Crates linked into, or testing, every firmware build: the whole SDK and the
@@ -59,23 +66,116 @@ pub enum IdentityError {
 /// such as wellfed-stock and wellfed-flash never change a build's identity.
 const SDK_CRATES: [&str; 2] = ["src/sdk", "src/product"];
 
-/// The builder's own sources (its fixture tests are not), plus the
-/// wellfed-image modules whose OTA container and region checks the layout
-/// and park audits share. The update key a build embeds is bound by its
-/// value, so where `wellfed-signing` keeps the key file is not an input.
-const BUILDER_SOURCES: &str = "src/tools/wellfed-build/src";
-const BUILDER_SHARED: [&str; 3] = [
-    "src/tools/wellfed-build/Cargo.toml",
-    "src/client/wellfed-image/src/ota.rs",
-    "src/client/wellfed-image/src/error.rs",
-];
+/// The builder's crate. It and every first-party crate it links decide what
+/// an image holds and what its audits and review accept (the layout that
+/// places the OTA banks, the audit records, the OTA container and bank
+/// checks), so each one's sources, manifest and build script are inputs:
+/// a changed recipe or audit is a new identity. The crates are read from
+/// the manifests ([`builder_crates`]), so a new dependency cannot be left
+/// out. The update key a build embeds is bound by its value, so where
+/// `wellfed-signing` keeps the key file is not an input.
+const BUILDER: &str = "src/tools/wellfed-build";
+
+/// The directories, root-relative, of the builder and the first-party
+/// crates it links, found from `[dependencies]` and `[build-dependencies]`
+/// through the workspace's path dependencies. Development dependencies
+/// (the fixture tests') are not followed.
+fn builder_crates(repo: &Repo) -> Result<Vec<String>> {
+    let workspace = manifest(repo, "")?;
+    let paths: BTreeMap<String, String> = workspace
+        .get("workspace")
+        .and_then(|w| w.get("dependencies"))
+        .and_then(toml::Value::as_table)
+        .map(|table| {
+            table
+                .iter()
+                .filter_map(|(name, spec)| {
+                    Some((name.clone(), spec.get("path")?.as_str()?.to_string()))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut crates = vec![BUILDER.to_string()];
+    let mut next = 0;
+    while let Some(dir) = crates.get(next).cloned() {
+        next += 1;
+        let manifest = manifest(repo, &dir)?;
+        for section in ["dependencies", "build-dependencies"] {
+            let Some(table) = manifest.get(section).and_then(toml::Value::as_table) else {
+                continue;
+            };
+            for (name, spec) in table {
+                let own = spec
+                    .get("path")
+                    .and_then(toml::Value::as_str)
+                    .map(|path| normalised(&format!("{dir}/{path}")));
+                let shared = spec
+                    .get("workspace")
+                    .and_then(toml::Value::as_bool)
+                    .unwrap_or(false)
+                    .then(|| paths.get(name).cloned())
+                    .flatten();
+                if let Some(path) = own.or(shared)
+                    && !crates.contains(&path)
+                {
+                    crates.push(path);
+                }
+            }
+        }
+    }
+    crates.sort();
+    Ok(crates)
+}
+
+/// The Cargo manifest of the root-relative crate directory `dir`.
+fn manifest(repo: &Repo, dir: &str) -> Result<toml::Table> {
+    let path = repo.root.join(dir).join("Cargo.toml");
+    let text = std::fs::read_to_string(&path)?;
+    text.parse()
+        .map_err(|source| IdentityError::Manifest { path, source }.into())
+}
+
+/// `a/b/../c` as `a/c`: a crate's own `path` dependency is relative to it.
+fn normalised(path: &str) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    for part in path.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            part => parts.push(part),
+        }
+    }
+    parts.join("/")
+}
+
+/// The inputs of the builder's crates: each one's sources, its manifest
+/// and its build script (its tests and fixtures are not).
+fn builder_inputs(repo: &Repo) -> Result<Vec<PathBuf>> {
+    let crates = builder_crates(repo)?;
+    let sources: Vec<String> = crates.iter().map(|dir| format!("{dir}/src")).collect();
+    let sources: Vec<&str> = sources.iter().map(String::as_str).collect();
+
+    let mut paths = rust_sources(repo, &sources)?;
+    for dir in &crates {
+        paths.push(repo.root.join(dir).join("Cargo.toml"));
+        let script = repo.root.join(dir).join("build.rs");
+        if script.is_file() {
+            paths.push(script);
+        }
+    }
+    Ok(paths)
+}
 
 /// Tracked plus untracked, non-ignored files below the root-relative
 /// directories `dirs`.
 ///
 /// Ignored files (editor backups, caches, build output) do not change the
-/// identity; `target` is excluded only as a directory below the checkout, so
-/// the checkout's own location never matters.
+/// identity. A build directory at the checkout's top (`target`, or a
+/// `target-*` beside it) is left out even when no ignore rule covers it; a
+/// source module that happens to be named `target` deeper down is an input.
 fn rust_sources(repo: &Repo, dirs: &[&str]) -> Result<Vec<PathBuf>> {
     let listing = crate::git_command(&repo.root)
         .args([
@@ -99,9 +199,12 @@ fn rust_sources(repo: &Repo, dirs: &[&str]) -> Result<Vec<PathBuf>> {
         .map(|name| repo.root.join(name))
         // Tracked files deleted from the working tree are simply not inputs.
         .filter(|path| {
-            path.strip_prefix(&repo.root)
-                .is_ok_and(|inside| !inside.iter().any(|part| part == "target"))
-                && path.is_file()
+            path.strip_prefix(&repo.root).is_ok_and(|inside| {
+                !inside.iter().next().is_some_and(|top| {
+                    let top = top.to_string_lossy();
+                    top == "target" || top.starts_with("target-")
+                })
+            }) && path.is_file()
         })
         .collect();
     paths.sort();
@@ -123,8 +226,7 @@ fn source_inputs(
         .platform(repo)
         .inputs(repo, profile, provisioning, firmware)?;
     paths.push(repo.path(&device.config_path()));
-    paths.extend(rust_sources(repo, &[BUILDER_SOURCES])?);
-    paths.extend(BUILDER_SHARED.map(|p| repo.path(p)));
+    paths.extend(builder_inputs(repo)?);
 
     if profile.has(Stage::Rust) {
         paths.extend(["Cargo.toml", "Cargo.lock", "rust-toolchain.toml"].map(|p| repo.path(p)));
@@ -172,6 +274,20 @@ pub fn current_inputs(
 ///
 /// Only a key's public half reaches the build, the identity and the
 /// manifest.
+/// The update key `firmware`'s image builds in, as [`ota_public_key`]
+/// reads it (refusing a consumer build without the release key). Only the
+/// SDK runtime links the updater, so a bare firmware's image trusts none,
+/// and its manifest names neither a key nor an update policy.
+pub(crate) fn image_key(
+    repo: &Repo,
+    profile: Profile,
+    provisioning: Provisioning,
+    firmware: &Firmware,
+) -> Result<Option<String>> {
+    let key = ota_public_key(repo, profile, provisioning)?;
+    Ok(key.filter(|_| firmware.runtime() == Runtime::Sdk))
+}
+
 pub(crate) fn ota_public_key(
     repo: &Repo,
     profile: Profile,
@@ -280,7 +396,7 @@ pub fn source_id(
     };
     match which {
         SourceId::Image => {
-            let key = ota_public_key(repo, profile, provisioning)?;
+            let key = image_key(repo, profile, provisioning, firmware)?;
             source_identity(&subject, &inputs, key.as_deref())
         }
         SourceId::Bare => {
@@ -327,6 +443,82 @@ mod tests {
             .iter()
             .map(|path| relative(path, &repo.root).unwrap())
             .collect()
+    }
+
+    /// The builder's identity covers every first-party crate it links,
+    /// read from the manifests: `wellfed-formats` places the OTA banks and
+    /// shapes the audit records, and the review checks banks through
+    /// `wellfed-image`. Its fixture tests and development dependencies stay
+    /// out.
+    #[test]
+    fn the_identity_covers_every_crate_the_builder_links() {
+        let repo = Repo::here().unwrap();
+        let crates = builder_crates(&repo).unwrap();
+        for dir in [
+            BUILDER,
+            "src/client/wellfed-formats",
+            "src/client/wellfed-image",
+            "src/client/wellfed-signing",
+            "src/tools/wellfed-emu",
+            "src/product/wellfed-proto",
+        ] {
+            assert!(crates.iter().any(|c| c == dir), "{dir} in {crates:?}");
+        }
+
+        let inputs: Vec<String> = builder_inputs(&repo)
+            .unwrap()
+            .iter()
+            .map(|path| relative(path, &repo.root).unwrap())
+            .collect();
+        for file in [
+            "src/client/wellfed-formats/src/layout.rs",
+            "src/client/wellfed-formats/src/device.rs",
+            "src/client/wellfed-formats/src/credentials.rs",
+            "src/client/wellfed-formats/Cargo.toml",
+            "src/client/wellfed-image/src/bank.rs",
+        ] {
+            assert!(inputs.iter().any(|i| i == file), "{file}");
+        }
+        assert!(
+            !inputs
+                .iter()
+                .any(|i| i.starts_with("src/tools/wellfed-build/tests/"))
+        );
+        assert_eq!(normalised("src/a/../b/./c"), "src/b/c");
+    }
+
+    /// Only a build directory at the top is left out: a module named
+    /// `target` inside a crate is a source like any other.
+    #[test]
+    fn only_a_top_level_build_directory_leaves_the_sources() {
+        let (root, repo) = scratch();
+        let run = |args: &[&str]| {
+            assert!(
+                crate::git_command(root.path())
+                    .args(args)
+                    .output()
+                    .unwrap()
+                    .status
+                    .success()
+            );
+        };
+        run(&["init", "-q"]);
+        for file in [
+            "src/a/src/target/mod.rs",
+            "src/a/src/lib.rs",
+            "target-x/out.rs",
+        ] {
+            let path = root.path().join(file);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, "").unwrap();
+        }
+
+        let found: Vec<String> = rust_sources(&repo, &["src", "target-x"])
+            .unwrap()
+            .iter()
+            .map(|path| relative(path, &repo.root).unwrap())
+            .collect();
+        assert_eq!(found, ["src/a/src/lib.rs", "src/a/src/target/mod.rs"]);
     }
 
     #[test]

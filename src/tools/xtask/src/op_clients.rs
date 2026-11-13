@@ -68,18 +68,32 @@ fn variants<'a>(source: &'a str, name: &str) -> Vec<&'a str> {
         .collect()
 }
 
-/// The variants `source` names outside its tests.
+/// The variants `source` names in code outside its tests: not in a
+/// comment, and not as the tail of another path (`WireOp::Alive`).
 fn named(source: &str) -> BTreeSet<&str> {
     let code = source.split("#[cfg(test)]").next().unwrap_or(source);
-    code.match_indices("Op::")
-        .filter_map(|(at, _)| {
-            let rest = &code[at + 4..];
-            let end = rest
-                .find(|c: char| !c.is_ascii_alphanumeric())
-                .unwrap_or(rest.len());
-            (end > 0).then(|| &rest[..end])
+    code.lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .map(|line| line.split(" //").next().unwrap_or(line))
+        .flat_map(|line| {
+            line.match_indices("Op::").filter_map(move |(at, _)| {
+                let joined = line[..at]
+                    .chars()
+                    .next_back()
+                    .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_');
+                let rest = &line[at + 4..];
+                let end = rest
+                    .find(|c: char| !c.is_ascii_alphanumeric())
+                    .unwrap_or(rest.len());
+                (!joined && end > 0).then(|| &rest[..end])
+            })
         })
         .collect()
+}
+
+/// A test file, whose `#[cfg(test)]` is on its `mod` line elsewhere.
+fn test_file(name: &str) -> bool {
+    name.ends_with("/tests.rs") || name.contains("/tests/")
 }
 
 /// One client's findings over the ops, given what it and the shared crates
@@ -150,6 +164,7 @@ pub(crate) fn check(root: &Path, names: &[String]) -> Vec<String> {
             .filter(|name| {
                 name.ends_with(".rs")
                     && !name.ends_with(GENERATED)
+                    && !test_file(name)
                     && prefixes.iter().any(|prefix| name.starts_with(prefix))
             })
             .filter_map(|name| fs::read_to_string(root.join(name)).ok())
@@ -232,6 +247,20 @@ pub enum Other {
     fn tests_do_not_count_as_a_client() {
         let source = "fn a() { ask(Op::Status) }\n#[cfg(test)]\nmod tests { Op::Reboot }";
         assert_eq!(named(source), BTreeSet::from(["Status"]));
+        assert!(test_file("src/client/wellfed-client/src/install/tests.rs"));
+        assert!(test_file("src/tools/wellfed/src/tests/feed.rs"));
+        assert!(!test_file("src/tools/wellfed/src/feeding.rs"));
+    }
+
+    #[test]
+    fn comments_and_other_paths_do_not_count_as_a_client() {
+        let source = "\
+/// See [`Op::Reboot`].
+// Op::Play is sent elsewhere.
+fn a() { ask(Op::Status) } // then Op::GetCall
+fn b() { send(WireOp::Alive, url(\"https://x\"), Op::TimeSync) }
+";
+        assert_eq!(named(source), BTreeSet::from(["Status", "TimeSync"]));
     }
 
     #[test]

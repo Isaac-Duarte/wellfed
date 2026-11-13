@@ -30,6 +30,7 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use wellfed_connect::Samples;
 
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::Instant;
@@ -701,7 +702,7 @@ impl Task {
             *cursor = None;
         }
         if connection.skew() != Skew::Legacy {
-            let resume = connection.subscribe(*cursor, false).await?;
+            let resume = connection.subscribe(*cursor, Samples::Off).await?;
 
             // The held history is one epoch's. A new epoch (a store reset)
             // starts it again, empty, as does the first subscription; a

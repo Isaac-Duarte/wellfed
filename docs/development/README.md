@@ -77,7 +77,7 @@ The existing `wellfed-*` crate names are kept for compatibility.
 
 ## What checks do and don't touch
 
-The check targets never install packages, fetch an SDK, contact a device, change firewall rules or start a persistent service, and network tests use loopback only. Build output goes to `target/`; the simulator worker and temporary verification outputs may create ignored folders under `private/`. You need no existing backup or evidence. [.gitignore](../../.gitignore) is the storage boundary: keep secrets out of the tracked examples.
+The check targets never fetch an SDK, contact a device, change firewall rules or start a persistent service, and network tests use loopback only. `check`'s targets install nothing; its first `check-deps` downloads the RustSec advisory database. `check-web`, `check-app` and `check-homeassistant` install their pinned dependencies (pnpm, pub, uv) into ignored folders, from the network on a first run. Build output goes to `target/`; the simulator worker and temporary verification outputs may create ignored folders under `private/`. You need no existing backup or evidence. [.gitignore](../../.gitignore) is the storage boundary: keep secrets out of the tracked examples.
 
 The repository is self-contained: SDK and toolchain copies and fixtures resolve locally. The original research documents, tools and history sit in the ignored `private/research-archive/` ([provenance](provenance.md)). An evidence path in an old file is a record, not an instruction to open another checkout.
 
@@ -87,8 +87,9 @@ The repository is self-contained: SDK and toolchain copies and fixtures resolve 
 | --- | --- |
 | `check-rust` | Formatting, Clippy with warnings denied, workspace host tests under cargo-nextest |
 | `check-deps` | cargo-deny: licenses, advisories, duplicate versions and sources ([deny.toml](../../deny.toml)), then the fuzz crate's and the bench board firmware's lockfiles under their own policies ([fuzz](../../src/fuzz/deny.toml), [bench board](../../src/firmware/bench/wellfed-bench-board/deny.toml)) |
+| `check-fuzz` | Clippy over the [fuzz targets](#fuzzing) on the pinned compiler, so each still compiles though only `cargo xtask fuzz` runs them |
 | `check-cross` | Clippy with `PRODUCTION_LINTS` and a release build of the KM0 core's library for both boards, for the target, and `check-bench-board`: Clippy and a release build of the [bench board firmware](../../src/firmware/bench/README.md) for the RP2040. The KM4 crates need the SDK's bindings, so only an image build lints and compiles them |
-| `check-virtual-feeder` | [The simulator](#the-simulator). Also part of `check-rust` |
+| `check-virtual-feeder` | [The simulator](#the-simulator) alone. `check-rust` already runs it, so `check` does not run it again |
 | `check-docs` | Local Markdown links and anchors, the commands, make targets and paths the docs name, status words and time-bound wording ([rules](writing.md#what-the-checks-refuse)), portability checks, no Python under `src/`, and the source rules (raw output writers, card ids). It builds only `xtask`, and runs no tool |
 | `check-fixtures` | The optional binary and SDK evidence suite. Missing inputs or skips fail ([fixtures](fixtures.md)) |
 | `check-web` | The site and the docs site: ESLint, Prettier, licenses, types, unit tests, the build and Playwright. Needs Node and pnpm, and runs no Rust ([TypeScript standard](typescript.md)) |
@@ -99,7 +100,7 @@ The repository is self-contained: SDK and toolchain copies and fixtures resolve 
 - `check-cross` proves portable compilation, not the SDK-linked hardware ports.
 - Evidence tests are `#[ignore]`d in the ordinary suite; only `check-fixtures` selects them. An ignored test is not passing evidence.
 - `check-rust` also checks the server's committed contracts: a test fails when `src/server/wellfed-server/openapi.json` is stale, and `UPDATE_OPENAPI=1 cargo test -p wellfed-server --test openapi` rewrites it.
-- The store's SQL compiles only against its committed `.sqlx/` metadata. After changing a query or a migration, run `make sqlx-prepare` to rebuild it from a scratch database. Only that target needs the `sqlite3` command line.
+- The store's SQL compiles only against its committed `.sqlx/` metadata. After changing a query or a migration, run `make sqlx-prepare` to rebuild it from a scratch database. Only that target needs the `sqlite3` command line. `check-rust` describes every recorded query against a freshly migrated database and fails when the metadata no longer matches, as after a migration that changed no query's text.
 
 ## Which tool do I use?
 
@@ -166,7 +167,7 @@ You should see the report written to `NEW-FILE`. `make check-virtual-feeder` run
 
 ## Fuzzing
 
-The network parsers have [cargo-fuzz](https://rust-fuzz.github.io/book/cargo-fuzz.html) targets in [src/fuzz/](../../src/fuzz/Cargo.toml), a crate outside the workspace with its own lockfile, so `make check` never builds it.
+The network parsers have [cargo-fuzz](https://rust-fuzz.github.io/book/cargo-fuzz.html) targets in [src/fuzz/](../../src/fuzz/Cargo.toml), a crate outside the workspace with its own lockfile. `make check` lints them (`check-fuzz`) but never fuzzes.
 
 1. Run `cargo install cargo-fuzz` once. libFuzzer also needs a C++ compiler.
 2. Run one target for a bounded time (`--seconds` defaults to 60):

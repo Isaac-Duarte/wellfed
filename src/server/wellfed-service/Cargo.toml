@@ -31,6 +31,8 @@ uuid.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+# Store faults: an install whose offer the store will not note.
+wellfed-store = { workspace = true, features = ["testing"] }
 wellfed-server-testkit.workspace = true
 serde_json.workspace = true
 

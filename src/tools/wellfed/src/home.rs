@@ -4,9 +4,10 @@
 //!
 //! That directory is `WELLFED_HOME` when it is set, and otherwise the
 //! platform's data directory for the app: `$XDG_DATA_HOME/wellfed` (or
-//! `~/.local/share/wellfed`) on Linux,
-//! `~/Library/Application Support/io.github.isaacduarte.wellfed` on macOS
-//! and `%APPDATA%\isaacduarte\wellfed\data` on Windows. It never depends
+//! `~/.local/share/wellfed`) on Linux and
+//! `~/Library/Application Support/io.github.isaacduarte.wellfed` on macOS,
+//! the systems the CLI builds for (its Bluetooth and bench session have no
+//! Windows side). It never depends
 //! on the working directory, so a command run from anywhere finds the same
 //! key. Each file's flag (`--keys`,
 //! `--backups`, `--token-file`) still names another path. The names inside

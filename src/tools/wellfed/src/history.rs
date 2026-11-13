@@ -3,6 +3,7 @@
 //! feed's trace.
 
 use std::time::Duration;
+use wellfed_connect::Samples;
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, ValueEnum};
@@ -170,7 +171,14 @@ pub(crate) async fn events_command(args: EventsArgs) -> Result<()> {
         return Ok(());
     }
     connection
-        .subscribe(args.after, args.samples && args.follow)
+        .subscribe(
+            args.after,
+            if args.samples && args.follow {
+                Samples::On
+            } else {
+                Samples::Off
+            },
+        )
         .await?;
     let zone = TimeZone::system();
     // Without --follow, stop at the backlog's end, or once it has been
@@ -228,7 +236,7 @@ pub(crate) async fn feeds_command(args: FeedsArgs) -> Result<()> {
     if backlog.read(args.after) {
         return Ok(());
     }
-    connection.subscribe(args.after, false).await?;
+    connection.subscribe(args.after, Samples::Off).await?;
 
     let zone = TimeZone::system();
     // Stop at the backlog's end, or once it has been quiet a moment: its

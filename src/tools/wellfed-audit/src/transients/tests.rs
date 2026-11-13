@@ -50,27 +50,96 @@ fn clean_boot_and_loader() {
     );
 }
 
+/// Past the supply ramp, any disagreement is drive, however short.
 #[test]
 fn a_single_sample_drive_is_caught_and_timed() {
     let r = check(
-        &capture(&[(OFF, 1000), (FWD, 1), (OFF, 10), (BRAKE, 100)]),
+        &capture(&[(OFF, 1000), (BRAKE, 2000), (FWD, 1), (BRAKE, 100)]),
         Boot,
     );
     assert_eq!(r["outcome"], "transients_input_drive");
     assert_eq!(
         r["input_drive"],
-        json!([{"start_us": 1000.0, "length_us": 1.0, "direction": "forward"}])
+        json!([{"start_us": 3000.0, "length_us": 1.0, "direction": "forward"}])
     );
 
-    let r = check(&capture(&[(OFF, 10), (REV, 5), (BRAKE, 10)]), Boot);
+    let r = check(
+        &capture(&[(OFF, 10), (BRAKE, 2000), (REV, 5), (BRAKE, 10)]),
+        Boot,
+    );
     assert_eq!(r["input_drive"][0]["direction"], "reverse");
 
     // Inputs equal but an output pulse (OUTA high) is still a drive.
-    let r = check(&capture(&[(OFF, 10), (0b0100, 2), (BRAKE, 10)]), Boot);
+    let r = check(
+        &capture(&[(OFF, 10), (BRAKE, 2000), (0b0111, 2), (BRAKE, 10)]),
+        Boot,
+    );
     assert_eq!(
         (&r["outcome"], &r["output_drive"][0]["high"]),
         (&json!("transients_output_drive"), &json!("outa"))
     );
+}
+
+/// With the inputs probed, one disagreement inside the first millisecond
+/// that fits a threshold crossing of the rising supply (L/L, one line high
+/// for at most a few microseconds, then H/H) is reported apart and passes.
+/// The same skew after the ramp, a long one, a second one, one that falls
+/// or one that toggles is drive.
+#[test]
+fn a_skew_in_the_supply_ramp_is_reported_but_a_drive_is_not_excused() {
+    let r = check(&capture(&[(OFF, 1000), (FWD, 4), (BRAKE, 2000)]), Boot);
+    assert_eq!(r["outcome"], "pass");
+    assert_eq!(r["input_drive"], json!([]));
+    assert_eq!(
+        r["ramp_skew"],
+        json!([{"start_us": 1000.0, "length_us": 4.0, "direction": "forward"}])
+    );
+
+    // The same skew 2 ms after power-on is drive.
+    let r = check(
+        &capture(&[(OFF, 1000), (BRAKE, 2000), (FWD, 1), (BRAKE, 100)]),
+        Boot,
+    );
+    assert_eq!(r["outcome"], "transients_input_drive");
+
+    // A 105 us drive inside the ramp is never a skew.
+    let r = check(&capture(&[(OFF, 1000), (FWD, 105), (BRAKE, 2000)]), Boot);
+    assert_eq!(r["outcome"], "transients_input_drive");
+    assert_eq!(r["ramp_skew"], json!([]));
+
+    // One crossing per pair: a second skew, even a short one, is drive.
+    let r = check(
+        &capture(&[(OFF, 1000), (FWD, 1), (BRAKE, 10), (REV, 4), (BRAKE, 2000)]),
+        Boot,
+    );
+    assert_eq!(r["outcome"], "transients_input_drive");
+    assert_eq!(
+        r["input_drive"],
+        json!([{"start_us": 1011.0, "length_us": 4.0, "direction": "reverse"}])
+    );
+
+    // A drive toggling in the first millisecond fits no crossing.
+    let r = check(
+        &capture(&[
+            (OFF, 1000),
+            (FWD, 2),
+            (OFF, 2),
+            (FWD, 2),
+            (OFF, 2),
+            (BRAKE, 2000),
+        ]),
+        Boot,
+    );
+    assert_eq!(r["outcome"], "transients_input_drive");
+    assert_eq!(r["ramp_skew"], json!([]));
+    assert_eq!(r["input_drive"].as_array().unwrap().len(), 2);
+
+    // A skew on the way down from H/H is no rising crossing.
+    let r = check(
+        &capture(&[(OFF, 1000), (BRAKE, 5), (FWD, 2), (OFF, 5), (BRAKE, 2000)]),
+        Boot,
+    );
+    assert_eq!(r["outcome"], "transients_input_drive");
 }
 
 #[test]
@@ -84,9 +153,15 @@ fn state_rules() {
             "transients_no_brake",
         ),
         (
-            capture(&[(OFF, 10), (BRAKE, 10), (OFF, 3), (BRAKE, 10)]),
+            capture(&[(OFF, 10), (BRAKE, 2000), (OFF, 3), (BRAKE, 10)]),
             Boot,
             "transients_left_brake",
+        ),
+        // A dip back to standby inside the ramp does not leave the brake.
+        (
+            capture(&[(OFF, 10), (BRAKE, 10), (OFF, 3), (BRAKE, 2000)]),
+            Boot,
+            "pass",
         ),
         (
             capture(&[(OFF, 10), (BRAKE, 10)]),
@@ -95,8 +170,22 @@ fn state_rules() {
         ),
         (vec![], Boot, "transients_empty"),
     ] {
-        assert_eq!(check(&data, mode)["outcome"], outcome);
+        assert_eq!(check(&data, mode)["outcome"], outcome, "{data:?}");
     }
+}
+
+/// An outputs-only capture still has to start with both outputs LOW, as an
+/// unpowered driver reads, and takes no ramp: a skew at its start is drive.
+#[test]
+fn an_outputs_only_capture_must_start_low_and_takes_no_ramp() {
+    let outputs =
+        |data: &[u8]| serde_json::to_value(check_cycle(data, &OUTPUTS, Boot, RATE)).unwrap();
+
+    let r = outputs(&capture(&[(0b1100, 10), (OFF, 10)]));
+    assert_eq!(r["outcome"], "transients_late_start");
+
+    let r = outputs(&capture(&[(OFF, 10), (0b0100, 1), (OFF, 10)]));
+    assert_eq!(r["outcome"], "transients_output_drive");
 }
 
 #[test]
@@ -128,7 +217,7 @@ fn session_summary_and_integrity() {
     fs::write(d.join("cycle-002.bin"), [&files[1].1[..], b"\0"].concat()).unwrap();
     assert!(matches!(
         verify(d),
-        Err(crate::Error::Transients(TransientsError::Changed { file })) if file == "cycle-002.bin"
+        Err(crate::Error::Transients(TransientsError::SizeChanged { file })) if file == "cycle-002.bin"
     ));
 
     manifest["channels"] = json!({"ina": 0, "inb": 0, "outa": 2, "outb": 3});
@@ -138,13 +227,19 @@ fn session_summary_and_integrity() {
         Err(crate::Error::Transients(TransientsError::Channels))
     ));
 
-    manifest["cycles"][0]["file"] = json!("../outside.bin");
     manifest["channels"] = json!({"ina": 0, "inb": 1, "outa": 2, "outb": 3});
-    fs::write(d.join("manifest.json"), manifest.to_string()).unwrap();
-    assert!(matches!(
-        verify(d),
-        Err(crate::Error::Transients(TransientsError::CycleFile { .. }))
-    ));
+    std::os::unix::fs::symlink(d.join("cycle-001.bin"), d.join("linked.bin")).unwrap();
+    for file in ["../outside.bin", ".", "..", "/", "", "linked.bin"] {
+        manifest["cycles"][0]["file"] = json!(file);
+        fs::write(d.join("manifest.json"), manifest.to_string()).unwrap();
+        assert!(
+            matches!(
+                verify(d),
+                Err(crate::Error::Transients(TransientsError::CycleFile { .. }))
+            ),
+            "{file:?}"
+        );
+    }
 }
 
 #[test]

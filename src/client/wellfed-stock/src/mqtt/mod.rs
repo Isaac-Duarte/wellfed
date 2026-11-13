@@ -14,7 +14,7 @@ pub(crate) mod compat;
 
 use std::{sync::Arc, time::Duration};
 
-use anyhow::{Result, ensure};
+use crate::{Error, Result};
 use chrono::Utc;
 use rumqttc::{AsyncClient, ConnectionError, Event, MqttOptions, Packet, Publish, QoS};
 use tokio::sync::{mpsc, oneshot, watch};
@@ -55,6 +55,14 @@ fn publish(client: &AsyncClient, reply: Reply) -> Result<()> {
     Ok(())
 }
 
+/// A publish only the moment needs (a reply, a read-only query), logged and
+/// dropped when it cannot be queued.
+fn best_effort(published: Result<()>, what: &str) {
+    if let Err(error) = published {
+        warn!(error = %error, "stock {what} dropped");
+    }
+}
+
 /// The actor's state that outlives one broker connection.
 struct Actor {
     config: Arc<Config>,
@@ -77,57 +85,62 @@ impl Actor {
         Ok(())
     }
 
-    fn query_attributes(&self, client: &AsyncClient) -> Result<()> {
+    /// Ask stock for its attributes. Best effort: a read-only query lost to
+    /// a full queue is asked again at stock's next connect or resolution.
+    fn query_attributes(&self, client: &AsyncClient) {
         let query = plaf103::service(
             &self.config,
             plaf103::Sent::Attributes,
             uuid::Uuid::new_v4(),
             Utc::now(),
         );
-        publish(client, query)
+        best_effort(publish(client, query), "attribute query");
     }
 
     fn session_started(&mut self, client: &AsyncClient, ack: &rumqttc::SubAck) -> Result<()> {
-        ensure!(
+        wellfed_formats::require(
             ack.return_codes
                 .iter()
                 .all(|code| matches!(code, rumqttc::SubscribeReasonCode::Success(_))),
-            "broker refused server subscription"
-        );
+            || Error::SubscriptionRefused,
+        )?;
         self.controller.connected(Utc::now());
-        self.query_attributes(client)
+        self.query_attributes(client);
+        Ok(())
     }
 
-    fn incoming(&mut self, client: &AsyncClient, publish: &Publish) -> Result<()> {
+    fn incoming(&mut self, client: &AsyncClient, publish: &Publish) {
         if publish.retain {
             warn!("ignored retained device message");
-            return Ok(());
+            return;
         }
 
-        self.device_message(client, publish)
+        self.device_message(client, publish);
     }
 
-    fn device_message(&mut self, client: &AsyncClient, incoming: &Publish) -> Result<()> {
+    /// One message from stock. What it costs is at most its own answer: a
+    /// reply the client's queue has no room for (stock bursting faster than
+    /// it drains) is dropped, as on a lossy link, which stock tolerates.
+    fn device_message(&mut self, client: &AsyncClient, incoming: &Publish) {
         let Ok((channel, message)) =
             protocol::parse(&self.config, &incoming.topic, &incoming.payload)
         else {
             warn!("ignored invalid device message");
-            return Ok(());
+            return;
         };
 
         let now = Utc::now();
         let first_seen = self.controller.status.last_seen.is_none();
-        self.controller.observe(channel, &message, now)?;
+        self.controller.observe(&message, now);
         if let Some(reply) = plaf103::reply(&self.config, channel, &message, now, self.stock_plans)
         {
-            publish(client, reply)?;
+            best_effort(publish(client, reply), "reply");
         }
         if first_seen || message.cmd == "DEVICE_START_EVENT" {
-            self.query_attributes(client)?;
+            self.query_attributes(client);
         }
 
         info!(command = %message.cmd, "device message");
-        Ok(())
     }
 
     /// Hand a newly authorized command to MQTT. If it cannot be queued the
@@ -145,7 +158,7 @@ impl Actor {
         if let Some(command) = command
             && publish(client, command).is_err()
         {
-            self.controller.disconnected(Utc::now())?;
+            self.controller.disconnected(Utc::now());
             return Ok(Err(Rejection::Offline));
         }
         Ok(Ok(record))
@@ -171,7 +184,7 @@ impl Actor {
                     && self.controller.status.device_online
                     && !self.controller.version_fresh(now)
                 {
-                    self.query_attributes(client)?;
+                    self.query_attributes(client);
                 }
                 let _ = response.send(result);
             }
@@ -237,7 +250,7 @@ impl Actor {
                         None => return Ok(Session::Closed),
                     },
 
-                    _ = tick.tick() => self.controller.expire(Utc::now())?,
+                    _ = tick.tick() => self.controller.expire(Utc::now()),
                 }
                 self.publish_status();
             }
@@ -258,7 +271,7 @@ impl Actor {
                     None => return Ok(Session::Closed),
                 },
 
-                _ = tick.tick() => self.controller.expire(Utc::now())?,
+                _ = tick.tick() => self.controller.expire(Utc::now()),
             }
             self.publish_status();
         }
@@ -274,11 +287,11 @@ impl Actor {
         match event {
             Ok(Event::Incoming(Packet::ConnAck(_))) => self.subscribe(client).await?,
             Ok(Event::Incoming(Packet::SubAck(ack))) => self.session_started(client, &ack)?,
-            Ok(Event::Incoming(Packet::Publish(message))) => self.incoming(client, &message)?,
+            Ok(Event::Incoming(Packet::Publish(message))) => self.incoming(client, &message),
             Ok(_) => {}
             Err(_) => {
                 warn!("MQTT disconnected; discarding pending outgoing messages");
-                self.controller.disconnected(Utc::now())?;
+                self.controller.disconnected(Utc::now());
                 self.publish_status();
                 return Ok(Some(Session::Dropped));
             }

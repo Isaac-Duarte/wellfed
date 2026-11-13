@@ -4,20 +4,21 @@
 //! and is never sent again, an install followed to its end, the feeder's
 //! stock backup read, shown and exported, and never signed when it is not
 //! stock's pinned image, and a feeder's clients and restart, and an export saved
-//! whole.
+//! whole, never over an earlier one.
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::time::Duration;
 
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use uuid::Uuid;
 use wellfed_server_client::api::{
     AdoptFeeder, ClientOwner, ClientRole, Command, CommandOutcome, CommandState, Connection,
-    ErrorCode, FeedOutcome, Feeder, FeederClient, FeederId, Hex, Install, InstallState, Problem,
-    StockBackup, StockSource, StockState,
+    ErrorCode, EventPage, EventQuery, FeedOutcome, Feeder, FeederClient, FeederId, Hex, Install,
+    InstallState, Problem, StockBackup, StockSource, StockState,
 };
-use wellfed_server_client::{Client, Uploaded};
+use wellfed_server_client::{Client, Kept};
 use wellfed_server_testkit::feeder::{self, Banks, Flash, Relay, Running};
 use wellfed_server_testkit::release;
 use wellfed_server_testkit::{TestServer, ada_login, ada_setup, config, local, until};
@@ -117,6 +118,67 @@ async fn adopt(http: &Client, sim: &Running, address: String) -> FeederId {
     })
     .await;
     id
+}
+
+/// `events --follow` reads every page of the history before it follows the
+/// stream, which starts live: a first page that held only part of it left
+/// the rest unshown, with no hint.
+#[test]
+fn events_follow_shows_the_whole_history_before_the_stream() {
+    local(async {
+        let sim = feeder::start().await;
+        let server = TestServer::start().await;
+        let mut http = server.client();
+        http.setup(&ada_setup()).await.unwrap();
+        let kitchen = adopt(&http, &sim, sim.address.to_string()).await;
+        let home = Home::new();
+        home.login(&server).await.exited(0);
+
+        for secret in [0x41, 0x42, 0x43] {
+            let invite = feeder::invite(&sim, ClientRole::Member).await;
+            feeder::join_phone(&sim, &invite, [secret; 32]).await;
+        }
+        let whole = EventQuery {
+            limit: Some(500),
+            ..EventQuery::default()
+        };
+        until("the server holds the joinings", || async {
+            http.events(kitchen, &whole).await.unwrap().events.len() >= 4
+        })
+        .await;
+        let held: Vec<u64> = http
+            .events(kitchen, &whole)
+            .await
+            .unwrap()
+            .events
+            .iter()
+            .map(|event| event.seq)
+            .collect();
+
+        let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_wellfed"))
+            .args(["server", "events", "--follow", "--json", "--limit", "1"])
+            .arg("--token-file")
+            .arg(home.token_file())
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .expect("the CLI starts");
+        let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+        let mut shown = Vec::new();
+        let read = async {
+            while shown.len() < held.len() {
+                let line = lines.next_line().await.unwrap().expect("the CLI follows");
+                let page: EventPage = serde_json::from_str(&line).expect("a page");
+                shown.extend(page.events.iter().map(|event| event.seq));
+            }
+        };
+        let finished = tokio::time::timeout(Duration::from_secs(10), read).await;
+        child.kill().await.unwrap();
+        assert!(finished.is_ok(), "shown {shown:?} of {held:?}");
+        assert_eq!(shown, held);
+    });
 }
 
 fn mode(path: &Path) -> u32 {
@@ -331,7 +393,7 @@ fn install_follows_a_release_to_activation() {
         };
         let kitchen = http.adopt(&request).await.unwrap().id;
         let file = release::signed(&release::project(), 7, BUILD, 16 * release::SECTOR);
-        let Uploaded::New(kept) = http.upload_release(file).await.unwrap() else {
+        let Kept::New(kept) = http.upload_release(file).await.unwrap() else {
             panic!("a first upload is new");
         };
         until("the server reads the feeder", || async {
@@ -436,7 +498,11 @@ fn stock_is_read_shown_exported_and_never_signed_unless_pinned() {
             .await
             .exited(1);
 
-        let restore = home.run(&["stock", "restore", "--version", "1"], "").await;
+        let key = home.0.path().join("update-key.json");
+        let key = key.to_str().unwrap();
+        let restore = home
+            .run(&["stock", "restore", "--version", "1", "--key", key], "")
+            .await;
         assert!(
             restore.exited(1).stderr.contains("pinned image"),
             "{}",
@@ -466,6 +532,7 @@ fn export_saves_the_archive_once_it_is_whole() {
             .await;
         let bodies: Vec<serde_json::Value> = saved.exited(0).bodies();
         let archive = std::fs::read(&file).unwrap();
+        let first = archive.clone();
         assert_eq!(bodies[0]["bytes"], archive.len());
         assert!(!home.0.path().join("home.tar.partial").exists());
         // The archive the server streamed, whole: it imports.
@@ -480,6 +547,19 @@ fn export_saves_the_archive_once_it_is_whole() {
         assert!(saved.exited(0).stdout.starts_with("Saved "));
         let archive = std::fs::read(&csv).unwrap();
         assert!(archive.windows(9).any(|name| name == b"users.csv"));
+
+        // An earlier archive is never replaced.
+        let again = home.run(&["export", file.to_str().unwrap()], "").await;
+        assert!(
+            again.exited(1).stderr.contains("exists"),
+            "{}",
+            again.stderr
+        );
+        assert_eq!(
+            std::fs::read(&file).unwrap(),
+            first,
+            "the first archive is kept"
+        );
 
         fresh.stop().await;
         server.stop().await;

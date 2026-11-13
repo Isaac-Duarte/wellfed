@@ -31,8 +31,8 @@ use wellfed_install::listen::{self, Listened, UNCERTAIN_WAIT};
 use wellfed_install::prompt::Prompt;
 use wellfed_install::{
     Announcement, Api, Bind, Bluetooth, Discovery, Error, Event, Keys, Plan, Platform,
-    PlatformError, Prompter, Refusal, Rejection, Report, Review, SetupLink, Signer, Start,
-    StockOptions, Stop, Unjoined, Unsettled,
+    PlatformError, Prompter, Refusal, Rejection, Report, Review, SetupLink, Start, StockOptions,
+    Stop, Unjoined, Unsettled,
 };
 use wellfed_session::noise::Keypair;
 
@@ -83,16 +83,35 @@ pub struct Pin {
 /// signed with the offline release key, which no checkout holds.
 const RELEASE_PIN: Option<Pin> = None;
 
+/// The profile the bridge was compiled in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Build {
+    Debug,
+    /// Cargokit builds the bridge `--release` for every Flutter build but a
+    /// debug one, so a release or profile APK is this.
+    Release,
+}
+
+impl Build {
+    pub const THIS: Self = if cfg!(debug_assertions) {
+        Self::Debug
+    } else {
+        Self::Release
+    };
+}
+
 /// This build's pin: the release's, or (for a bench build, whose image is a
 /// build-time input) `WELLFED_INSTALLER_PIN` as `make app-installer-input`
 /// prints it. Compiled in, so an image swapped in the APK afterwards fails
 /// the check; a committed release pin is never overridden.
 pub fn pin() -> Option<Pin> {
-    RELEASE_PIN.or_else(|| parse_pin(option_env!("WELLFED_INSTALLER_PIN")?))
+    RELEASE_PIN.or_else(|| parse_pin(option_env!("WELLFED_INSTALLER_PIN")?, Build::THIS))
 }
 
-/// `review_sha256:manifest_sha256:version`.
-pub fn parse_pin(text: &'static str) -> Option<Pin> {
+/// `review_sha256:manifest_sha256:version`. A release build's pin takes a
+/// consumer image alone whatever pin it was given, so a release APK built
+/// around a bench image refuses to install it.
+pub fn parse_pin(text: &'static str, build: Build) -> Option<Pin> {
     let mut parts = text.split(':');
     let (review_sha256, manifest_sha256, version) = (parts.next()?, parts.next()?, parts.next()?);
     let hashes = [review_sha256, manifest_sha256];
@@ -107,7 +126,7 @@ pub fn parse_pin(text: &'static str) -> Option<Pin> {
         review_sha256,
         manifest_sha256,
         version: version.parse().ok()?,
-        release: false,
+        release: build == Build::Release,
     })
 }
 
@@ -586,9 +605,7 @@ impl From<Event> for InstallEvent {
                 bytes: u64::try_from(bytes).unwrap_or(u64::MAX),
                 total: STOCK_PAYLOAD_LEN,
             },
-            Event::BackupKept { path }
-            | Event::BackupFound { path }
-            | Event::GivenBackupKept { path } => Self::BackupKept {
+            Event::BackupKept { path } | Event::BackupFound { path } => Self::BackupKept {
                 path: path.display().to_string(),
             },
             Event::Promoting => Self::Promoting,
@@ -597,7 +614,6 @@ impl From<Event> for InstallEvent {
             Event::AlreadyActivated | Event::Activated => Self::Activated,
             Event::Installed { build } => Self::Installed { build },
             Event::FrameSent { .. } => note("the setup frame went out".to_string()),
-            Event::DevicePinned { device, .. } => note(format!("device {device} was pinned")),
             Event::KnownKeyRefused { error }
             | Event::TrialOpen { error }
             | Event::EnrollUnanswered { error }
@@ -624,7 +640,6 @@ impl From<Event> for InstallEvent {
             Event::FeederTried { address, answered } => note(format!(
                 "tried the feeder at {address}, answered: {answered}"
             )),
-            Event::Signed { version, .. } => note(format!("signed at version {version}")),
         }
     }
 }
@@ -651,11 +666,8 @@ pub fn stop_of(error: &Error, from_stock: bool) -> (StopCase, Resume) {
             }
             InstallError::StockClockUnset => (StopCase::ClockUnset, FromStart),
             InstallError::TimedOut(phase) => timed_out(*phase, from_stock),
-            InstallError::UpdateKey(_)
-            | InstallError::UpdateKeyUncertain
-            | InstallError::NotAboveFloor { .. }
+            InstallError::NotAboveFloor { .. }
             | InstallError::NoVersionAbove { .. }
-            | InstallError::PromotionUnknown
             | InstallError::Promotion(_)
             | InstallError::WrongPromotion { .. } => (StopCase::PromotionFailed, FromBank0),
             // The offer may have taken: never offered again, and the run
@@ -689,7 +701,7 @@ pub fn stop_of(error: &Error, from_stock: bool) -> (StopCase, Resume) {
         Error::Handover(_) | Error::FrameSend { .. } | Error::UdpSocket(_) => {
             (StopCase::HandoverFailed, FromStart)
         }
-        Error::Backup(_) | Error::NotStock(_) | Error::Unverified | Error::KeepGiven(_) => {
+        Error::Backup(_) | Error::NotStock(_) | Error::Unverified => {
             (StopCase::BackupMismatch, FromBank0)
         }
         Error::Setup(inner) => {
@@ -735,10 +747,10 @@ pub fn stop_of(error: &Error, from_stock: bool) -> (StopCase, Resume) {
         Error::StockServer(_)
         | Error::Images(_)
         | Error::StockServerGone
-        | Error::StockServerFailed(_) => (StopCase::ServerFailed, FromStart),
+        | Error::StockServerFailed(_)
+        | Error::StockServerStopped => (StopCase::ServerFailed, FromStart),
         Error::Stopped(stopped) => match stopped.unsettled {
             Some(Unsettled::Request(_)) => (StopCase::Uncertain, Nothing),
-            Some(Unsettled::UpdateKey) => uncertain_write(UncertainWrite::UpdateKey),
             Some(Unsettled::Promotion) => uncertain_write(UncertainWrite::Promotion),
             None if stopped.phase <= Phase::Request && from_stock => {
                 (StopCase::Cancelled, FromStart)
@@ -761,7 +773,6 @@ pub fn stop_of(error: &Error, from_stock: bool) -> (StopCase, Resume) {
         | Error::Signing(_)
         | Error::Trial(_)
         | Error::NoPeer
-        | Error::OtherDevice { .. }
         | Error::ClientsRefused(_)
         | Error::Legacy
         | Error::NoIdentity
@@ -772,14 +783,12 @@ pub fn stop_of(error: &Error, from_stock: bool) -> (StopCase, Resume) {
         | Error::RestoreEnroll(_)
         | Error::RestoreKey(_)
         | Error::RestoreKeyGone
+        | Error::RestoreReleaseKey
         | Error::RestoreInstallRunning { .. }
         | Error::RestoreCancelUnknown
         | Error::RestoreStopped(_)
-        | Error::NoUpdateKey
-        | Error::NoSigner
         | Error::NoManifest
-        | Error::ShortImage
-        | Error::EnrollmentEnded => (StopCase::Other, Nothing),
+        | Error::ShortImage => (StopCase::Other, Nothing),
     }
 }
 
@@ -820,12 +829,9 @@ const fn timed_out(phase: Phase, from_stock: bool) -> (StopCase, Resume) {
             (StopCase::NoSetupFeeder, Resume::FromBank0)
         }
         // Waits a run gives up on only once the replacement answers.
-        Phase::CloseTrial
-        | Phase::UpdateKey
-        | Phase::Backup
-        | Phase::Sign
-        | Phase::Promote
-        | Phase::Done => (StopCase::Other, Resume::FromBank0),
+        Phase::CloseTrial | Phase::Backup | Phase::Floor | Phase::Promote | Phase::Done => {
+            (StopCase::Other, Resume::FromBank0)
+        }
     }
 }
 
@@ -962,10 +968,9 @@ fn plan(
         start,
         // The promotion is signed elsewhere: this phone never holds a key a
         // feeder trusts, and the image builds the signer's in.
-        signer: Signer::Manifest { manifest, version },
+        manifest,
+        version,
         home,
-        backup: None,
-        expect_device: None,
         feeder: spec.feeder,
         address: spec
             .address
@@ -1351,16 +1356,26 @@ mod tests {
     fn a_pin_is_two_digests_and_a_version() {
         let hash = "ab".repeat(32);
         let text: &'static str = Box::leak(format!("{hash}:{hash}:7").into_boxed_str());
-        let pin = parse_pin(text).unwrap();
+        let pin = parse_pin(text, Build::Debug).unwrap();
         assert_eq!(pin.version, 7);
+        assert!(!pin.release);
 
         for bad in ["", "ab:cd:7", "x"] {
-            assert_eq!(parse_pin(bad), None, "{bad}");
+            assert_eq!(parse_pin(bad, Build::Debug), None, "{bad}");
         }
         let short: &'static str = Box::leak(format!("{hash}:{hash}").into_boxed_str());
-        assert_eq!(parse_pin(short), None);
+        assert_eq!(parse_pin(short, Build::Debug), None);
         let long: &'static str = Box::leak(format!("{hash}:{hash}:7:8").into_boxed_str());
-        assert_eq!(parse_pin(long), None);
+        assert_eq!(parse_pin(long, Build::Debug), None);
+    }
+
+    /// A release or profile build's pin takes a consumer image alone, so a
+    /// release APK built around a bench image installs nothing.
+    #[test]
+    fn a_release_build_s_pin_is_a_release_pin() {
+        let hash = "ab".repeat(32);
+        let text: &'static str = Box::leak(format!("{hash}:{hash}:7").into_boxed_str());
+        assert!(parse_pin(text, Build::Release).unwrap().release);
     }
 
     #[test]
@@ -1531,7 +1546,7 @@ mod tests {
     #[test]
     fn a_failed_server_and_a_failed_recovery_are_not_dead_ends() {
         assert_eq!(
-            stop_of(&Error::StockServerFailed("address in use".into()), true),
+            stop_of(&Error::StockServerStopped, true),
             (StopCase::ServerFailed, Resume::FromStart)
         );
         assert_eq!(

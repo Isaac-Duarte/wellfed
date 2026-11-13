@@ -2,6 +2,7 @@
 //! feed traces, bank 1, and the log tail.
 
 use wellfed_client::api::Incoming;
+use wellfed_client::api::Samples;
 use wellfed_client::connection::Event;
 use wellfed_model as model;
 use wellfed_model::{Answer, Op};
@@ -207,7 +208,7 @@ fn stats_metrics_reach_only_their_subscribers_and_replace_their_own_kind() {
     let mut rig = Rig::new();
     let mut current = live(&mut rig, OWNER);
     let mut old = live(&mut rig, MEMBER);
-    for (live, samples) in [(&mut current, true), (&mut old, false)] {
+    for (live, samples) in [(&mut current, Samples::On), (&mut old, Samples::Off)] {
         let now = live.now(&rig);
         live.connection.subscribe(now, None, samples).unwrap();
         // A few passes, so the server holds the subscription.

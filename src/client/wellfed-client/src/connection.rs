@@ -53,7 +53,7 @@ use wellfed_proto::api::{Open, RequestId};
 use wellfed_session::noise::Keypair;
 
 pub use crate::api::Opened;
-use crate::api::{Error, Incoming, Session, open_frame};
+use crate::api::{Error, Incoming, Samples, Session, open_frame};
 use crate::setup;
 
 /// The id of the keepalive's `Alive`. A read is never remembered by the
@@ -407,13 +407,13 @@ impl Connection {
     }
 
     /// Ask for the history after `from`, the newest event a mirror holds,
-    /// then each new event, and the live samples if `samples`. A cursor
+    /// then each new event, and the live samples if `samples` is on. A cursor
     /// from another epoch, or none, reads from the oldest event kept.
     pub fn subscribe(
         &mut self,
         now: Instant,
         from: Option<Cursor>,
-        samples: bool,
+        samples: Samples,
     ) -> Result<Resume, Error> {
         self.live()?;
         let Some(opened) = &self.opened else {

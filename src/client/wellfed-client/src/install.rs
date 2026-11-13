@@ -35,21 +35,15 @@
 //!    stock server is told so it closes its record. A run resumed after an
 //!    earlier one activated bank 1 finds the build there and only waits for
 //!    its confirmation.
-//! 8. **Update key:** an image that does not build in the installer's
-//!    update key enrolls it ([`crate::update_key::Enroll`]), confirmed by a
-//!    Dispense press. A refusal ends the run before anything is promoted.
-//!    The enrollment goes once: one left unanswered is judged by the
-//!    feeder's signer list, never by sending it again.
-//! 9. **Backup:** promotion overwrites bank 1, the feeder's only copy of
+//! 8. **Backup:** promotion overwrites bank 1, the feeder's only copy of
 //!    stock, so it waits for a [`VerifiedBackup`]. There is no way past this
 //!    step without one. The bank-0 role streams bank 1 ([`Bank1Reader`]),
 //!    and [`StockBackup::from_bank`] checks it against the pinned payload
 //!    and rebuilds the owner's own stock OTA, which the caller keeps.
-//! 10. **Version:** the feeder's floor (`UpdateState`) decides it. A
-//!     manifest signed before the run must be above it; otherwise the
-//!     installer signs the build itself, above both the floor and any
-//!     version it signed before ([`Promotion`]).
-//! 11. **Promote:** the signed update ([`crate::update::Installer`]) writes
+//! 9. **Version:** the promotion offers a manifest signed before the run
+//!    (the image builds its signer's key in, so nothing is enrolled), and
+//!    it must be above the feeder's floor (`UpdateState`).
+//! 10. **Promote:** the signed update ([`crate::update::Installer`]) writes
 //!     bank 1 from bank 0, and its trial boot confirms on bank 1.
 //!
 //! No route carries meals over: the replacement starts with none, and the
@@ -70,11 +64,10 @@ pub use backup::{
 };
 pub use frame::{FrameError, SETUP_ADDRESS, SETUP_SSID_PREFIX, SetupFrame};
 
-use wellfed_model::{Client, ClientRole, Readiness};
+use wellfed_model::Readiness;
 
 use crate::offer::{Confirmation, Restarted, confirmation};
 use crate::update::InstallError as UpdateError;
-use crate::update_key::{EnrollError, Enrolled};
 
 /// How the installer becomes the replacement's owner, decided by the
 /// image's provisioning.
@@ -87,29 +80,6 @@ pub enum PairRoute {
     /// A bench image joins its build network and knows no client key: the
     /// owner opens the LAN recovery window on the panel.
     Recovery,
-}
-
-/// Whether the promotion's signer must be enrolled on the replacement.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum UpdateKey {
-    /// The image builds the signer's key in, or the run promotes a
-    /// manifest signed elsewhere: nothing is enrolled.
-    BuiltIn,
-    /// The installer's own key (its public half), which the image does not
-    /// build in: enrolled after pairing, with a Dispense press.
-    Enroll([u8; 32]),
-}
-
-/// The signed update the promotion offers.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Promotion {
-    /// A manifest signed before the run, at this version
-    /// ([`manifest_version`]).
-    Signed(u32),
-    /// The installer signs the build itself once it has read the feeder's
-    /// floor, one above the floor and above `above`: the highest version
-    /// it signed before, so no two manifests it made share a version.
-    Sign { above: u32 },
 }
 
 /// How the promotion's push ended, as the run reads it.
@@ -130,8 +100,9 @@ pub enum Promoted {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Options {
     pub route: PairRoute,
-    pub update_key: UpdateKey,
-    pub promotion: Promotion,
+    /// The version of the manifest the promotion offers, signed before the
+    /// run ([`manifest_version`]).
+    pub version: u32,
 }
 
 /// The version a signed update manifest promotes to, which the run waits
@@ -273,10 +244,9 @@ pub enum Phase {
     Join,
     ReadStatus,
     CloseTrial,
-    UpdateKey,
     Backup,
-    /// The floor read and the version chosen or checked, and the signing.
-    Sign,
+    /// The feeder's floor read and the promotion's version checked against it.
+    Floor,
     Promote,
     AwaitConfirm,
     Done,
@@ -319,27 +289,11 @@ pub enum InstallError {
     #[error("build {reported} answers on bank {bank}, not the served build")]
     WrongReplacement { reported: String, bank: u8 },
     #[error(
-        "the installer's update key was not enrolled ({0}); nothing was promoted: the feeder runs the replacement from bank 0 and still holds stock in bank 1"
-    )]
-    UpdateKey(EnrollError),
-    /// The enrollment went unanswered and the signer list read after it
-    /// does not show the key (or could not be read). It is not sent again.
-    #[error(
-        "the update key's enrollment went unanswered and the feeder does not list it as a signer; it is not sent again, and nothing was promoted"
-    )]
-    UpdateKeyUncertain,
-    #[error(
         "the manifest's version {version} is not above the feeder's floor {floor}; it would need a downgrade statement, so nothing was promoted"
     )]
     NotAboveFloor { version: u32, floor: u32 },
     #[error("no version is left above the feeder's floor {floor}")]
     NoVersionAbove { floor: u32 },
-    /// A run resumed after the activation, signing for itself, with no
-    /// manifest an earlier run kept: the version to wait for is unknown.
-    #[error(
-        "bank 1 runs the build, but the version promoted is unknown: pass the manifest the earlier run promoted"
-    )]
-    PromotionUnknown,
     #[error(
         "the promotion stopped: {0}; the feeder keeps running bank 0, but bank 1 may be partly overwritten: the verified backup is now the copy of stock"
     )]
@@ -390,16 +344,6 @@ pub enum Step {
     /// Tell the stock server the served build answered from bank 0 so it
     /// closes its record; then [`Install::trial_closed`], whatever it said.
     CloseTrial,
-    /// Enroll this public update key ([`crate::update_key::Enroll`]), the
-    /// owner pressing Dispense when asked; report its end with
-    /// [`Install::key_enrolled`]. Comes once per run.
-    EnrollKey([u8; 32]),
-    /// The enrollment went unanswered: read the feeder's client list and
-    /// report it with [`Install::signers`] (or [`Install::signers_unread`]).
-    /// The enrollment is never sent again.
-    CheckSigners,
-    /// The enrollment is out; waiting for [`Install::key_enrolled`].
-    AwaitEnroll,
     /// Promotion is refused until [`Install::backup`] is given a verified
     /// stock backup: read bank 1 with [`Bank1Reader`] and check it with
     /// [`StockBackup::from_bank`] (or a copy kept earlier, with
@@ -408,11 +352,6 @@ pub enum Step {
     /// Read the feeder's floor (`UpdateState`'s `min_version`); report it
     /// with [`Install::floor`].
     ReadFloor,
-    /// Sign the reviewed build at this version with the installer's update
-    /// key, keep the manifest, then [`Install::signed`].
-    Sign {
-        version: u32,
-    },
     /// Push the signed update until bank 1 is activated; report with
     /// [`Install::promoted`].
     Promote,
@@ -440,15 +379,8 @@ enum Stage {
     AwaitJoin,
     ReadStatus,
     CloseTrial,
-    EnrollKey([u8; 32]),
-    /// The enrollment is out; waiting for its end.
-    Enrolling,
-    CheckSigners,
     Backup,
     Floor,
-    Sign {
-        version: u32,
-    },
     Promote,
     AwaitConfirm,
     Done,
@@ -462,10 +394,6 @@ pub struct Install {
     /// The served build's identity, lowercase hex.
     build: String,
     options: Options,
-    /// The promoted manifest's version, which bank 1 must confirm: known
-    /// from the start for a manifest signed before the run, and once the
-    /// floor is read when the run signs.
-    version: Option<u32>,
     backup: Option<VerifiedBackup>,
     /// Stock's latest download progress, percent.
     progress: Option<u8>,
@@ -495,15 +423,10 @@ impl Install {
     }
 
     fn at(stage: Stage, build: &str, options: Options) -> Self {
-        let version = match options.promotion {
-            Promotion::Signed(version) => Some(version),
-            Promotion::Sign { .. } => None,
-        };
         Self {
             stage,
             build: build.to_ascii_lowercase(),
             options,
-            version,
             backup: None,
             progress: None,
             sent: false,
@@ -530,20 +453,12 @@ impl Install {
             Stage::AwaitJoin => Step::AwaitJoin,
             Stage::ReadStatus => Step::ReadStatus,
             Stage::CloseTrial => Step::CloseTrial,
-            &Stage::EnrollKey(key) => {
-                self.stage = Stage::Enrolling;
-                Step::EnrollKey(key)
-            }
-            // Sent once: until its end comes, there is only waiting.
-            Stage::Enrolling => Step::AwaitEnroll,
-            Stage::CheckSigners => Step::CheckSigners,
             Stage::Backup if self.backup.is_some() => {
                 self.stage = Stage::Floor;
                 Step::ReadFloor
             }
             Stage::Backup => Step::Backup,
             Stage::Floor => Step::ReadFloor,
-            &Stage::Sign { version } => Step::Sign { version },
             Stage::Promote => Step::Promote,
             Stage::AwaitConfirm => Step::AwaitConfirm,
             Stage::Done => Step::Done,
@@ -563,9 +478,8 @@ impl Install {
             Stage::AwaitJoin => Phase::Join,
             Stage::ReadStatus => Phase::ReadStatus,
             Stage::CloseTrial => Phase::CloseTrial,
-            Stage::EnrollKey(_) | Stage::Enrolling | Stage::CheckSigners => Phase::UpdateKey,
             Stage::Backup => Phase::Backup,
-            Stage::Floor | Stage::Sign { .. } => Phase::Sign,
+            Stage::Floor => Phase::Floor,
             Stage::Promote => Phase::Promote,
             Stage::AwaitConfirm => Phase::AwaitConfirm,
             Stage::Done => Phase::Done,
@@ -584,14 +498,9 @@ impl Install {
         &self.build
     }
 
-    /// The version the promotion offers, once known.
-    pub fn version(&self) -> Option<u32> {
-        self.version
-    }
-
-    /// The backup promotion waits for, once given.
-    pub fn verified_backup(&self) -> Option<VerifiedBackup> {
-        self.backup
+    /// The version the promotion offers.
+    pub fn version(&self) -> u32 {
+        self.options.version
     }
 
     /// The frame went out (the caller left stock's access point after).
@@ -721,8 +630,7 @@ impl Install {
 
     /// The replacement's status after pairing: the served build on bank 0
     /// moves on, and on bank 1 (an earlier run activated it) only its
-    /// confirmation is left, for which the promoted version must be known
-    /// ([`Self::promoted_before`]); anything else ends the run.
+    /// confirmation is left; anything else ends the run.
     pub fn replacement(&mut self, status: Replacement<'_>) {
         if self.stage != Stage::ReadStatus {
             return;
@@ -735,20 +643,9 @@ impl Install {
             }),
             // Only a request this run sent left a record to close.
             0 if self.sent => Stage::CloseTrial,
-            0 => self.after_bank0(),
-            _ if self.version.is_none() => Stage::Failed(InstallError::PromotionUnknown),
+            0 => Stage::Backup,
             _ => Stage::AwaitConfirm,
         };
-    }
-
-    /// The version an earlier run signed and promoted, from the manifest it
-    /// kept: what a run resumed after the activation waits to see
-    /// confirmed when it signs for itself. A manifest given to this run
-    /// already names it.
-    pub fn promoted_before(&mut self, version: u32) {
-        if self.version.is_none() && matches!(self.options.promotion, Promotion::Sign { .. }) {
-            self.version = Some(version);
-        }
     }
 
     /// The stock server was told; whether it closed its record or not, the
@@ -756,58 +653,7 @@ impl Install {
     /// run wait for its resolution).
     pub fn trial_closed(&mut self) {
         if self.stage == Stage::CloseTrial {
-            self.stage = self.after_bank0();
-        }
-    }
-
-    /// From the served build on bank 0: the update key first when it needs
-    /// enrolling, then the backup.
-    fn after_bank0(&self) -> Stage {
-        match self.options.update_key {
-            UpdateKey::Enroll(key) => Stage::EnrollKey(key),
-            UpdateKey::BuiltIn => Stage::Backup,
-        }
-    }
-
-    /// How the one enrollment [`Step::EnrollKey`] asked for ended. Enrolled
-    /// now or already listed moves on; an unanswered one is judged by the
-    /// signer list ([`Step::CheckSigners`]); any other end stops the run
-    /// before promotion.
-    pub fn key_enrolled(&mut self, outcome: Result<Enrolled, EnrollError>) {
-        if self.stage != Stage::Enrolling {
-            return;
-        }
-        self.stage = match outcome {
-            Ok(Enrolled::Now | Enrolled::Already) => Stage::Backup,
-            Err(EnrollError::Uncertain) => Stage::CheckSigners,
-            Err(error) => Stage::Failed(InstallError::UpdateKey(error)),
-        };
-    }
-
-    /// The feeder's clients, read after an unanswered enrollment: the key
-    /// listed as an update signer means the press landed.
-    pub fn signers(&mut self, clients: &[Client]) {
-        if self.stage != Stage::CheckSigners {
-            return;
-        }
-        let UpdateKey::Enroll(key) = self.options.update_key else {
-            return;
-        };
-        let listed = clients
-            .iter()
-            .any(|client| client.key.0 == key && client.role == ClientRole::UpdateSigner);
-        self.stage = if listed {
-            Stage::Backup
-        } else {
-            Stage::Failed(InstallError::UpdateKeyUncertain)
-        };
-    }
-
-    /// The client list could not be read after an unanswered enrollment:
-    /// whether it landed stays unknown, and it is not sent again.
-    pub fn signers_unread(&mut self) {
-        if self.stage == Stage::CheckSigners {
-            self.stage = Stage::Failed(InstallError::UpdateKeyUncertain);
+            self.stage = Stage::Backup;
         }
     }
 
@@ -818,33 +664,17 @@ impl Install {
 
     /// The feeder's floor, its highest confirmed version: an offer at or
     /// below it needs a downgrade statement, which the installer never
-    /// makes. A manifest signed before the run must be above it; a run that
-    /// signs for itself picks one above both the floor and any version it
-    /// signed before.
+    /// makes, so the manifest must be above it.
     pub fn floor(&mut self, floor: u32) {
         if self.stage != Stage::Floor {
             return;
         }
-        self.stage = match self.options.promotion {
-            Promotion::Signed(version) if version <= floor => {
-                Stage::Failed(InstallError::NotAboveFloor { version, floor })
-            }
-            Promotion::Signed(_) => Stage::Promote,
-            Promotion::Sign { above } => match floor.max(above).checked_add(1) {
-                Some(version) => {
-                    self.version = Some(version);
-                    Stage::Sign { version }
-                }
-                None => Stage::Failed(InstallError::NoVersionAbove { floor }),
-            },
+        let version = self.options.version;
+        self.stage = if version <= floor {
+            Stage::Failed(InstallError::NotAboveFloor { version, floor })
+        } else {
+            Stage::Promote
         };
-    }
-
-    /// The manifest [`Step::Sign`] asked for is signed and kept.
-    pub fn signed(&mut self) {
-        if matches!(self.stage, Stage::Sign { .. }) {
-            self.stage = Stage::Promote;
-        }
     }
 
     /// The promotion's outcome. Only bank 0's own word is a failure: an
@@ -885,24 +715,11 @@ impl Install {
             confirmed: confirmed_version,
             ready: readiness == Some(Readiness::Ready),
         };
-        let wrong = || InstallError::WrongPromotion {
-            reported: status.build.to_ascii_lowercase(),
-        };
-        // A run that never chose a version cannot tell its build confirmed,
-        // so it fails; the bank and the build, which need no version, say
-        // whether it fell back or another build runs.
-        let Some(version) = self.version else {
-            self.stage = Stage::Failed(match confirmation(&self.build, 0, restarted) {
-                Confirmation::FellBack => InstallError::FellBack,
-                Confirmation::WrongBuild => wrong(),
-                Confirmation::Confirmed | Confirmation::Pending => InstallError::PromotionUnknown,
-            });
-            return;
-        };
-
-        self.stage = match confirmation(&self.build, version, restarted) {
+        self.stage = match confirmation(&self.build, self.options.version, restarted) {
             Confirmation::FellBack => Stage::Failed(InstallError::FellBack),
-            Confirmation::WrongBuild => Stage::Failed(wrong()),
+            Confirmation::WrongBuild => Stage::Failed(InstallError::WrongPromotion {
+                reported: status.build.to_ascii_lowercase(),
+            }),
             Confirmation::Confirmed => Stage::Done,
             Confirmation::Pending => return,
         };
@@ -912,10 +729,6 @@ impl Install {
     pub fn gave_up(&mut self) {
         self.stage = match self.stage {
             Stage::Done | Stage::Failed(_) => return,
-            // Unanswered may have enrolled the key; it is never sent again.
-            Stage::Enrolling | Stage::CheckSigners => {
-                Stage::Failed(InstallError::UpdateKeyUncertain)
-            }
             _ => Stage::Failed(InstallError::TimedOut(self.phase())),
         };
     }

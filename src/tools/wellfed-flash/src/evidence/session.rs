@@ -418,11 +418,6 @@ where
     Ok(())
 }
 
-/// A successful ROM inspection of a PLAF103 that identified a pinned SDK ROM.
-pub fn validate_rom_report(context: &Context, path: &Path) -> Result<Vec<u8>> {
-    validate_rom_report_for(context, Model::Plaf103, path)
-}
-
 /// A successful ROM inspection of `model`'s stock console that identified a
 /// pinned SDK ROM. Both models run the same C-cut ROM and helper.
 pub fn validate_rom_report_for(context: &Context, model: Model, path: &Path) -> Result<Vec<u8>> {
@@ -825,7 +820,6 @@ mod tests {
             let valid = |model| validate_rom_report_for(&context, model, &path).is_ok();
             assert_eq!(valid(Model::Plaf103), feeder, "{name}");
             assert_eq!(valid(Model::Plwf106), fountain, "{name}");
-            assert_eq!(validate_rom_report(&context, &path).is_ok(), feeder);
         }
     }
 

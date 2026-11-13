@@ -5,18 +5,18 @@
 use std::net::{SocketAddr, UdpSocket};
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use crate::{Error, Result};
 use wellfed_client::install::SetupFrame;
 
 /// Send one frame to `to` and wait up to `wait` for the feeder's answer,
 /// which is returned as it came. Never resent: stock applies a frame once.
 pub fn send(setup: &SetupFrame, to: SocketAddr, wait: Duration) -> Result<Option<Vec<u8>>> {
     let frame = setup.encode()?;
-    let socket = UdpSocket::bind("0.0.0.0:0").context("open a UDP socket")?;
+    let socket = UdpSocket::bind("0.0.0.0:0").map_err(Error::UdpSocket)?;
     socket.set_read_timeout(Some(wait))?;
     socket
         .send_to(&frame, to)
-        .with_context(|| format!("send the setup frame to {to}"))?;
+        .map_err(|source| Error::FrameSend { to, source })?;
 
     let mut answer = [0; 256];
     match socket.recv_from(&mut answer) {
@@ -29,7 +29,7 @@ pub fn send(setup: &SetupFrame, to: SocketAddr, wait: Duration) -> Result<Option
         {
             Ok(None)
         }
-        Err(error) => Err(error).context("read the feeder's answer"),
+        Err(error) => Err(Error::FrameAnswer(error)),
     }
 }
 

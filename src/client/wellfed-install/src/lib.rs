@@ -19,12 +19,9 @@
 //!   over the platform's radio (giving it the home Wi-Fi), waits for the
 //!   reboot and finds the feeder by discovery or where stock connected
 //!   from; a bench image is paired through the LAN recovery window;
-//! - the promotion is signed by a key the replacement trusts: a manifest
-//!   signed elsewhere, or the build signed here with the owner's update key
-//!   at a version above the feeder's floor, the key enrolled first (a
-//!   Dispense press) when the image does not build it in. The signed
-//!   manifest is kept beside the stock backup, so a resumed run knows the
-//!   version it waits for ([`storage`]).
+//! - the promotion offers a manifest signed elsewhere, by a key the image
+//!   builds in, at a version above the feeder's floor; nothing is enrolled
+//!   for it.
 //!
 //! What the platform owns comes in through [`platform`]'s traits: the
 //! person at the feeder, the Bluetooth radio, discovery, the client key and
@@ -61,7 +58,7 @@ pub use platform::{
     Announcement, Bluetooth, Discovery, Keys, Mdns, PlatformError, Prompter, Report, SetupLink,
 };
 pub use review::Review;
-pub use run::{POLL, Plan, Platform, Signer, Start, Unjoined, run};
+pub use run::{POLL, Plan, Platform, Start, Unjoined, run};
 pub use stock::StockOptions;
 pub use track::{Stop, Stopped, Unsettled};
 /// What stock's server is built from.

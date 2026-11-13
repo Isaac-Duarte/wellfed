@@ -13,7 +13,6 @@
 //! needs.
 
 use std::fmt;
-use std::io::BufRead;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -237,15 +236,10 @@ fn gone(error: &Error) -> bool {
     )
 }
 
-/// The account's password, the first line of standard input.
+/// The account's password: typed at a terminal with no echo, so it stays
+/// out of the scrollback, or piped in by a script.
 fn password() -> Result<String> {
-    eprintln!("Password (standard input):");
-    let mut line = String::new();
-    std::io::stdin()
-        .lock()
-        .read_line(&mut line)
-        .context("read the password")?;
-    Ok(line.trim_end_matches(['\r', '\n']).to_owned())
+    crate::secret("The account's password")
 }
 
 #[cfg(test)]

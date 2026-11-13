@@ -1,7 +1,6 @@
 //! Where a run is, for the report of a stop that ends it: the step, and the
 //! write it sent whose outcome had not settled (the request until the
-//! replacement answers, the update key's enrollment until the run moves on,
-//! the promotion until bank 1 confirms it). That write is uncertain, and none
+//! replacement answers, the promotion until bank 1 confirms it). That write is uncertain, and none
 //! is sent again.
 
 use std::fmt;
@@ -14,9 +13,6 @@ pub enum Unsettled {
     /// Stock's install request, under this id: settled once the
     /// replacement answers its status.
     Request(uuid::Uuid),
-    /// The update key's enrollment, which a press may have admitted after
-    /// its answer was lost: settled once the run moves past it.
-    UpdateKey,
     /// The signed update, pushed from bank 0 into bank 1: settled once
     /// bank 1 confirms it.
     Promotion,
@@ -27,7 +23,6 @@ impl Unsettled {
     fn settled_at(self, phase: Phase) -> bool {
         match self {
             Self::Request(_) => phase > Phase::ReadStatus,
-            Self::UpdateKey => phase > Phase::UpdateKey,
             Self::Promotion => phase > Phase::AwaitConfirm,
         }
     }
@@ -37,7 +32,6 @@ impl fmt::Display for Unsettled {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Request(id) => write!(f, "stock's install request {id}"),
-            Self::UpdateKey => f.write_str("the update key's enrollment"),
             Self::Promotion => f.write_str("the promotion's push"),
         }
     }
@@ -55,9 +49,8 @@ const fn phase_text(phase: Phase) -> &'static str {
         Phase::Join => "waiting for the replacement to join the network after Bluetooth setup",
         Phase::ReadStatus => "reading the replacement's status",
         Phase::CloseTrial => "closing the stock server's record",
-        Phase::UpdateKey => "enrolling the update key",
         Phase::Backup => "reading the stock backup",
-        Phase::Sign => "reading the feeder's floor and signing the promotion",
+        Phase::Floor => "reading the feeder's floor",
         Phase::Promote => "the promotion",
         Phase::AwaitConfirm => "waiting for bank 1 to confirm the promotion",
         Phase::Done => "the end of the run",
@@ -165,19 +158,6 @@ fn unsettled_note(phase: Phase, unsettled: Option<Unsettled>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// The update key's enrollment stays unsettled until the run moves
-    /// past it, so a stop during the press names it.
-    #[test]
-    fn the_enrollment_stays_unsettled_until_the_run_moves_on() {
-        let mut track = Track::new();
-        track.enter(Phase::UpdateKey);
-        track.sent(Unsettled::UpdateKey);
-        track.enter(Phase::UpdateKey);
-        assert_eq!(track.unsettled, Some(Unsettled::UpdateKey));
-        track.enter(Phase::Backup);
-        assert_eq!(track.unsettled, None);
-    }
 
     /// Stopped while stock downloads: the request is out and unsettled,
     /// through pairing, until the replacement answers its status.

@@ -168,6 +168,14 @@ impl<I: SlotIo> TimeStore<I> {
         matches!(self.status, TimeStatus::Empty | TimeStatus::Loaded)
     }
 
+    /// Whether `settings` are what flash holds already, so a writer skips
+    /// the save, sparing the sector a write, and answers with the
+    /// generation it has. Every writer asks this, so none bumps the
+    /// generation for a change of nothing.
+    pub fn unchanged(&self, settings: &TimeSettings) -> bool {
+        *settings == self.settings && self.generation != 0
+    }
+
     /// Store `settings` to the other slot by the torn-write rule; whether
     /// flash now holds them. A save that reports failure reads both units
     /// again, so memory names what flash holds and the

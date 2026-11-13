@@ -1661,7 +1661,7 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
                 Record::TimeError {
                     stage: ErrorStage::Unarmed,
                 }
-            } else if settings == core.time.settings && core.time.generation != 0 {
+            } else if core.time.unchanged(&settings) {
                 Record::TimeSaved {
                     generation: core.time.generation,
                 }

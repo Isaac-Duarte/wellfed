@@ -14,7 +14,9 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{Result, ensure};
+use wellfed_formats::require;
+
+use crate::{ConnectError, Result};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -52,7 +54,10 @@ pub(crate) async fn run(listener: TcpListener, broker: SocketAddr, peers: Peers)
     loop {
         tokio::select! {
             incoming=listener.accept()=> {
-                let (stream,from)=incoming?;
+                let (stream,from)=match incoming {
+                    Ok(incoming)=>incoming,
+                    Err(error)=>{crate::accept_failed(&error).await; continue}
+                };
                 let Ok(permit)=permits.clone().try_acquire_owned() else {continue};
                 let peers=peers.clone();
                 tasks.spawn(async move {
@@ -72,7 +77,9 @@ async fn relay(
     broker: SocketAddr,
     peers: &Peers,
 ) -> Result<()> {
-    let packet = tokio::time::timeout(Duration::from_secs(5), read_connect(&mut device)).await??;
+    let packet = tokio::time::timeout(Duration::from_secs(5), read_connect(&mut device))
+        .await
+        .map_err(|_| ConnectError::TimedOut)??;
     let mut upstream = TcpStream::connect(broker).await?;
     let local = upstream.local_addr()?;
 
@@ -89,19 +96,21 @@ async fn relay(
 }
 
 async fn read_connect(stream: &mut TcpStream) -> Result<Vec<u8>> {
-    ensure!(stream.read_u8().await? == 0x10, "expected CONNECT");
+    require(stream.read_u8().await? == 0x10, || ConnectError::NotConnect)?;
     let mut length = 0_usize;
     let mut complete = false;
     for index in 0..4 {
         let byte = stream.read_u8().await?;
         length |= usize::from(byte & 0x7f) << (7 * index);
-        ensure!(length <= MAX_CONNECT_BYTES, "CONNECT exceeds limit");
+        require(length <= MAX_CONNECT_BYTES, || ConnectError::TooLong {
+            limit: MAX_CONNECT_BYTES,
+        })?;
         if byte & 0x80 == 0 {
             complete = true;
             break;
         }
     }
-    ensure!(complete, "malformed remaining length");
+    require(complete, || ConnectError::Length)?;
 
     let mut body = vec![0; length];
     stream.read_exact(&mut body).await?;
@@ -126,10 +135,10 @@ async fn read_connect(stream: &mut TcpStream) -> Result<Vec<u8>> {
     Ok(packet)
 }
 
-fn normalize_connect(body: Vec<u8>) -> Result<Vec<u8>> {
-    ensure!(body.len() >= 10, "truncated CONNECT");
+fn normalize_connect(body: Vec<u8>) -> Result<Vec<u8>, ConnectError> {
+    require(body.len() >= 10, || ConnectError::Truncated)?;
     if body.starts_with(b"\x00\x06MQIsdp\x03") {
-        ensure!(body.len() >= 12, "truncated MQTT 3.1 header");
+        require(body.len() >= 12, || ConnectError::TruncatedLegacy)?;
         // Stock firmware asks for a persistent 3.1 session. Local feed commands
         // must never wait in that session for a future reconnect. Force a clean
         // 3.1.1 session and preserve keepalive, identity and credentials verbatim.
@@ -138,10 +147,10 @@ fn normalize_connect(body: Vec<u8>) -> Result<Vec<u8>> {
         normalized.extend_from_slice(&body[10..]);
         return Ok(normalized);
     }
-    ensure!(
+    require(
         body.starts_with(b"\x00\x04MQTT") && matches!(body.get(6), Some(4 | 5)),
-        "unsupported CONNECT protocol"
-    );
+        || ConnectError::Protocol,
+    )?;
     Ok(body)
 }
 

@@ -14,7 +14,8 @@
 //!   counting across restarts, as the journal's high water does. A
 //!   reservation that cannot be written faults the owner, as the real one
 //!   faults on storage, and the feed ends refused `Fault`.
-//! - It then "drives" for [`PORTION_MS`] per portion of the loop's time, and
+//! - It then "drives" for [`PORTION_MS`] per portion of the loop's time (or
+//!   what [`SimFeeds::set_portion_ms`] set, up to the feeder's 10 s), and
 //!   its result goes into the journal before its `Fed` event is recorded; a
 //!   result that cannot be written faults the owner and the feed is
 //!   recorded as uncertain. A cancel ends it at the next step with the
@@ -40,10 +41,13 @@
 //! - [`SimFeeds::refuse`] makes the owner refuse every feed `Busy` once its
 //!   claim is taken, as an owner that lost a race does: the refusal after a
 //!   claim the device API and the server must handle.
-//! - [`SimFeeds::hold_write`] holds a storage write on a claim's way, on an
-//!   interlock of its own, as the settings writer does: a feed then waits to
-//!   claim the outputs once a pass, for at most `WRITE_WAIT_MS`, and is
-//!   refused past it, the firmware's claim on the firmware's interlock.
+//! - A feed claims the outputs on the process's `INTERLOCK`, the one the
+//!   platform's `outputs_claimed` and the update stage read, as the
+//!   firmware's does: while it holds them the device API refuses a store
+//!   write `Busy`, and the update stage's write turn waits.
+//! - [`SimFeeds::hold_write`] holds a storage write on a claim's way, as the
+//!   settings writer does: a feed then waits to claim the outputs once a
+//!   pass, for at most `WRITE_WAIT_MS`, and is refused past it.
 //! - The hopper has food until [`SimFeeds::fill`] empties it. Each feed
 //!   reads it as the food beam would, runs whatever it reads (as the
 //!   firmware's and stock's do) and records the reading in its `Fed`
@@ -68,7 +72,7 @@ use wellfed_core_feeder::floor::Floor;
 use wellfed_feeder::trace::DriveFigures;
 use wellfed_fw_feeder::feeding::adapter::{FeedOwner, Feeding, Opening, Runtime};
 use wellfed_fw_feeder::feeding::{PowerCycle, Record};
-use wellfed_hal::interlock::{Interlock, WriteStep, WriteTurn};
+use wellfed_hal::interlock::{INTERLOCK, Interlock, WriteStep, WriteTurn};
 use wellfed_hal::supervision::supervise;
 use wellfed_hal_feeder::owner::{FeedTrace, OwnerFault, OwnerState, OwnerStatus, SubmitResult};
 use wellfed_proto::api::{EventBody, PORTIONS_MAX, TraceSummary};
@@ -76,7 +80,10 @@ use wellfed_proto::api::{EventBody, PORTIONS_MAX, TraceSummary};
 use crate::flash::{Flash, Region};
 use crate::platform::SimSupply;
 
-/// How long one portion takes to drive.
+/// How long one portion takes to drive by default: some 50 times faster
+/// than the feeder's motor, about 10 s a portion, so a test runs quickly.
+/// A test of a client's timing sets the feeder's own
+/// ([`SimFeeds::set_portion_ms`]).
 pub const PORTION_MS: u32 = 200;
 
 /// How often the owner asks to be stepped while a feed runs: the firmware
@@ -106,7 +113,6 @@ impl SimFeeds {
             flash: Rc::clone(flash),
             owner: SimOwner::default(),
             opened: Cell::new(false),
-            interlock: Interlock::new(),
         };
         Self {
             feeding: Feeding::new(runtime),
@@ -167,13 +173,20 @@ impl SimFeeds {
         self.owner().inner.borrow_mut().refusing = refusing;
     }
 
+    /// Drive each portion of the next feeds for `ms` (at least 1), as a
+    /// slower or faster motor would; a feed already driving takes it from
+    /// its next step.
+    pub fn set_portion_ms(&mut self, ms: u32) {
+        self.owner().inner.borrow_mut().portion_ms = ms.max(1);
+    }
+
     /// Hold a storage write in the way of a feed's claim, or end it. A
     /// hold is refused while a feed holds the outputs or a write is held
     /// already, where the firmware's writer would wait.
     pub fn hold_write(&mut self, held: bool) -> Result<(), WriteWaits> {
         let runtime = self.feeding.runtime();
         if !held {
-            runtime.interlock.end_write();
+            INTERLOCK.end_write();
             return Ok(());
         }
 
@@ -183,11 +196,11 @@ impl SimFeeds {
         // later claim back for the boot. The simulator runs on one thread
         // and nothing here begins a food reading, so these two are all that
         // would make it wait (bar held writes, which count no waiter).
-        if runtime.interlock.outputs_claimed() || runtime.interlock.writing() {
+        if INTERLOCK.outputs_claimed() || INTERLOCK.writing() {
             return Err(WriteWaits);
         }
         let now = runtime.owner.now_ms.get();
-        match WriteTurn::new().begin(&runtime.interlock, now, || true) {
+        match WriteTurn::new().begin(&INTERLOCK, now, || true) {
             WriteStep::Go(_) => Ok(()),
             WriteStep::Wait => Err(WriteWaits),
         }
@@ -196,7 +209,7 @@ impl SimFeeds {
     /// Whether the outputs are claimed: a feed's claim was taken and it has
     /// not ended.
     pub fn outputs_claimed(&self) -> bool {
-        self.feeding.runtime().interlock.outputs_claimed()
+        INTERLOCK.outputs_claimed()
     }
 
     /// Step the adapter at `now_ms`: the `Fed` event of a feed that ended,
@@ -215,8 +228,8 @@ impl SimFeeds {
 #[error("the write waits: a feed holds the outputs or another write is held")]
 pub struct WriteWaits;
 
-/// The adapter's runtime in the simulator: the owner below, an interlock
-/// of its own, and nothing of the board's (no trial, no reset storm, no
+/// The adapter's runtime in the simulator: the owner below, the process's
+/// interlock, and nothing of the board's (no trial, no reset storm, no
 /// install lease, no traces).
 #[derive(Debug)]
 pub struct SimRuntime {
@@ -224,7 +237,6 @@ pub struct SimRuntime {
     owner: SimOwner,
     /// The owner has opened on a journal that opened.
     opened: Cell<bool>,
-    interlock: Interlock,
 }
 
 impl Runtime for SimRuntime {
@@ -267,7 +279,7 @@ impl Runtime for SimRuntime {
     }
 
     fn interlock(&self) -> &Interlock {
-        &self.interlock
+        &INTERLOCK
     }
 
     fn now_ms(&self) -> u32 {
@@ -339,6 +351,8 @@ struct Inner {
     refusing: bool,
     /// The fault the next feed ends on, after its first portion.
     inject: Option<FeedReason>,
+    /// How long one portion takes to drive.
+    portion_ms: u32,
     /// The pack against its floor, and whether the adapter was in at the
     /// last step.
     floor: Floor,
@@ -367,6 +381,7 @@ impl Default for Inner {
             stalled: false,
             refusing: false,
             inject: None,
+            portion_ms: PORTION_MS,
             floor: Floor::default(),
             adapter: true,
             hopper: true,
@@ -425,13 +440,14 @@ impl Inner {
         }
         self.stepped_ms = Some(now_ms);
         let portions = self.result.requested;
-        let full = u32::from(portions) * PORTION_MS;
+        let portion_ms = self.portion_ms;
+        let full = u32::from(portions).saturating_mul(portion_ms);
         // A fault comes after a portion's drive and ends the feed there:
         // stopped, never resumed. A feed of one has not reached its mark.
-        let faulted = self.inject.filter(|_| self.driven_ms >= PORTION_MS);
+        let faulted = self.inject.filter(|_| self.driven_ms >= portion_ms);
         if !self.cancelled && faulted.is_none() && self.driven_ms < full {
             let next = if self.inject.is_some() {
-                PORTION_MS
+                portion_ms
             } else {
                 full
             };
@@ -442,7 +458,7 @@ impl Inner {
             self.inject = None;
             (OwnerOutcome::Failed, reason, u16::from(portions > 1))
         } else if self.cancelled {
-            let driven = self.driven_ms.min(full) / PORTION_MS;
+            let driven = self.driven_ms.min(full) / portion_ms;
             let driven = u16::try_from(driven).unwrap_or(portions);
             (OwnerOutcome::Cancelled, FeedReason::Cancelled, driven)
         } else {

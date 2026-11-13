@@ -28,11 +28,22 @@ pub fn local(test: impl Future<Output = ()>) {
     runtime.block_on(LocalSet::new().run_until(test));
 }
 
-/// The update stage's mailbox and the interlock are process-wide statics,
-/// as on the device, so simulators on two threads of one process (`cargo
-/// test` runs tests on threads) would take each other's requests. A thread
-/// starting a simulator holds the process until its last one stops; the
-/// simulators of one thread share the hold, so a test may run two.
+/// The update stage's mailbox and the interlock (`wellfed_hal`'s
+/// `INTERLOCK`, which every simulated feed claims and the platform's
+/// `outputs_claimed` and the update stage read) are process-wide statics,
+/// as on the device, and every simulator boot resets them. Simulators on
+/// two threads of one process (`cargo test` runs tests on threads) would
+/// take each other's requests, so a thread starting a simulator holds the
+/// process until its last one stops.
+///
+/// The simulators of one thread share the hold, so a test of several
+/// feeders may run several, and they share the one interlock: one's feed
+/// holds every one's outputs, so another's store write is refused `Busy`,
+/// and one's boot drops another's live claim or held write. With another
+/// simulator live, a boot that finds the interlock held panics
+/// ([`Alone::booting`]), whichever simulator held it, since the harness
+/// cannot tell; a test that feeds on one simulator while it writes to
+/// another is not one this harness can run faithfully.
 static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
 
 thread_local! {
@@ -57,6 +68,23 @@ impl Alone {
             }
         });
         Self
+    }
+
+    /// Check a simulator's boot, which resets the shared interlock: with
+    /// another simulator live on this thread, the interlock must be idle,
+    /// or the boot would drop that one's feed claim or held write.
+    ///
+    /// # Panics
+    ///
+    /// When another simulator is live and the interlock is held.
+    pub fn booting() {
+        let others = HOLD.with_borrow(|hold| hold.as_ref().map_or(0, |(_, n)| n.saturating_sub(1)));
+        let interlock = &wellfed_hal::interlock::INTERLOCK;
+        assert!(
+            others == 0 || !(interlock.outputs_claimed() || interlock.writing()),
+            "a simulator booted while another one's feed or write held the shared interlock: \
+             the boot would drop it"
+        );
     }
 }
 

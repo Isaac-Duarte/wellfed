@@ -16,7 +16,9 @@
 use std::future::Future;
 use std::net::SocketAddr;
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use tokio::time::Instant;
 
 use wellfed_formats::stock::StockStatus;
 use wellfed_proto::api::PORT;
@@ -82,23 +84,22 @@ pub async fn listen(
             stock_plans: StockPlans::Unknown,
         },
     )
-    .map_err(|error| Error::StockServer(error.into()))?;
+    .map_err(Error::StockServer)?;
 
     let ended = tokio::select! {
         listened = watch(&server, wait, &mut tick) => Ok(listened),
         by = stop => Err(by),
     };
     if matches!(ended, Ok(None)) {
-        let error = match server.finished().await {
-            Ok(()) => "it stopped".to_string(),
-            Err(error) => format!("{error:#}"),
-        };
-        return Err(Error::StockServerFailed(error));
+        return Err(match server.finished().await {
+            Ok(()) => Error::StockServerStopped,
+            Err(error) => Error::StockServerFailed(std::sync::Arc::new(error)),
+        });
     }
     server.stop().await;
 
     match ended {
-        Ok(listened) => listened.ok_or_else(|| Error::StockServerFailed(String::new())),
+        Ok(listened) => listened.ok_or(Error::StockServerStopped),
         Err(by) => Err(Error::Stopped(Stopped {
             by,
             phase: wellfed_client::install::Phase::AwaitInstall,
@@ -461,7 +462,13 @@ mod tests {
         let error = listen(&path, UNCERTAIN_WAIT, |_| {}, std::future::pending())
             .await
             .unwrap_err();
-        assert!(matches!(error, Error::StockServerFailed(_)), "{error:?}");
+        assert!(
+            matches!(
+                error,
+                Error::StockServerFailed(_) | Error::StockServerStopped
+            ),
+            "{error:?}"
+        );
     }
 
     /// A feeder that never comes back leaves it unknown, and a stop ends

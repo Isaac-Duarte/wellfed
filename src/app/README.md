@@ -96,6 +96,8 @@ The pin is compiled in: the digest of the review (which binds the image and its 
 
 A release build's pin goes in the bridge as `RELEASE_PIN`, which the environment cannot override. It is empty until a release image exists, since only the offline release key can sign one. Until then a build with no input says it has no firmware to install.
 
+A bench image carries the build's Wi-Fi and trusts the bench key, so it never goes into a release. `make app-release-apk` refuses an `assets/installer/` that holds anything but a consumer image or nothing, and a release or profile build of the bridge refuses to install a bench image whatever its pin. Install a bench image from a debug APK.
+
 ### What the app keeps
 
 The app keeps three files in its private storage, each `{"version": n, "data": …}` (`rust/src/stored.rs`):

@@ -43,6 +43,7 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::{Instant, timeout, timeout_at};
+pub use wellfed_client::api::Samples;
 use wellfed_client::api::{Invite, Join, JoinStep};
 use wellfed_client::connection::{self, Event, Opened, Recovery as Window};
 pub use wellfed_client::connection::{Cursor, KEEPALIVE_ID, Resume, Timing};
@@ -554,9 +555,9 @@ impl Connection {
 
     /// Ask for the history after `from`, the newest event the caller holds
     /// (`None`: the oldest kept), then each new one, and the live samples
-    /// if `samples`. A cursor from an epoch the feeder no longer has starts
-    /// from the oldest kept: [`Resume::Restarted`].
-    pub async fn subscribe(&mut self, from: Option<Cursor>, samples: bool) -> Result<Resume> {
+    /// if `samples` is on. A cursor from an epoch the feeder no longer has
+    /// starts from the oldest kept: [`Resume::Restarted`].
+    pub async fn subscribe(&mut self, from: Option<Cursor>, samples: Samples) -> Result<Resume> {
         let resume = self.session.subscribe(now(), from, samples)?;
         self.cursor = self.session.cursor();
         while let Some(bytes) = self.session.poll_transmit() {

@@ -33,6 +33,13 @@ pub enum EnvironmentError {
         keys.join(", ")
     )]
     CargoConfig { path: PathBuf, keys: Vec<String> },
+    /// A cargo configuration file that is not TOML, which cargo would refuse
+    /// too, but whose overrides nothing could then rule out.
+    #[error("Cargo configuration {} is not TOML: {source}", path.display())]
+    CargoConfigUnreadable {
+        path: PathBuf,
+        source: toml::de::Error,
+    },
     #[error("rustc selected from the repository does not match rust-toolchain.toml")]
     Channel,
     #[error("rustc printed nothing")]
@@ -58,6 +65,25 @@ const RUST_ENVIRONMENT_PREFIXES: [&str; 2] = ["CARGO_PROFILE_", "CARGO_UNSTABLE_
 /// The board `wellfed-board` builds for, which a firmware build sets from
 /// its device's model, never from the caller.
 pub(crate) const BOARD_VARIABLE: &str = "WELLFED_BOARD";
+/// The update key `wellfed-hal` compiles in, which a build sets from its
+/// provisioning or leaves unset.
+pub(crate) const OTA_KEY_VARIABLE: &str = "WELLFED_OTA_PUBLIC_KEY";
+/// Set, with no meaningful value, exactly when the image has build Wi-Fi
+/// (a bench image with credentials); the feeder runtime reads its presence
+/// (`network::BUILD_WIFI`), and the generated header's presence macro has
+/// the same name.
+pub(crate) const BUILD_WIFI_VARIABLE: &str = "WELLFED_BUILD_WIFI";
+/// Variables every firmware build sets itself: a cargo `[env]` default for
+/// one is replaced, but a forced entry would replace the build's value.
+const ALWAYS_SET: [&str; 4] = [
+    BOARD_VARIABLE,
+    "WELLFED_BUILD_ID",
+    "WELLFED_SDK_DIR",
+    "WELLFED_NEWLIB_INCLUDE",
+];
+/// Variables a firmware build sets only sometimes: any cargo `[env]` entry
+/// for one, forced or not, would supply a value where the build sets none.
+const SOMETIMES_SET: [&str; 2] = [OTA_KEY_VARIABLE, BUILD_WIFI_VARIABLE];
 
 pub(crate) type Environment = BTreeMap<String, String>;
 
@@ -87,13 +113,6 @@ fn target_rustflags(name: &str) -> bool {
         name == format!("CARGO_TARGET_{triple}_RUSTFLAGS")
     })
 }
-static HEADER: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^\[\[?\s*([^\]]+?)\s*\]\]?$").expect("literal pattern"));
-static ASSIGNMENT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^([^=]+?)\s*=").expect("literal pattern"));
-static KEY_PART: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#""[^"]*"|'[^']*'|[^.]+"#).expect("literal pattern"));
-
 /// Environment names that would change the firmware compilation, sorted.
 fn forbidden_variables(environment: &Environment) -> Vec<String> {
     environment
@@ -135,86 +154,93 @@ fn cargo_config_files(root: &Path, environment: &Environment) -> Vec<PathBuf> {
         .collect()
 }
 
-/// Dotted keys that can change firmware codegen or the selected compiler.
+/// Dotted keys that can change firmware codegen, the selected compiler or a
+/// variable the build sets, read with the TOML parser cargo uses.
 ///
-/// A small line-oriented reader: TOML table headers and `key = value` lines.
-/// Inline tables for `build`, `profile`, `target` or `unstable` are refused
-/// whole. Host-only `[target.<host triple>]` settings (such as a host linker)
-/// are allowed.
-fn cargo_config_overrides(text: &str) -> Vec<String> {
-    let mut table = Vec::new();
+/// Host-only `[target.<host triple>]` settings (such as a host linker) are
+/// allowed, as is an unforced `[env]` default for a variable every build
+/// sets (the repository's own board default).
+fn cargo_config_overrides(text: &str) -> std::result::Result<Vec<String>, toml::de::Error> {
+    let config: toml::Table = text.parse()?;
+
     let mut found = Vec::new();
-
-    for raw in text.lines() {
-        let line = raw.split('#').next().unwrap_or("").trim();
-        if line.is_empty() {
-            continue;
-        }
-        if let Some(header) = HEADER.captures(line) {
-            table = keys(&header[1]);
-            continue;
-        }
-        // Anything else is the continuation of a multi-line value.
-        let Some(assignment) = ASSIGNMENT.captures(line) else {
-            continue;
-        };
-
-        let mut key = table.clone();
-        key.extend(keys(&assignment[1]));
-        let end = assignment.get(0).map_or(0, |m| m.end());
-        if forbidden_cargo_key(&key, line[end..].trim_start().starts_with('{')) {
-            found.push(key.join("."));
+    for (head, value) in &config {
+        match head.as_str() {
+            "profile" | "unstable" => leaves(head, value, &mut found),
+            "build" => match value.as_table() {
+                Some(build) => found.extend(
+                    build
+                        .keys()
+                        .filter(|key| BUILD_KEYS.contains(&key.as_str()))
+                        .map(|key| format!("build.{key}")),
+                ),
+                None => found.push(head.clone()),
+            },
+            "target" => {
+                let Some(targets) = value.as_table() else {
+                    found.push(head.clone());
+                    continue;
+                };
+                for (selector, settings) in targets {
+                    let firmware =
+                        selector.starts_with("cfg(") || TARGETS.contains(&selector.as_str());
+                    let rustflags = settings
+                        .as_table()
+                        .is_none_or(|settings| settings.contains_key("rustflags"));
+                    if firmware && rustflags {
+                        found.push(format!("target.{selector}.rustflags"));
+                    }
+                }
+            }
+            "env" => {
+                let Some(variables) = value.as_table() else {
+                    found.push(head.clone());
+                    continue;
+                };
+                found.extend(
+                    variables
+                        .iter()
+                        .filter(|(name, value)| forbidden_env(name, value))
+                        .map(|(name, _)| format!("env.{name}")),
+                );
+            }
+            _ => {}
         }
     }
-    found
+    Ok(found)
 }
 
-fn keys(dotted: &str) -> Vec<String> {
-    KEY_PART
-        .find_iter(dotted)
-        .map(|part| {
-            part.as_str()
-                .trim()
-                .trim_matches(|c| c == '"' || c == '\'')
-                .to_string()
-        })
-        .collect()
-}
+/// The `[build]` keys that choose the compiler or its flags.
+const BUILD_KEYS: [&str; 5] = [
+    "rustflags",
+    "rustc",
+    "rustc-wrapper",
+    "rustc-workspace-wrapper",
+    "incremental",
+];
 
-fn forbidden_cargo_key(key: &[String], inline: bool) -> bool {
-    let head = key.first().map_or("", String::as_str);
-    match head {
-        "profile" | "unstable" => true,
-        "build" => {
-            key.len() == 1
-                || [
-                    "rustflags",
-                    "rustc",
-                    "rustc-wrapper",
-                    "rustc-workspace-wrapper",
-                    "incremental",
-                ]
-                .contains(&key[1].as_str())
+/// Each leaf below `prefix`, dotted.
+fn leaves(prefix: &str, value: &toml::Value, found: &mut Vec<String>) {
+    match value.as_table() {
+        Some(table) if !table.is_empty() => {
+            for (key, value) in table {
+                leaves(&format!("{prefix}.{key}"), value, found);
+            }
         }
-        "target" if key.len() >= 2 => {
-            let selector = &key[1];
-            let firmware = selector.starts_with("cfg(") || TARGETS.contains(&selector.as_str());
-            firmware && ((key.len() == 2 && inline) || (key.len() > 2 && key[2] == "rustflags"))
-        }
-        "target" => inline,
-        // Cargo's `[env]` replaces a variable already set only when forced,
-        // which takes a table (`{ value = …, force = true }` or a
-        // `[env.WELLFED_BOARD]` header). A plain string is a default that
-        // the board the build sets from its device replaces, as the
-        // repository's own `.cargo/config.toml` is. An inline `env` table is
-        // refused whole, since it may hold a forced board.
-        "env" => {
-            key.len() == 1 && inline
-                || key.get(1).is_some_and(|name| name == BOARD_VARIABLE)
-                    && (inline || key.len() > 2)
-        }
-        _ => false,
+        _ => found.push(prefix.to_string()),
     }
+}
+
+/// Whether a cargo `[env]` entry could change a variable the build sets.
+/// Cargo replaces a variable already set only when the entry is forced (a
+/// table with `force = true`); a plain string or an unforced table is a
+/// default.
+fn forbidden_env(name: &str, value: &toml::Value) -> bool {
+    let forced = value
+        .get("force")
+        .and_then(toml::Value::as_bool)
+        .unwrap_or(false);
+    SOMETIMES_SET.contains(&name) || ALWAYS_SET.contains(&name) && forced
 }
 
 /// The cargo environment, refusing output-affecting overrides in it or in
@@ -224,7 +250,12 @@ pub(crate) fn rust_environment(root: &Path, environment: Environment) -> Result<
     require(names.is_empty(), || EnvironmentError::Overrides { names })?;
 
     for path in cargo_config_files(root, &environment) {
-        let keys = cargo_config_overrides(&String::from_utf8_lossy(&fs::read(&path)?));
+        let keys = match cargo_config_overrides(&String::from_utf8_lossy(&fs::read(&path)?)) {
+            Ok(keys) => keys,
+            Err(source) => {
+                return Err(EnvironmentError::CargoConfigUnreadable { path, source }.into());
+            }
+        };
         require(keys.is_empty(), || EnvironmentError::CargoConfig {
             path,
             keys,
@@ -329,20 +360,23 @@ mod tests {
 
     #[test]
     fn cargo_configuration_overrides() {
+        let overrides = |text: &str| cargo_config_overrides(text).unwrap();
         let allowed = "# [build]\n# rustc-wrapper = \"sccache\"\n[target.x86_64-unknown-linux-gnu]\n\
                        linker = \"clang\"\nrustflags = [\"-Clink-arg=--ld-path=mold\"]\n[build]\njobs = 4\n\
                        [target.'thumbv8m.main-none-eabihf']\nrunner = \"probe\"\n";
-        assert!(cargo_config_overrides(allowed).is_empty());
-        // An unforced board default, as the repository's own configuration
-        // sets, never replaces the one the build sets.
+        assert!(overrides(allowed).is_empty());
+        // An unforced default for a variable every build sets, as the
+        // repository's own configuration sets the board, never replaces the
+        // one the build sets.
         assert!(
-            cargo_config_overrides(
-                "[env]\nWELLFED_BOARD = \"plaf103\"\nOTHER = { value = \"x\" }\n"
+            overrides(
+                "[env]\nWELLFED_BOARD = \"plaf103\"\nWELLFED_BUILD_ID = { value = \"x\" }\n\
+                 OTHER = { value = \"x\", force = true }\n"
             )
             .is_empty()
         );
         let repository = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../.cargo/config.toml");
-        assert!(cargo_config_overrides(&fs::read_to_string(repository).unwrap()).is_empty());
+        assert!(overrides(&fs::read_to_string(repository).unwrap()).is_empty());
 
         for (text, key) in [
             (
@@ -350,7 +384,7 @@ mod tests {
                 "build.rustflags",
             ),
             ("build.rustc-wrapper = \"sccache\"\n", "build.rustc-wrapper"),
-            ("build = { rustflags = [\"x\"] }\n", "build"),
+            ("build = { rustflags = [\"x\"] }\n", "build.rustflags"),
             (
                 "[profile.firmware]\nopt-level = 0\n",
                 "profile.firmware.opt-level",
@@ -363,22 +397,55 @@ mod tests {
                 "[target.'cfg(target_os = \"none\")']\nrustflags = [\"x\"]\n",
                 "target.cfg(target_os = \"none\").rustflags",
             ),
+            (
+                "target = { 'thumbv8m.main-none-eabihf' = { rustflags = [\"x\"] } }\n",
+                "target.thumbv8m.main-none-eabihf.rustflags",
+            ),
             ("[unstable]\nbuild-std = [\"core\"]\n", "unstable.build-std"),
             (
                 "[env]\nWELLFED_BOARD = { value = \"plwf106\", force = true }\n",
                 "env.WELLFED_BOARD",
             ),
             (
-                "[env.WELLFED_BOARD]\nvalue = \"plwf106\"\n",
-                "env.WELLFED_BOARD.value",
+                "[env.WELLFED_BOARD]\nvalue = \"plwf106\"\nforce = true\n",
+                "env.WELLFED_BOARD",
             ),
             (
                 "env = { WELLFED_BOARD = { value = \"plwf106\", force = true } }\n",
-                "env",
+                "env.WELLFED_BOARD",
             ),
+            (
+                "[env]\n\"WELLFED_BUILD_ID\" = { value = \"x\", force = true }\n",
+                "env.WELLFED_BUILD_ID",
+            ),
+            (
+                "[env]\nWELLFED_SDK_DIR = { value = \"/x\", force = true, relative = false }\n",
+                "env.WELLFED_SDK_DIR",
+            ),
+            // The update key and the build Wi-Fi flag are refused even as a
+            // default: a build that sets neither would take the default.
+            (
+                "[env]\nWELLFED_OTA_PUBLIC_KEY = { value = \"k2\", force = true }\n",
+                "env.WELLFED_OTA_PUBLIC_KEY",
+            ),
+            (
+                "[env.WELLFED_OTA_PUBLIC_KEY]\nvalue = \"k2\"\nforce = true\n",
+                "env.WELLFED_OTA_PUBLIC_KEY",
+            ),
+            (
+                "[env]\nWELLFED_OTA_PUBLIC_KEY = \"k2\"\n",
+                "env.WELLFED_OTA_PUBLIC_KEY",
+            ),
+            (
+                "[env]\nWELLFED_BUILD_WIFI = \"1\"\n",
+                "env.WELLFED_BUILD_WIFI",
+            ),
+            ("env = \"x\"\n", "env"),
         ] {
-            assert_eq!(cargo_config_overrides(text), [key], "{text}");
+            assert_eq!(overrides(text), [key], "{text}");
         }
+
+        assert!(cargo_config_overrides("[env\nx = 1\n").is_err());
     }
 
     #[test]

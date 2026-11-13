@@ -136,6 +136,12 @@ enum Command {
         #[arg(long)]
         manifest: PathBuf,
     },
+    /// Refuse an app installer folder a release APK must not carry: only no
+    /// image, or a consumer image, goes into a release.
+    ReleaseInstaller {
+        #[arg(long)]
+        folder: PathBuf,
+    },
     /// Sign a downgrade statement: the feeder with this identity key may
     /// install this version 2 manifest while its floor is `floor`. Stock
     /// always needs one, as does any version at or below the floor.
@@ -371,6 +377,9 @@ fn run(command: Command) -> Result<()> {
         Command::InstallerCheck { review, manifest } => {
             let frozen = Frozen::open(&repo.root, &repo.root.join(review))?;
             frozen.require_installable(&std::fs::read(repo.root.join(manifest))?)?;
+        }
+        Command::ReleaseInstaller { folder } => {
+            wellfed_build::review::require_release_installer(&repo.root.join(folder))?;
         }
         Command::Downgrade {
             key,

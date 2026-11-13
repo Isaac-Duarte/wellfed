@@ -7,6 +7,7 @@
 //! [`crate::UNKNOWN`] for one that may have run or whose end is not known.
 
 use std::time::Duration;
+use wellfed_connect::Samples;
 
 use anyhow::{Result, bail};
 use clap::Args;
@@ -51,7 +52,9 @@ pub(crate) async fn feed(connection: &mut Connection, portions: u8) -> Result<()
         bail!("the feeder did not answer with its status");
     };
     // Only events after this one can be the feed's.
-    connection.subscribe(status.last_event, false).await?;
+    connection
+        .subscribe(status.last_event, Samples::Off)
+        .await?;
 
     let answer = connection.ask(&Op::Feed { portions }).await?;
     let printed = print_json(&answer);

@@ -234,6 +234,11 @@ impl Serving {
     fn start_write(&self) {
         let root = self.root();
         fs::write(root.join("private/verification/u1-plan.json"), "{}").unwrap();
+        fs::write(
+            root.join("private/verification/u1-power.json"),
+            r#"{"power_cuts":null}"#,
+        )
+        .unwrap();
         let words = [
             "flash-execute",
             "u1",

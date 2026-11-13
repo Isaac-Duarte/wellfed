@@ -5293,6 +5293,7 @@ dependencies = [
  "wellfed-emu",
  "wellfed-formats",
  "wellfed-image",
+ "wellfed-install",
  "wellfed-proto",
  "wellfed-session",
  "wellfed-signed",
@@ -6009,7 +6010,6 @@ dependencies = [
 name = "wellfed-stock"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "axum",
  "chrono",
  "chrono-tz",

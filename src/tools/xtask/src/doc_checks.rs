@@ -534,16 +534,24 @@ fn check_wording(name: &str, lines: &[Line<'_>], today: Date, errors: &mut Vec<S
             )) {
                 continue;
             }
-            if let Some(date) = until_date(&capture, today.0)
-                && date < today
-            {
-                errors.push(format!("{name}:{number}: \"{}\" has passed", &capture[0]));
+            // A date without its year cannot be dated: read as this year, a
+            // December "until January 5" would be refused at once, and a
+            // passed one would stop being refused each January.
+            match until_date(&capture) {
+                None => errors.push(format!(
+                    "{name}:{number}: \"{}\" names no year; write one",
+                    &capture[0]
+                )),
+                Some(date) if date < today => {
+                    errors.push(format!("{name}:{number}: \"{}\" has passed", &capture[0]));
+                }
+                Some(_) => {}
             }
         }
     }
 }
 
-fn until_date(capture: &regex::Captures<'_>, this_year: i64) -> Option<Date> {
+fn until_date(capture: &regex::Captures<'_>) -> Option<Date> {
     const MONTHS: [&str; 12] = [
         "January",
         "February",
@@ -561,9 +569,7 @@ fn until_date(capture: &regex::Captures<'_>, this_year: i64) -> Option<Date> {
     let month = MONTHS.iter().position(|month| *month == &capture[1])?;
     let month = u32::try_from(month).ok()? + 1;
     let day = capture[2].parse().ok()?;
-    let year = capture
-        .get(3)
-        .map_or(Some(this_year), |year| year.as_str().parse().ok())?;
+    let year = capture.get(3)?.as_str().parse().ok()?;
     Some((year, month, day))
 }
 
@@ -927,8 +933,16 @@ mod tests {
             wording("docs/page.md", "Good until March 3, 2026.\n").len(),
             1
         );
-        assert!(wording("docs/page.md", "Good until November 3.\n").is_empty());
+        assert!(wording("docs/page.md", "Good until November 3, 2026.\n").is_empty());
         assert!(wording("docs/page.md", "Good until March 3, 2027.\n").is_empty());
+        // Yearless, it is refused whether it would read as passed or not.
+        for text in ["Good until November 3.\n", "Good until January 5.\n"] {
+            let errors = wording("docs/page.md", text);
+            assert!(
+                errors.len() == 1 && errors[0].contains("names no year"),
+                "{errors:?}"
+            );
+        }
         assert!(wording("AGENTS.md", "Only until October 26, this.\n").is_empty());
     }
 

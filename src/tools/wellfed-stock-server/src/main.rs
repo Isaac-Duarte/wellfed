@@ -12,7 +12,7 @@
 
 use std::{path::PathBuf, time::Duration};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use reqwest::Method;
 use serde::Serialize;
@@ -288,20 +288,6 @@ fn bench_lease(config: &std::path::Path) -> Result<Lease> {
 }
 
 async fn serve(path: PathBuf, enroll_minutes: Option<u64>) -> Result<()> {
-    // Stock replaces its stored table with whatever a plan reply carries, an
-    // empty list included, as soon as it connects. The library still replays
-    // a snapshot; this command never starts on one.
-    let state =
-        wellfed_stock::config::state(&path).with_context(|| format!("read {}", path.display()))?;
-    if let wellfed_stock::config::State::Device(config) = &state
-        && config.plans.is_some()
-    {
-        bail!(
-            "{} holds a plan snapshot, which this server would send stock in place of its own plans; nothing was started. Use an installer's config (wellfed-stock init-installer), or remove the `plans` key",
-            path.display()
-        );
-    }
-
     let path = path.canonicalize()?;
     let mut server = Server::start(
         &path,
@@ -317,7 +303,7 @@ async fn serve(path: PathBuf, enroll_minutes: Option<u64>) -> Result<()> {
     // A SIGTERM (kill, timeout) must stop the broker too, through the same
     // stop as Ctrl-C.
     let outcome: Result<()> = tokio::select! {
-        result = server.finished() => result,
+        result = server.finished() => result.map_err(anyhow::Error::from),
         result = tokio::signal::ctrl_c() => result.context("shutdown signal failed"),
         result = terminated() => result.context("shutdown signal failed"),
     };
@@ -352,13 +338,27 @@ async fn api_request(
 
     let response = request.send().await?;
     let status = response.status();
-    let body: serde_json::Value = response.json().await?;
-    println!("{}", serde_json::to_string_pretty(&body)?);
-    if !status.is_success() {
-        bail!("local API returned {status}");
-    }
+    let text = response.text().await?;
+    let (shown, result) = answered(status, &text);
+    println!("{shown}");
+    result
+}
 
-    Ok(())
+/// What a command prints of the local API's answer, and whether it failed.
+/// The status is judged before the body is read as JSON, so an error body
+/// that is not JSON (a route an older server lacks, a refused extractor)
+/// still names the status, and is printed as it came.
+fn answered(status: reqwest::StatusCode, text: &str) -> (String, Result<()>) {
+    let shown = serde_json::from_str::<serde_json::Value>(text)
+        .ok()
+        .and_then(|body| serde_json::to_string_pretty(&body).ok())
+        .unwrap_or_else(|| text.to_owned());
+    let result = if status.is_success() {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("local API returned {status}"))
+    };
+    (shown, result)
 }
 
 #[cfg(test)]
@@ -369,13 +369,25 @@ mod tests {
 
     use super::{Action, Cli, INSTALLER_CONFIG};
 
+    /// An error answer that is not JSON still names its status.
+    #[test]
+    fn a_non_json_error_names_its_status() {
+        let (shown, result) = super::answered(reqwest::StatusCode::NOT_FOUND, "");
+        assert_eq!(shown, "");
+        assert!(result.unwrap_err().to_string().contains("404"));
+
+        let (shown, result) = super::answered(reqwest::StatusCode::OK, "{\"a\":1}");
+        assert_eq!(shown, "{\n  \"a\": 1\n}");
+        assert!(result.is_ok());
+    }
+
     #[test]
     fn the_command_line_is_well_formed() {
         Cli::command().debug_assert();
     }
 
-    /// Every command reads the same ledger, and never a captured file with a
-    /// plan snapshot.
+    /// Every command reads the same ledger: the installer's config unless
+    /// told otherwise.
     #[test]
     fn every_command_defaults_to_the_installers_config() {
         let id = "00000000-0000-0000-0000-000000000000";

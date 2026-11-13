@@ -33,9 +33,6 @@ struct Ack<'a> {
     link_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     msg_id: Option<&'a str>,
-    /// The imported snapshot, replayed verbatim.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    plans: Option<&'a [Value]>,
     ts: i64,
 }
 
@@ -66,14 +63,13 @@ pub fn reply(
         exec_step: None,
         link_id: link_id(),
         msg_id: msg.msg_id.as_deref(),
-        plans: None,
         ts: now.timestamp_millis(),
     };
     let topic = channel.sub_topic(config);
 
     match (channel, msg.cmd.as_str()) {
         (Channel::Ntp, "NTP") => {
-            let calibration = clock::calibration(config.plans.as_deref(), stock_plans, msg.ts, now);
+            let calibration = clock::calibration(stock_plans, msg.ts, now);
             let ntp = ntp_response(config.timezone, now, calibration.tag());
             return Some(Reply::new(topic, &ntp));
         }
@@ -99,10 +95,10 @@ pub fn reply(
         }
 
         // Stock erases and rewrites its plan table on any reply with a
-        // `plans` key (and takes one unasked), so only a captured table is
-        // sent. With none, the request goes unanswered and stock keeps its
-        // own; it asks once, without retrying (static analysis of 1.1.15).
-        (Channel::Event, "GET_FEEDING_PLAN_EVENT") => ack.plans = Some(config.plans.as_deref()?),
+        // `plans` key (and takes one unasked), so its plan request goes
+        // unanswered and stock keeps its own; it asks once, without retrying
+        // (static analysis of 1.1.15).
+        (Channel::Event, "GET_FEEDING_PLAN_EVENT") => return None,
         (Channel::Event, "GRAIN_OUTPUT_EVENT") => ack.exec_step = msg.fields.get("execStep"),
         (
             Channel::Event,

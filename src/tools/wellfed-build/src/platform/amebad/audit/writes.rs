@@ -21,7 +21,7 @@ use regex::Regex;
 use wellfed_formats::audit::{CoreWrites, WritesAudit};
 use wellfed_proto::device::Model;
 
-use super::{Binutils, HEADING, elf, index, parse_hex, tool, word};
+use super::{Binutils, HEADING, code_sections, elf, index, parse_hex, tool, word};
 use crate::platform::amebad::Core;
 use crate::{Result, digest};
 use wellfed_formats::require;
@@ -46,6 +46,10 @@ pub enum WritesError {
     Unreviewed {
         references: BTreeMap<String, Vec<String>>,
     },
+    /// A code section the core's rules do not scan, so a reference from it
+    /// would go unseen.
+    #[error("Code section {section} is not one the writes audit scans")]
+    Unscanned { section: String },
     #[error("Pinned flash/eFuse reference changed: {target}: found {found:?}, pinned {pinned:?}")]
     Changed {
         target: String,
@@ -550,20 +554,45 @@ fn is_ours(caller: &str) -> bool {
 
 fn audit_core(elf: &Path, objdump: &Path, core: &Rules) -> Result<CoreWrites> {
     let names = table(elf, objdump)?;
-    let linked: Vec<&str> = {
-        let mut linked: Vec<&str> = core
-            .absent
-            .iter()
-            .filter(|n| names.contains_key(**n))
-            .copied()
-            .collect();
-        linked.sort();
-        linked
-    };
+    let symbols: BTreeSet<&str> = names.keys().map(String::as_str).collect();
+    check_linked(&symbols, core)?;
+    let code = code_sections(&tool(objdump, &["-h"], elf)?);
+    if let Some(section) = code.iter().find(|s| !core.sections.contains(&s.as_str())) {
+        return Err(WritesError::Unscanned {
+            section: section.clone(),
+        }
+        .into());
+    }
+
+    let targets = write_targets(&symbols, core);
+    let found = references(elf, objdump, &names, &targets, core.sections)?;
+    check_references(&symbols, &found, core)?;
+
+    let references = found
+        .into_iter()
+        .filter(|(_, callers)| !callers.is_empty())
+        .collect();
+    Ok(CoreWrites {
+        elf_sha256: digest(elf)?,
+        absent: core.absent.iter().map(|name| (*name).to_string()).collect(),
+        write_targets: targets,
+        references,
+    })
+}
+
+/// Refuse an image that links a forbidden writer, or that has or lacks the
+/// WLAN firmware entry against the core's rule.
+fn check_linked(symbols: &BTreeSet<&str>, core: &Rules) -> Result<()> {
+    let linked: Vec<&'static str> = core
+        .absent
+        .iter()
+        .filter(|name| symbols.contains(**name))
+        .copied()
+        .collect();
     require(linked.is_empty(), || WritesError::Forbidden {
-        names: linked,
+        names: linked.clone(),
     })?;
-    require(names.contains_key(core.required) == core.present, || {
+    require(symbols.contains(core.required) == core.present, || {
         if core.present {
             WritesError::Missing {
                 name: core.required,
@@ -574,18 +603,31 @@ fn audit_core(elf: &Path, objdump: &Path, core: &Rules) -> Result<CoreWrites> {
             }
         }
     })?;
+    Ok(())
+}
 
+/// The write entries and pinned intermediates the image links.
+fn write_targets(symbols: &BTreeSet<&str>, core: &Rules) -> Vec<String> {
+    symbols
+        .iter()
+        .filter(|name| WRITES.is_match(name) || core.expected.iter().any(|(t, _)| t == *name))
+        .map(|name| (*name).to_string())
+        .collect()
+}
+
+/// Refuse references to write entries the core's pins do not name: a
+/// caller of ours where the model writes no flash, any caller outside the
+/// pins, and a pinned target whose callers changed.
+fn check_references(
+    symbols: &BTreeSet<&str>,
+    found: &BTreeMap<String, BTreeSet<String>>,
+    core: &Rules,
+) -> Result<()> {
     let expected: BTreeMap<&str, BTreeSet<String>> = core
         .expected
         .iter()
         .map(|(target, callers)| (*target, callers.iter().map(|c| c.to_string()).collect()))
         .collect();
-    let targets: Vec<String> = names
-        .keys()
-        .filter(|name| WRITES.is_match(name) || expected.contains_key(name.as_str()))
-        .cloned()
-        .collect();
-    let found = references(elf, objdump, &names, &targets, core.sections)?;
 
     if core.ours == Ours::Never {
         let ours: BTreeMap<String, Vec<String>> = found
@@ -600,28 +642,24 @@ fn audit_core(elf: &Path, objdump: &Path, core: &Rules) -> Result<CoreWrites> {
     }
 
     let empty = BTreeSet::new();
-    let unexpected: BTreeMap<&String, Vec<&String>> = found
+    let unexpected: BTreeMap<String, Vec<String>> = found
         .iter()
         .map(|(target, callers)| {
             let pinned = expected.get(target.as_str()).unwrap_or(&empty);
-            (target, callers.difference(pinned).collect::<Vec<_>>())
+            (
+                target.clone(),
+                callers.difference(pinned).cloned().collect::<Vec<_>>(),
+            )
         })
         .filter(|(_, extra)| !extra.is_empty())
         .collect();
     require(unexpected.is_empty(), || WritesError::Unreviewed {
-        references: unexpected
-            .iter()
-            .map(|(target, callers)| {
-                (
-                    (*target).clone(),
-                    callers.iter().map(|c| (*c).clone()).collect(),
-                )
-            })
-            .collect(),
+        references: unexpected,
     })?;
+
     for (target, callers) in &expected {
         let actual = found.get(*target);
-        if names.contains_key(*target) && actual != Some(callers) {
+        if symbols.contains(*target) && actual != Some(callers) {
             return Err(WritesError::Changed {
                 target: (*target).into(),
                 found: actual.cloned(),
@@ -630,17 +668,7 @@ fn audit_core(elf: &Path, objdump: &Path, core: &Rules) -> Result<CoreWrites> {
             .into());
         }
     }
-
-    let references = found
-        .into_iter()
-        .filter(|(_, callers)| !callers.is_empty())
-        .collect();
-    Ok(CoreWrites {
-        elf_sha256: digest(elf)?,
-        absent: core.absent.iter().map(|name| (*name).to_string()).collect(),
-        write_targets: targets,
-        references,
-    })
+    Ok(())
 }
 
 pub(crate) fn audit(sdk: &Path, binutils: &Binutils, model: Model) -> Result<WritesAudit> {
@@ -693,6 +721,119 @@ pub(crate) fn audit(sdk: &Path, binutils: &Binutils, model: Model) -> Result<Wri
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Error;
+
+    fn hp(ours: Ours) -> Rules {
+        Rules {
+            absent: ABSENT.to_vec(),
+            expected: EXPECTED_HP,
+            sections: &[],
+            required: "wifi_FW_init_ram",
+            present: false,
+            ours,
+        }
+    }
+
+    /// The KM4 references exactly as pinned.
+    fn pinned() -> BTreeMap<String, BTreeSet<String>> {
+        EXPECTED_HP
+            .iter()
+            .map(|(target, callers)| {
+                (
+                    (*target).to_string(),
+                    callers.iter().map(|c| (*c).to_string()).collect(),
+                )
+            })
+            .collect()
+    }
+
+    fn symbols(found: &BTreeMap<String, BTreeSet<String>>) -> BTreeSet<&str> {
+        found.keys().map(String::as_str).collect()
+    }
+
+    fn refused(result: Result<()>) -> WritesError {
+        match result {
+            Err(Error::Writes(error)) => error,
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_pinned_references_pass() {
+        let found = pinned();
+        check_linked(&symbols(&found), &hp(Ours::Pinned)).unwrap();
+        check_references(&symbols(&found), &found, &hp(Ours::Pinned)).unwrap();
+    }
+
+    /// A linked writer the image must never carry, or the WLAN firmware on
+    /// the core that must not link it, is refused.
+    #[test]
+    fn a_forbidden_or_unexpected_writer_is_refused() {
+        let found = pinned();
+        let mut linked = symbols(&found);
+        linked.insert("flash_stream_write");
+        assert!(matches!(
+            refused(check_linked(&linked, &hp(Ours::Pinned))),
+            WritesError::Forbidden { names } if names == ["flash_stream_write"]
+        ));
+
+        let mut linked = symbols(&found);
+        linked.insert("wifi_FW_init_ram");
+        assert!(matches!(
+            refused(check_linked(&linked, &hp(Ours::Pinned))),
+            WritesError::Unexpected {
+                name: "wifi_FW_init_ram"
+            }
+        ));
+    }
+
+    /// A caller outside the pins, of ours or the SDK's, is refused, and so
+    /// is a pinned caller that went missing.
+    #[test]
+    fn an_unreviewed_or_changed_reference_is_refused() {
+        let mut found = pinned();
+        found
+            .entry("FLASH_EraseXIP".into())
+            .or_default()
+            .insert("wellfed_new_writer".into());
+        let error = refused(check_references(
+            &symbols(&found),
+            &found,
+            &hp(Ours::Pinned),
+        ));
+        assert!(
+            matches!(&error, WritesError::Unreviewed { references } if references["FLASH_EraseXIP"] == ["wellfed_new_writer"]),
+            "{error:?}"
+        );
+
+        let mut found = pinned();
+        found.get_mut("FLASH_Erase").unwrap().remove("cmd_flash");
+        let error = refused(check_references(
+            &symbols(&found),
+            &found,
+            &hp(Ours::Pinned),
+        ));
+        assert!(
+            matches!(&error, WritesError::Changed { target, .. } if target == "FLASH_Erase"),
+            "{error:?}"
+        );
+    }
+
+    /// Where the model writes no flash, any reference from code of ours is
+    /// refused, even one a pin would name.
+    #[test]
+    fn a_reference_of_ours_is_refused_where_nothing_may_write() {
+        let mut found = pinned();
+        found
+            .entry("FLASH_EraseXIP".into())
+            .or_default()
+            .insert("wellfed_trial_program".into());
+        let error = refused(check_references(&symbols(&found), &found, &hp(Ours::Never)));
+        assert!(
+            matches!(&error, WritesError::Ours { references } if references.contains_key("FLASH_EraseXIP")),
+            "{error:?}"
+        );
+    }
 
     #[test]
     fn conditional_calls_are_references() {

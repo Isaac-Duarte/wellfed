@@ -13260,8 +13260,7 @@ impl SseDecode for crate::api::install::UncertainWrite {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut inner = <i32>::sse_decode(deserializer);
         return match inner {
-            0 => crate::api::install::UncertainWrite::UpdateKey,
-            1 => crate::api::install::UncertainWrite::Promotion,
+            0 => crate::api::install::UncertainWrite::Promotion,
             _ => unreachable!("Invalid variant for UncertainWrite: {}", inner),
         };
     }
@@ -19262,8 +19261,7 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::restore::UncertainWhy>
 impl flutter_rust_bridge::IntoDart for crate::api::install::UncertainWrite {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
-            Self::UpdateKey => 0.into_dart(),
-            Self::Promotion => 1.into_dart(),
+            Self::Promotion => 0.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -24781,8 +24779,7 @@ impl SseEncode for crate::api::install::UncertainWrite {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i32>::sse_encode(
             match self {
-                crate::api::install::UncertainWrite::UpdateKey => 0,
-                crate::api::install::UncertainWrite::Promotion => 1,
+                crate::api::install::UncertainWrite::Promotion => 0,
                 _ => {
                     unimplemented!("");
                 }

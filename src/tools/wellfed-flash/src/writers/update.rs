@@ -521,6 +521,9 @@ pub fn run_for(context: &Context, model: Model, args: &Args) -> Result<Outcome> 
         });
     }
 
+    // The plan just recomputed from the bindings and the fresh inspection
+    // must be the reviewed file, under its hash: nothing else reaches the
+    // serial port.
     let raw = session::reviewed_plan(
         &context.root,
         args.evidence.plan.as_deref(),

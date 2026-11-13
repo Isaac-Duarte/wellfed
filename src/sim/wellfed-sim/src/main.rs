@@ -806,6 +806,12 @@ fn submit(id: u64, portions: u16) -> Submission {
             ClaimStep::Wait => {
                 for _ in 0..CLAIM_PASS_MS {
                     tick();
+                    // A reset while the claim waits ends this boot, as
+                    // `run` stops on it: no feed reaches the owner. The
+                    // harness reboots on it and records no submission.
+                    if watchdog_reset() {
+                        return Submission::RejectHeld;
+                    }
                     changes();
                 }
             }

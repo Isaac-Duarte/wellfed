@@ -232,8 +232,6 @@ pub enum InstallAnswer {
 /// again.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UncertainWrite {
-    /// The update key's enrollment.
-    UpdateKey,
     /// The signed update, pushed into bank 1.
     Promotion,
 }

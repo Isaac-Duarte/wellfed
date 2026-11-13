@@ -116,7 +116,7 @@ impl Deref for Scenario {
 impl Scenario {
     /// The catalog's entry for `name`: a name the catalog lacks fails the
     /// build, so every scenario here is one `--list` shows.
-    const fn new(name: &str, run: fn(&mut Ctx) -> Result<()>) -> Self {
+    pub(super) const fn new(name: &str, run: fn(&mut Ctx) -> Result<()>) -> Self {
         let mut i = 0;
         while i < catalog::SCENARIOS.len() {
             if same(catalog::SCENARIOS[i].name, name) {
@@ -312,20 +312,13 @@ pub(super) fn changes_to(settings: &FeederSettings) -> FeederSettingsPatch {
     }
 }
 
-/// Whether `settings` hold every field `change` sets.
+/// Whether `settings` hold every field `change` sets: applying the change,
+/// as the feeder applies a patch, leaves them as they are. Every field the
+/// patch carries is compared, the meal reminder among them.
 fn shows(settings: &FeederSettings, change: FeederSettingsPatch) -> bool {
-    change.lights.is_none_or(|on| settings.lights == on)
-        && change.sound.is_none_or(|on| settings.sound == on)
-        && change.volume.is_none_or(|volume| settings.volume == volume)
-        && change
-            .lights_window
-            .is_none_or(|window| settings.lights_window == window)
-        && change
-            .sound_window
-            .is_none_or(|window| settings.sound_window == window)
-        && change
-            .desiccant_days
-            .is_none_or(|days| settings.desiccant_days == days)
+    let mut changed = *settings;
+    changed.apply(change);
+    changed == *settings
 }
 
 /// Change settings against the generation just read, see the writer save a
@@ -668,12 +661,23 @@ pub(super) fn is_start(event: &Event<'_>) -> bool {
 }
 
 fn ota_power_cuts(ctx: &mut Ctx) -> Result<()> {
-    update_power_cuts(ctx, "cut")
+    update_power_cuts(ctx, "cut", AfterFailedCut::Recover)
+}
+
+/// What the power cuts do when a cut did not end as it should.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum AfterFailedCut {
+    /// Cold-boot the feeder and put the baseline back before failing, so the
+    /// next scenario starts from it.
+    Recover,
+    /// Fail at once: `sustained` halts on any failure, cutting relay 1, and
+    /// powers nothing it can no longer account for.
+    Halt,
 }
 
 /// The two update power cuts, signing their images under `label`-twin and
 /// `label`-restore: `sustained` runs them more than once.
-pub(super) fn update_power_cuts(ctx: &mut Ctx, label: &str) -> Result<()> {
+pub(super) fn update_power_cuts(ctx: &mut Ctx, label: &str, failed: AfterFailedCut) -> Result<()> {
     let build = ctx.baseline()?.build.clone();
     // The feeder skips the trial for a build it has confirmed before, so the
     // cuts happen while it installs the feeder's twin (the same firmware
@@ -689,6 +693,10 @@ pub(super) fn update_power_cuts(ctx: &mut Ctx, label: &str) -> Result<()> {
     let restore = ctx.resign(&format!("{label}-restore"))?;
 
     let result = power_cuts(ctx, &twin);
+    if result.is_err() && failed == AfterFailedCut::Halt {
+        ctx.note("  A cut failed: halting before any recovery install; bank 1 may hold the twin");
+        return result;
+    }
     let since = ctx.mark()?;
     if result.is_err() {
         ctx.note("  Cold-booting, whatever stage it stopped in, then pushing the baseline");
@@ -821,4 +829,41 @@ pub(super) fn restore_state(ctx: &mut Ctx, want: &DeviceState, now: &DeviceState
         ));
     }
     changed
+}
+
+#[cfg(test)]
+mod shows_tests {
+    use wellfed_model::{FeederSettings, FeederSettingsPatch, Generation, MealReminder, Window};
+
+    use super::shows;
+
+    /// A settings read that misses a changed meal reminder is not taken as
+    /// showing the change.
+    #[test]
+    fn a_read_must_show_the_meal_reminder_it_was_changed_to() {
+        let settings = FeederSettings {
+            generation: Some(Generation(3)),
+            lights: true,
+            sound: true,
+            volume: 50,
+            lights_window: Window::default(),
+            sound_window: Window::default(),
+            desiccant_days: 30,
+            desiccant_replaced: None,
+            meal_reminder: MealReminder::Off,
+            writable: true,
+        };
+        let change = FeederSettingsPatch {
+            volume: Some(50),
+            meal_reminder: Some(MealReminder::Before { minutes: 10 }),
+            ..FeederSettingsPatch::default()
+        };
+        assert!(!shows(&settings, change));
+
+        let landed = FeederSettings {
+            meal_reminder: MealReminder::Before { minutes: 10 },
+            ..settings
+        };
+        assert!(shows(&landed, change));
+    }
 }

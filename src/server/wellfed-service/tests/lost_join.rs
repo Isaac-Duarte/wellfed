@@ -10,7 +10,7 @@ use std::time::Duration;
 use wellfed_api::{AdoptFeeder, ClientRole, Connection as Link, Model};
 use wellfed_mirror::Invite;
 use wellfed_model::{Answer, Op};
-use wellfed_server_testkit::feeder::{self, Relay, Running, invite, open_owner};
+use wellfed_server_testkit::feeder::{self, Control, Relay, Running, invite, open_owner};
 use wellfed_server_testkit::{TestService, WAIT, ada, config, local, until};
 use wellfed_service::{Caller, Error, FeederError, Service};
 
@@ -98,6 +98,66 @@ fn a_lost_join_answer_is_unknown_and_the_feeder_is_adopted_once_found() {
         let feeder = service.feeders().await.unwrap().remove(0);
         assert_eq!(feeder.role, ClientRole::Member);
         assert_eq!(feeder.model, Model::Plaf103.into());
+        server.link(feeder.id, Link::Online).await;
+        one_key(&sim).await;
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
+/// The feeder makes a join's enrollment late (a running feed holds the
+/// key-store write) and with the connection gone. The search for the key
+/// is already trying sessions that the feeder refuses, and goes on until
+/// the write lands: the feeder is adopted then, and only then.
+#[test]
+fn a_key_the_feeder_enrolls_after_the_search_began_is_found() {
+    local(async {
+        let sim = feeder::start().await;
+        let server = TestService::start().await;
+        server.ensure_home().await;
+        let relay = Relay::start(sim.address).await;
+        let service = server.service();
+        let (real, budget) = measured(service, &sim, &relay).await;
+
+        sim.control(Control::HoldKeys(true));
+        relay.hold_answers_after(budget);
+        let lose = async {
+            until("the join reached the feeder", || async {
+                relay.holding_answers()
+            })
+            .await;
+            relay.cut();
+            relay.resume();
+        };
+        let caller = owner();
+        let adopting = service.adopt(&caller, adopt(real, relay.address.to_string()));
+        let (adopted, ()) = tokio::join!(adopting, lose);
+        assert!(uncertain(&adopted), "{adopted:?}");
+
+        // Each try the search makes is one handshake through the relay, of
+        // the same size, which the feeder refuses while the key is not
+        // enrolled. A second try is the search going on after a refusal:
+        // one that found the key at once would make none.
+        let searching = relay.passed();
+        until("the search tried a session", || async {
+            relay.passed() > searching
+        })
+        .await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let one_try = relay.passed() - searching;
+        until("the search tried again", || async {
+            relay.passed() >= searching + 2 * one_try
+        })
+        .await;
+        assert!(service.feeders().await.unwrap().is_empty());
+
+        sim.control(Control::HoldKeys(false));
+        until("the feeder is adopted", || async {
+            !service.feeders().await.unwrap().is_empty()
+        })
+        .await;
+        let feeder = service.feeders().await.unwrap().remove(0);
+        assert_eq!(feeder.role, ClientRole::Member);
         server.link(feeder.id, Link::Online).await;
         one_key(&sim).await;
         server.shutdown().await;

@@ -97,8 +97,9 @@ pub(super) enum Ended {
 
 /// `ended`, the last word on `started`. Only a failure that says the offer
 /// did not take is definite: a feeder gone silent after it, a server that
-/// stopped while it ran or failed on its own, and an end a newer server
-/// added are not.
+/// failed on its own, and an end a newer server added are not. A server
+/// that stopped mid-install records `interrupted` only when the feeder
+/// never took the offer, so that end is definite.
 pub(super) fn settled(started: &Install, ended: &Install) -> Ended {
     if ended.id != started.id {
         return Ended::Another;
@@ -120,13 +121,13 @@ fn took(failure: InstallFailure) -> bool {
         | InstallFailure::Refused { .. }
         | InstallFailure::Stopped { .. }
         | InstallFailure::Lost
-        | InstallFailure::Unreachable { offered: false } => false,
+        | InstallFailure::Unreachable { offered: false }
+        | InstallFailure::Interrupted => false,
         // An older server recorded an answer it could not read after the
         // offer as `unexpected`, so one may follow an offer that took.
         InstallFailure::Unreachable { offered: true }
         | InstallFailure::Unexpected
         | InstallFailure::Server
-        | InstallFailure::Interrupted
         | InstallFailure::Unknown => true,
     }
 }
@@ -138,9 +139,6 @@ pub(super) fn uncertain_words(why: Option<InstallFailure>) -> String {
             "the feeder stopped answering, or answered in a way the server cannot read, after \
              the offer went out"
                 .into()
-        }
-        Some(InstallFailure::Interrupted) => {
-            "the server stopped while the install ran, perhaps after the offer went out".into()
         }
         Some(InstallFailure::Unknown) | None => "it ended in a way this build cannot read".into(),
         Some(failure) => format!("it ended {} after the offer went out", text::word(&failure)),
@@ -208,6 +206,7 @@ mod tests {
             },
             InstallFailure::Lost,
             InstallFailure::Unreachable { offered: false },
+            InstallFailure::Interrupted,
         ] {
             assert_eq!(
                 ended(InstallState::Failed, Some(definite)),
@@ -216,7 +215,6 @@ mod tests {
         }
         for uncertain in [
             InstallFailure::Unreachable { offered: true },
-            InstallFailure::Interrupted,
             InstallFailure::Unexpected,
             InstallFailure::Server,
             InstallFailure::Unknown,

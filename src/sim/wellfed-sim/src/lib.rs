@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use serde_json::Value;
 use wellfed_formats::canonical::{canonical, sha256};
+use wellfed_formats::require;
 
 pub mod plaf103;
 pub mod plant;
@@ -31,7 +32,7 @@ use protocol::{
 };
 pub use report::Report;
 use report::{Assertion, Entry, Enums, Limits, Logged, Note, identities};
-use scenario::{Action, Expectation, Scenario};
+use scenario::{Action, Expectation, Scenario, ScenarioError};
 use worker::RESPONSE;
 pub use worker::Worker;
 
@@ -41,12 +42,22 @@ const POWER_CUT_EXIT: i32 = 75;
 /// An invalid scenario, a worker failure, or a malformed protocol.
 #[derive(Debug, thiserror::Error)]
 pub enum HarnessError {
-    #[error("Invalid scenario: {0}")]
-    Scenario(serde_json::Error),
+    #[error(transparent)]
+    Scenario(#[from] ScenarioError),
     #[error("Scenario cannot be hashed: {0}")]
     Hash(wellfed_formats::Error),
-    #[error("{0}")]
-    Invalid(&'static str),
+    #[error("the worker cut its power when no power cut was armed")]
+    UnexpectedPowerCut,
+    #[error("the worker kept running after its power cut")]
+    PowerCutIgnored,
+    #[error("the worker ended its power cut with status {code}, not {POWER_CUT_EXIT}")]
+    PowerCutExit { code: i32 },
+    #[error("boot while the simulated power is on")]
+    BootWhilePowered,
+    #[error("submit answered {response}, which is no submission result")]
+    Submission { response: u64 },
+    #[error("only online and boots can be expected while the power is off")]
+    ExpectedWhileOff,
     #[error("{0}")]
     Io(#[from] std::io::Error),
     #[error("{0}")]
@@ -67,17 +78,17 @@ pub enum HarnessError {
 
     #[error("{0:?} requires simulated power")]
     Unpowered(Command),
+    /// A crate the report's identity hashes could not be read: moved or
+    /// gone, so the list in the report module is stale.
+    #[error("the report's source {directory} cannot be read")]
+    Sources {
+        directory: &'static str,
+        #[source]
+        error: std::io::Error,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, HarnessError>;
-
-fn require(condition: bool, message: &'static str) -> Result<()> {
-    if condition {
-        Ok(())
-    } else {
-        Err(HarnessError::Invalid(message))
-    }
-}
 
 /// One scenario run: the worker for the current boot, the latest status, and
 /// the harness's own view of storage that the invariants are checked against.
@@ -263,17 +274,13 @@ impl<'a> Simulation<'a> {
         }
         let worker = self.worker.as_mut().filter(|_| self.armed);
         let Some(worker) = worker else {
-            return Err(HarnessError::Invalid("Unexpected worker power cut"));
+            return Err(HarnessError::UnexpectedPowerCut);
         };
 
-        match worker.wait(RESPONSE) {
-            Ok(Some(POWER_CUT_EXIT)) => {}
-            Ok(None) => {
-                return Err(HarnessError::Invalid(
-                    "Worker failed to exit after power cut",
-                ));
-            }
-            _ => return Err(HarnessError::Invalid("Invalid power-cut worker exit")),
+        match worker.wait(RESPONSE)? {
+            Some(POWER_CUT_EXIT) => {}
+            Some(code) => return Err(HarnessError::PowerCutExit { code }),
+            None => return Err(HarnessError::PowerCutIgnored),
         }
 
         self.note(Note::PowerRemoved {
@@ -297,10 +304,7 @@ impl<'a> Simulation<'a> {
     }
 
     fn boot(&mut self) -> Result<()> {
-        require(
-            self.worker.is_none(),
-            "boot requires the simulated power to be off",
-        )?;
+        require(self.worker.is_none(), || HarnessError::BootWhilePowered)?;
 
         self.boots += 1;
         self.last_submission = None;
@@ -341,23 +345,32 @@ impl<'a> Simulation<'a> {
             self.armed = true;
         }
 
+        let boots = self.boots;
         let events = worker.command(command)?;
         self.consume(events)?;
 
         if let Command::Submit { .. } = command {
-            let submission = Submission::from_index(self.latest.response);
-            require(submission.is_some(), "Invalid submission response")?;
-            self.last_submission = submission;
+            // A reset during the command rebooted the worker in `consume`,
+            // so the status is the new boot's, which never heard of it.
+            self.last_submission = if self.boots == boots {
+                let response = self.latest.response;
+                let submission = Submission::from_index(response);
+                require(submission.is_some(), || HarnessError::Submission {
+                    response,
+                })?;
+                submission
+            } else {
+                None
+            };
         }
 
         Ok(())
     }
 
     fn expect(&mut self, expected: &Expectation) -> Result<()> {
-        require(
-            self.worker.is_some() || expected.power_only(),
-            "Only online/boots can be asserted while power is off",
-        )?;
+        require(self.worker.is_some() || expected.power_only(), || {
+            HarnessError::ExpectedWhileOff
+        })?;
 
         let status = self.latest;
         let online = self.worker.is_some();
@@ -426,7 +439,7 @@ impl<'a> Simulation<'a> {
             name: self.scenario.name,
             profile: self.scenario.profile,
             scenario_sha256: sha256(&scenario_text),
-            identity: identities(&self.root, &self.executable),
+            identity: identities(&self.root, &self.executable)?,
             enums: Enums {
                 state: State::ALL,
                 fault: Fault::ALL,

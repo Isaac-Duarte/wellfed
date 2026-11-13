@@ -495,6 +495,11 @@ async fn a_cancel_mid_write_only_interrupts_the_flash_client_and_waits_for_it() 
     let checkout = Checkout::new(0.1);
     let root = checkout.root();
     fs::write(root.join("private/verification/u1-plan.json"), "{}").unwrap();
+    fs::write(
+        root.join("private/verification/u1-power.json"),
+        r#"{"power_cuts":null}"#,
+    )
+    .unwrap();
     // Powered with the strap released, as a prepare leaves the feeder.
     checkout.board.lock().on[1] = true;
     let server = Running::start(checkout.open());
@@ -570,6 +575,11 @@ async fn sigterm_during_a_write_lets_the_job_end_then_stops() {
     let checkout = Checkout::new(0.1);
     let root = checkout.root();
     fs::write(root.join("private/verification/u1-plan.json"), "{}").unwrap();
+    fs::write(
+        root.join("private/verification/u1-power.json"),
+        r#"{"power_cuts":null}"#,
+    )
+    .unwrap();
     checkout.board.lock().on[1] = true;
     let (asks, asked) = mpsc::unbounded_channel();
     let mut server = Running::start_asked(checkout.open(), Some(asked));
@@ -749,6 +759,10 @@ impl Board for PanicsOnce {
 
     fn get(&mut self, channel: u8) -> wellfed_relay::Result<bool> {
         self.board.get(channel)
+    }
+
+    fn power_cuts(&mut self) -> wellfed_relay::Result<Option<u32>> {
+        self.board.power_cuts()
     }
 }
 

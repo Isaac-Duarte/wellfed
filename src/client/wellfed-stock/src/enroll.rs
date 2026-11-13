@@ -18,7 +18,7 @@
 
 use std::{net::IpAddr, path::Path};
 
-use anyhow::Result;
+use crate::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 pub use wellfed_formats::stock::Enrollment;

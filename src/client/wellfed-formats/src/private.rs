@@ -215,6 +215,17 @@ fn sync_parent(path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Move the whole file `from` to `to`, refused if anything is at `to`
+/// (`AlreadyExists`): for a file written beside its path and moved in once
+/// whole, which must never replace an earlier one there.
+pub fn rename_new(from: &Path, to: &Path) -> std::io::Result<()> {
+    move_new(from, to)?;
+    if MOVE_LEAVES_SOURCE {
+        fs::remove_file(from)?;
+    }
+    sync_parent(to)
+}
+
 /// Rename a file an owner agreed to give up, to a numbered name beside it. It is
 /// never deleted, and never replaces an earlier one set aside. The new path.
 pub fn set_aside(path: &Path) -> std::io::Result<std::path::PathBuf> {
@@ -363,6 +374,29 @@ mod tests {
         let second: [u8; 32] = super::random().unwrap();
         assert_ne!(first, second);
         assert_ne!(first, [0; 32]);
+    }
+
+    /// A file moved in once whole lands only where nothing is: an earlier
+    /// one there stays, and so does the new one, under its own name.
+    #[test]
+    fn a_new_name_is_never_replaced() {
+        let dir = tempfile::tempdir().unwrap();
+        let (from, to) = (
+            dir.path().join("archive.partial"),
+            dir.path().join("archive"),
+        );
+        std::fs::write(&from, b"new").unwrap();
+        std::fs::write(&to, b"old").unwrap();
+
+        let refused = super::rename_new(&from, &to).unwrap_err();
+        assert_eq!(refused.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(&to).unwrap(), b"old");
+        assert_eq!(std::fs::read(&from).unwrap(), b"new");
+
+        std::fs::remove_file(&to).unwrap();
+        super::rename_new(&from, &to).unwrap();
+        assert_eq!(std::fs::read(&to).unwrap(), b"new");
+        assert!(!from.exists());
     }
 
     #[test]

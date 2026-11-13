@@ -64,10 +64,10 @@ pub(crate) fn wifi_header(raw: &[u8]) -> Result<String> {
 }
 
 /// The header's build-Wi-Fi presence macro. It has the name of the
-/// variable the Rust build gets (`super::BUILD_WIFI_VARIABLE`), and the
-/// entry links a runtime symbol only the matching Rust build defines, so a
-/// header and a runtime that disagree fail the link.
-pub(crate) const PRESENCE: &str = "WELLFED_BUILD_WIFI";
+/// variable the Rust build gets, and the entry links a runtime symbol only
+/// the matching Rust build defines, so a header and a runtime that disagree
+/// fail the link.
+pub(crate) const PRESENCE: &str = crate::environment::BUILD_WIFI_VARIABLE;
 
 /// The header of an image without a build network: no macros, so the
 /// entry's `#ifdef WELLFED_BUILD_WIFI` prefill is compiled out.

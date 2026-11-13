@@ -65,6 +65,7 @@ use std::net::SocketAddr;
 use std::sync::mpsc as std_mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use wellfed_connect::Samples;
 
 use jiff::tz::TimeZone;
 use tokio::sync::{mpsc, oneshot};
@@ -967,7 +968,10 @@ impl<'a> Session<'a> {
             }
             None => None,
         };
-        self.connection.subscribe(from, false).await.map_err(lost)?;
+        self.connection
+            .subscribe(from, Samples::Off)
+            .await
+            .map_err(lost)?;
         let backlog = Backlog { newest };
         if backlog.read(from.map(|cursor| cursor.seq)) {
             self.end_backlog()

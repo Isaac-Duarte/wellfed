@@ -12,6 +12,7 @@
 
 use std::rc::Rc;
 use std::time::Duration;
+use wellfed_connect::Samples;
 
 use wellfed_app_bridge::api::alerts::{
     Attempt, CatchUp, CatchUpEnd, NoticeChange, NoticeDetail, PhoneNetwork, PostedNotice,
@@ -105,7 +106,7 @@ async fn jam(sim: &Running) {
     )
     .await
     .unwrap();
-    owner.subscribe(None, false).await.unwrap();
+    owner.subscribe(None, Samples::Off).await.unwrap();
     let answer = owner.ask([1; 16], &Op::Feed { portions: 2 }).await.unwrap();
     assert!(matches!(answer, Answer::Feeding { .. }), "{answer:?}");
     loop {

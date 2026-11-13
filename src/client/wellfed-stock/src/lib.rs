@@ -26,9 +26,49 @@ pub mod clock;
 pub mod config;
 pub mod controller;
 pub mod enroll;
+mod error;
 pub mod mqtt;
 pub mod ota;
 pub mod protocol;
 pub mod server;
 pub mod setup;
 pub mod storage;
+
+pub use error::{ConnectError, Error, Listener, Result, Task};
+
+/// After a failed `accept`: the listener goes on, since one failure must not
+/// end a listener an install depends on. A connection the peer reset before
+/// it was accepted costs nothing; running out of descriptors or memory gets
+/// a short pause first, so the loop does not spin while it lasts.
+pub(crate) async fn accept_failed(error: &std::io::Error) {
+    tracing::warn!(error = %error, "accept failed; listening on");
+    if let Some(pause) = accept_pause(error) {
+        tokio::time::sleep(pause).await;
+    }
+}
+
+fn accept_pause(error: &std::io::Error) -> Option<std::time::Duration> {
+    use std::io::ErrorKind;
+
+    match error.kind() {
+        ErrorKind::ConnectionAborted | ErrorKind::ConnectionReset | ErrorKind::Interrupted => None,
+        _ => Some(std::time::Duration::from_millis(100)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Error, ErrorKind};
+
+    use super::accept_pause;
+
+    #[test]
+    fn a_reset_peer_goes_on_at_once_and_exhaustion_pauses() {
+        assert_eq!(
+            accept_pause(&Error::from(ErrorKind::ConnectionAborted)),
+            None
+        );
+        // EMFILE: the process is out of descriptors until some close.
+        assert!(accept_pause(&Error::from_raw_os_error(24)).is_some());
+    }
+}

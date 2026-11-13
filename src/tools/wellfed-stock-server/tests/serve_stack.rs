@@ -13,19 +13,13 @@ use std::{
     time::Duration,
 };
 
-use common::{addresses, ready, start, status};
+use common::{ready, start, status};
 use rumqttc::{AsyncClient, Event, Packet, QoS};
 use serde_json::{Value, json};
-use wellfed_stock::storage;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn real_broker_api_and_simulated_stock_session_without_commands() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("server.json");
-    let mut config = common::config();
-    config.plans = None;
-    [config.mqtt_listen, config.http_listen] = addresses().unwrap();
-    storage::write_json(&path, &config).unwrap();
+    let (_dir, path, config) = common::configured();
 
     let service = start(&path);
     let http = reqwest::Client::builder()
@@ -97,12 +91,14 @@ async fn real_broker_api_and_simulated_stock_session_without_commands() {
                         if let Some(send) = ntp_send.take() {
                             let _ = send.send(message);
                         }
-                    } else if matches!(
+                    } else if !matches!(
                         message["cmd"].as_str(),
-                        Some("MANUAL_FEEDING_SERVICE" | "OTA_UPGRADE" | "GET_CONFIG")
+                        Some("ATTR_GET_SERVICE" | "ATTR_PUSH_EVENT")
                     ) {
-                        // Anything that acts on the feeder; replies and the
-                        // read-only attribute query are expected.
+                        // Only the read-only attribute query and the replies
+                        // to the device's own posts are expected: anything
+                        // else the server sends unasked counts, a command
+                        // added later among them.
                         worker_count.fetch_add(1, Ordering::SeqCst);
                     }
                 }
@@ -117,8 +113,8 @@ async fn real_broker_api_and_simulated_stock_session_without_commands() {
         .await
         .unwrap()
         .unwrap();
-    // `serve` sends no setup frame and holds no snapshot, so stock may still
-    // hold plans: it answers with the time but leaves stock's clock alone.
+    // `serve` sends no setup frame, so stock may still hold plans: it answers
+    // with the time but leaves stock's clock alone.
     assert_eq!(ntp["calibrationTag"], false);
     assert!(ntp["ts"].as_i64().unwrap() > 1_700_000_000_000);
 

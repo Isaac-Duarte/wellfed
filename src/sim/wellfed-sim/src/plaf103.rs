@@ -14,6 +14,12 @@ use wellfed_hal::supervision::supervise::LIVENESS_MS;
 use wellfed_hal_feeder::events::EventsConfig;
 use wellfed_hal_feeder::owner::OwnerConfig;
 
+// The worker's submit spins the clock alone, without stepping the owner,
+// for as long as a claim may wait behind a write. The firmware steps the
+// owner every pass meanwhile; the two agree only while the owner's idle
+// beat outlasts the whole wait, so an idle owner is never overdue in it.
+const _: () = assert!(LIVENESS_MS > wellfed_hal::interlock::WRITE_WAIT_MS);
+
 /// The vendor app's cap on one feed, which the journal pins.
 pub const MAX_PORTIONS: u16 = 48;
 

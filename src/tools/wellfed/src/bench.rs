@@ -29,6 +29,7 @@
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+use wellfed_connect::Samples;
 
 use anyhow::{Context, Result, bail};
 use bytes::Bytes;
@@ -96,15 +97,6 @@ pub(crate) enum BenchRefusal {
         root: PathBuf,
         /// The server's session, as its `/state` showed it.
         session: Box<Session>,
-    },
-    #[error(
-        "the bench server for {} holds a session with feeder {served}, not {asked}",
-        root.display()
-    )]
-    OtherFeeder {
-        root: PathBuf,
-        served: String,
-        asked: String,
     },
     #[error(
         "the bench server for {} did not open its feeder session within {} s",
@@ -317,12 +309,10 @@ impl Reading {
 }
 
 /// The server's session for `keys`, refusing whatever it cannot lend.
-pub(crate) async fn lend(
-    bench: Bench,
-    keys: &Path,
-    feeder: Option<&str>,
-    address: Option<&str>,
-) -> Result<Lent> {
+///
+/// Which feeder it holds is the caller's to check, against the full
+/// identity its key file names.
+pub(crate) async fn lend(bench: Bench, keys: &Path, address: Option<&str>) -> Result<Lent> {
     if address.is_some() {
         return Err(BenchRefusal::Address { root: bench.root }.into());
     }
@@ -332,17 +322,7 @@ pub(crate) async fn lend(
         return Err(BenchRefusal::OtherKey {
             root: bench.root,
             keys: keys.to_path_buf(),
-            owner: info.owner[..16].to_string(),
-        }
-        .into());
-    }
-    if let Some(prefix) = feeder
-        && !info.identity.starts_with(&prefix.to_ascii_lowercase())
-    {
-        return Err(BenchRefusal::OtherFeeder {
-            root: bench.root,
-            served: info.identity[..16].to_string(),
-            asked: prefix.to_string(),
+            owner: short(&info.owner).to_string(),
         }
         .into());
     }
@@ -366,6 +346,12 @@ pub(crate) async fn lend(
         events: Reading::default(),
         logs: Reading::default(),
     })
+}
+
+/// The first 16 characters of a hex key the bench server sent, or all of
+/// one shorter: the server is local and trusted, but its answer is input.
+pub(crate) fn short(hex: &str) -> &str {
+    hex.get(..16).unwrap_or(hex)
 }
 
 impl Lent {
@@ -393,8 +379,8 @@ impl Lent {
     /// history the server does not reach back to is refused here, before
     /// the command sends anything else: a feed must never go out ahead of
     /// a refusal of its own events.
-    pub(crate) async fn subscribe(&mut self, after: Option<u64>, samples: bool) -> Result<()> {
-        if samples {
+    pub(crate) async fn subscribe(&mut self, after: Option<u64>, samples: Samples) -> Result<()> {
+        if samples == Samples::On {
             bail!("the bench server's session is subscribed without samples");
         }
         let page = self.bench.pushed(Stream::Events, 0, Duration::ZERO).await?;
@@ -1203,7 +1189,11 @@ mod tests {
 
         // Refused at the subscription: a feed sent after it never runs
         // ahead of a refusal of its own events.
-        let refused = connection.subscribe(None, false).await.err().unwrap();
+        let refused = connection
+            .subscribe(None, Samples::Off)
+            .await
+            .err()
+            .unwrap();
         assert!(
             matches!(
                 refused.downcast_ref::<BenchRefusal>(),
@@ -1212,7 +1202,7 @@ mod tests {
             "{refused}"
         );
         // From the floor on, the server's history is whole.
-        connection.subscribe(Some(40), false).await.unwrap();
+        connection.subscribe(Some(40), Samples::Off).await.unwrap();
         assert!(connection.next(Duration::ZERO).await.unwrap().is_none());
     }
 
@@ -1232,7 +1222,7 @@ mod tests {
         let (_, _, mut connection) = connect_via(&target(&standing.keys), &standing.pointers)
             .await
             .unwrap();
-        connection.subscribe(Some(7), false).await.unwrap();
+        connection.subscribe(Some(7), Samples::Off).await.unwrap();
 
         let next = connection.next(Duration::ZERO).await.unwrap().unwrap();
         assert_eq!(seqs(&[next]), [(2, 8)]);
@@ -1265,7 +1255,7 @@ mod tests {
         let (_, _, mut connection) = connect_via(&target(&standing.keys), &standing.pointers)
             .await
             .unwrap();
-        connection.subscribe(None, false).await.unwrap();
+        connection.subscribe(None, Samples::Off).await.unwrap();
         assert!(connection.next(Duration::ZERO).await.unwrap().is_some());
 
         // The ring drops what was pushed after it before this follower
@@ -1293,7 +1283,7 @@ mod tests {
         let (_, _, mut connection) = connect_via(&target(&standing.keys), &standing.pointers)
             .await
             .unwrap();
-        connection.subscribe(Some(53), false).await.unwrap();
+        connection.subscribe(Some(53), Samples::Off).await.unwrap();
 
         // The new event evicts the ring's oldest, which the command never
         // had to read.

@@ -28,14 +28,6 @@ pub fn backup_path(backups: &Path, identity: &[u8; 32]) -> PathBuf {
     feeder_directory(backups, identity).join(format!("stock-{STOCK_VERSION}.bin"))
 }
 
-/// Where the install keeps the update manifest it signed for the feeder
-/// `identity` at `version`, beside its backup: a run resumed after the
-/// activation reads the version it waits for there, and a later run signs
-/// above it.
-pub fn promotion_path(backups: &Path, identity: &[u8; 32], version: u32) -> PathBuf {
-    feeder_directory(backups, identity).join(format!("promotion-v{version}.manifest"))
-}
-
 /// Where a restore keeps the update key it made for the feeder `identity`,
 /// only until the restore ends ([`crate::restore`]).
 pub fn restore_key_path(backups: &Path, identity: &[u8; 32]) -> PathBuf {

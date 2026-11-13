@@ -94,7 +94,10 @@ pub const fn stop_of(error: &Error) -> RestoreStop {
         Error::RestoreCancelUnknown => RestoreStop::CancelUnknown,
         Error::RestoreStopped(_) => RestoreStop::Cancelled,
         // What a restore never meets, or meets only as the run's own words.
-        Error::Platform(_)
+        // The app signs with a key it made for the restore, never the
+        // release key.
+        Error::RestoreReleaseKey
+        | Error::Platform(_)
         | Error::Handover(_)
         | Error::ShowCode(_)
         | Error::Connect { .. }
@@ -110,13 +113,13 @@ pub const fn stop_of(error: &Error) -> RestoreStop {
         | Error::Images(_)
         | Error::StockServerGone
         | Error::StockServerFailed(_)
+        | Error::StockServerStopped
         | Error::RequestRefused(_)
         | Error::Trial(_)
         | Error::NoPeer
         | Error::EnrollmentUnreadable { .. }
         | Error::UdpSocket(_)
         | Error::FrameSend { .. }
-        | Error::OtherDevice { .. }
         | Error::NoHomeNetwork
         | Error::NoAddress
         | Error::OtherFeeder { .. }
@@ -138,13 +141,9 @@ pub const fn stop_of(error: &Error) -> RestoreStop {
         | Error::BackupNotSetAside { .. }
         | Error::Unverified
         | Error::Backup(_)
-        | Error::KeepGiven(_)
         | Error::Setup(_)
-        | Error::NoUpdateKey
-        | Error::NoSigner
         | Error::NoManifest
         | Error::ShortImage
-        | Error::EnrollmentEnded
         | Error::Steps(_)
         | Error::Stopped(_) => RestoreStop::Other,
     }

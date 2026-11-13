@@ -12,12 +12,12 @@
 
 use std::fmt;
 
-use anyhow::{Context, Result, ensure};
 use chrono::{DateTime, Offset, TimeDelta, TimeZone, Utc};
 use chrono_tz::Tz;
 use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
 use uuid::Uuid;
+use wellfed_formats::require;
 
 use wellfed_model::Model;
 
@@ -189,27 +189,47 @@ impl Reply {
     }
 }
 
-pub fn parse(config: &Config, topic: &str, payload: &[u8]) -> Result<(Channel, Message)> {
-    ensure!(payload.len() <= 65_536, "payload too large");
-    let prefix = config.topic("");
-    let suffix = topic
-        .strip_prefix(&prefix)
-        .context("unexpected device topic")?;
-    let channel = suffix
-        .strip_suffix("/post")
-        .context("expected device post topic")?;
-    let channel = Channel::from_name(channel).context("unknown topic channel")?;
+/// A device message the server ignores. Device text never reaches a
+/// message: a topic or payload is the device's to make up.
+#[derive(Debug, thiserror::Error)]
+pub enum MessageError {
+    #[error("device payload of {bytes} bytes is too large")]
+    TooLarge { bytes: usize },
+    #[error("unexpected device topic")]
+    Topic,
+    #[error("expected a device post topic")]
+    NotPost,
+    #[error("unknown topic channel")]
+    Channel,
+    #[error("invalid device JSON")]
+    Json(#[source] serde_json::Error),
+    #[error("invalid command name")]
+    Command,
+}
 
-    let message: Message = serde_json::from_slice(payload).context("invalid device JSON")?;
-    ensure!(
+pub fn parse(
+    config: &Config,
+    topic: &str,
+    payload: &[u8],
+) -> Result<(Channel, Message), MessageError> {
+    require(payload.len() <= 65_536, || MessageError::TooLarge {
+        bytes: payload.len(),
+    })?;
+    let prefix = config.topic("");
+    let suffix = topic.strip_prefix(&prefix).ok_or(MessageError::Topic)?;
+    let channel = suffix.strip_suffix("/post").ok_or(MessageError::NotPost)?;
+    let channel = Channel::from_name(channel).ok_or(MessageError::Channel)?;
+
+    let message: Message = serde_json::from_slice(payload).map_err(MessageError::Json)?;
+    require(
         !message.cmd.is_empty()
             && message.cmd.len() <= 64
             && message
                 .cmd
                 .bytes()
                 .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_'),
-        "invalid command name"
-    );
+        || MessageError::Command,
+    )?;
 
     Ok((channel, message))
 }

@@ -16,7 +16,7 @@ use wellfed_api::{
     InstallState, InstallTarget, Model, NewUser, Release, Role, StockBackupState, StockSource,
     StreamEvent, StreamQuery,
 };
-use wellfed_server_client::{Client, Error, Kept, StatusCode, Uploaded};
+use wellfed_server_client::{Client, Error, Kept, StatusCode};
 use wellfed_server_testkit::feeder::{self, Banks, Running};
 use wellfed_server_testkit::release::{
     self, SECTOR, keeping_stock, project, signed, stock_restore, stock_restore_for,
@@ -63,7 +63,7 @@ impl Rig {
         })
         .await;
         let file = signed(&project(), 7, BUILD, LEN);
-        let Uploaded::New(release) = http.upload_release(file).await.unwrap() else {
+        let Kept::New(release) = http.upload_release(file).await.unwrap() else {
             panic!("a first upload is new");
         };
 

@@ -5,6 +5,7 @@
 //! [`Summary::errors`] instead of stopping at the first, so one run reports
 //! everything; only failing to resolve or list the checkout is an `Err`.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
@@ -18,8 +19,12 @@ const UNPUBLISHED: [&str; 6] = ["private", ".venv", "target", ".aws", ".codex", 
 const EVIDENCE: [&str; 5] = ["bin", "pcap", "pcapng", "img", "apk"];
 /// The Home Assistant integration's Python, the one Python under `src/`.
 const HOME_ASSISTANT: &str = "src/integrations/homeassistant/";
-const TEXT: [&str; 11] = [
-    "md", "rs", "py", "toml", "json", "yml", "txt", "c", "h", "ts", "svg",
+/// Text the publish checks read: the Rust and C sources, the docs and
+/// configuration, the app's Dart, Kotlin, Gradle and Android files, the
+/// site's Svelte, scripts and styles, and the shell scripts.
+const TEXT: [&str; 22] = [
+    "md", "rs", "py", "toml", "json", "yml", "yaml", "txt", "c", "h", "ts", "svg", "dart",
+    "svelte", "kt", "kts", "gradle", "xml", "sh", "js", "html", "css",
 ];
 /// Product code, which reaches the motor pins, the watchdog and flash only
 /// through the HAL's owners: it may name neither the raw writers nor the
@@ -50,6 +55,9 @@ const FLASH_CLIENT: &str = "src/tools/wellfed-flash/Cargo.toml";
 /// (it takes the nearest file and merges none), so it must repeat every root
 /// setting before adding its own.
 const SERVER_CLIPPY: &str = "src/server/clippy.toml";
+/// The web workspace's dependency policy, whose release-age exceptions
+/// each name one exact version.
+const PNPM_WORKSPACE: &str = "src/web/pnpm-workspace.yaml";
 /// The server's release build, which names its own Rust image and
 /// toolchain: they must be the one `rust-toolchain.toml` pins, or a release
 /// builds with a compiler `make check` never ran.
@@ -63,7 +71,9 @@ const LINES: usize = 400;
 /// and its assertions together.
 const TEST_LINES: usize = 600;
 /// Sources under `src/` that must not cite a board card.
-const CARD_FREE: [&str; 6] = ["rs", "c", "h", "toml", "md", "ts"];
+const CARD_FREE: [&str; 13] = [
+    "rs", "c", "h", "toml", "md", "ts", "py", "dart", "svelte", "kt", "sh", "yml", "yaml",
+];
 /// The one tracked page that may name cards: it tells agents how the
 /// ignored boards are kept. Every other page states the fact instead.
 const CARD_PAGE: &str = "AGENTS.md";
@@ -76,10 +86,14 @@ macro_rules! regex {
 }
 
 regex!(USER_PATH, r"/(?:home|Users|mnt|media)/[A-Za-z0-9_.-]+/");
-regex!(DATED, r#"private/[^\s"']*202610\d{2}"#);
-// A board card's id: a board's prefix and a number. Pinned policy names
-// are lowercase and stay.
-regex!(CARD, r"\b(?:FW|FP|SV|AR)\d{1,3}[a-z]?\b");
+regex!(DATED, r#"private/[^\s"']*20\d{6}"#);
+// A board card's id: a board's prefix (firmware, feature, server, autonomous
+// run, notifications, beta, performance) and a number, or a review finding's
+// id. Pinned policy names are lowercase and stay.
+regex!(
+    CARD,
+    r"\b(?:FW|FP|SV|AR|NT|BT|PE)\d{1,3}[a-z]?\b|\bF-\d{3}\b"
+);
 regex!(CHANNEL, r#"(?m)^channel\s*=\s*"([^"]+)""#);
 
 // The raw output writers `wellfed-amebad-sys` marks `unsafe`; reads such
@@ -146,10 +160,12 @@ pub(crate) fn check(root: &Path) -> io::Result<Summary> {
         errors: Vec::new(),
     };
 
+    let published: BTreeSet<&str> = names.iter().map(String::as_str).collect();
     for name in &names {
-        check_file(&root, name, &mut summary);
+        check_file(&root, name, &published, &mut summary);
     }
     check_release_toolchain(&root, &mut summary);
+    check_container_context(&root, &mut summary);
     summary
         .errors
         .extend(crate::op_clients::check(&root, &names));
@@ -165,7 +181,9 @@ pub(crate) fn check(root: &Path) -> io::Result<Summary> {
     Ok(summary)
 }
 
-fn check_file(root: &Path, name: &str, summary: &mut Summary) {
+/// `published` is every file a clone has, so a link resolves for every
+/// reader only to one of them or a folder holding one.
+fn check_file(root: &Path, name: &str, published: &BTreeSet<&str>, summary: &mut Summary) {
     let relative = Path::new(name);
     let first = relative
         .components()
@@ -249,6 +267,14 @@ fn check_file(root: &Path, name: &str, summary: &mut Summary) {
         }
     }
 
+    if name == PNPM_WORKSPACE {
+        for entry in unpinned_exceptions(&content) {
+            summary.errors.push(format!(
+                "{name}: the release-age exception {entry} names no exact version; write name@version"
+            ));
+        }
+    }
+
     if name == SERVER_CLIPPY {
         match fs::read_to_string(root.join("clippy.toml")) {
             Ok(root_settings) => {
@@ -281,13 +307,56 @@ fn check_file(root: &Path, name: &str, summary: &mut Summary) {
             };
             summary.links += 1;
             let dest = normalize(&path.parent().unwrap_or(root).join(local));
-            if !dest.starts_with(root) || !dest.exists() {
+            if !dest
+                .strip_prefix(root)
+                .is_ok_and(|dest| is_published(dest, published))
+            {
                 summary
                     .errors
                     .push(format!("{name}: missing/nonlocal link {target}"));
             }
         }
     }
+}
+
+/// The `minimumReleaseAgeExclude` entries that are not one package at one
+/// exact version: a bare name or a pattern exempts every release to come.
+fn unpinned_exceptions(workspace: &str) -> Vec<&str> {
+    workspace
+        .lines()
+        .skip_while(|line| !line.starts_with("minimumReleaseAgeExclude:"))
+        .skip(1)
+        .take_while(|line| line.starts_with(' ') || line.is_empty())
+        .filter_map(|line| line.trim().strip_prefix("- "))
+        .filter(|entry| {
+            let entry = entry.trim().trim_matches(['"', '\'']);
+            let name = entry.strip_prefix('@').unwrap_or(entry);
+            !name.split_once('@').is_some_and(|(package, version)| {
+                !package.is_empty()
+                    && !package.contains('*')
+                    && version.starts_with(|c: char| c.is_ascii_digit())
+                    && version
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '+'))
+            })
+        })
+        .collect()
+}
+
+/// Whether `dest`, relative to the root, is a published file or a folder
+/// holding one: an ignored file exists only on this disk.
+fn is_published(dest: &Path, published: &BTreeSet<&str>) -> bool {
+    let Some(dest) = dest.to_str() else {
+        return false;
+    };
+    if dest.is_empty() || published.contains(dest) {
+        return true;
+    }
+    let folder = format!("{dest}/");
+    published
+        .range(folder.as_str()..)
+        .next()
+        .is_some_and(|name| name.starts_with(&folder))
 }
 
 /// What the release Containerfile must say for `toolchain`'s channel (the
@@ -352,6 +421,100 @@ fn check_release_toolchain(root: &Path, summary: &mut Summary) {
         (Err(error), _) | (_, Err(error)) => summary.errors.push(format!(
             "{SERVER_CONTAINERFILE}: cannot compare its toolchain with rust-toolchain.toml: {error}"
         )),
+    }
+}
+
+/// The container build loads the whole workspace, so every member's manifest
+/// must reach it through `.dockerignore`.
+fn check_container_context(root: &Path, summary: &mut Summary) {
+    let read = |file: &str| fs::read_to_string(root.join(file));
+
+    match (read(".dockerignore"), read("Cargo.toml")) {
+        (Ok(ignore), Ok(manifest)) => {
+            for member in left_out(&ignore, &workspace_members(&manifest)) {
+                summary.errors.push(format!(
+                    ".dockerignore: leaves out the workspace member {member}, so the server's container build cannot load the workspace"
+                ));
+            }
+        }
+        (Err(error), _) | (_, Err(error)) => summary.errors.push(format!(
+            ".dockerignore: cannot compare it with the workspace's members: {error}"
+        )),
+    }
+}
+
+/// The paths in the root manifest's `[workspace] members` list.
+fn workspace_members(manifest: &str) -> Vec<String> {
+    let Some(start) = manifest.find("members = [") else {
+        return Vec::new();
+    };
+    let list = &manifest[start + "members = [".len()..];
+    let list = &list[..list.find(']').unwrap_or(list.len())];
+    list.lines()
+        .map(|line| line.split('#').next().unwrap_or_default())
+        .flat_map(|line| line.split(','))
+        .map(|item| item.trim().trim_matches('"'))
+        .filter(|item| !item.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The `members` whose `Cargo.toml` the ignore rules leave out of the build
+/// context. Docker reads the rules in order and the last one matching a path,
+/// or any directory above it, decides; `!` re-admits.
+fn left_out(ignore: &str, members: &[String]) -> Vec<String> {
+    let rules: Vec<(bool, Vec<&str>)> = ignore
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(|line| match line.strip_prefix('!') {
+            Some(rule) => (false, rule),
+            None => (true, line),
+        })
+        .map(|(excludes, rule)| {
+            let parts = rule.trim_matches('/').split('/').collect();
+            (excludes, parts)
+        })
+        .collect();
+
+    members
+        .iter()
+        .filter(|member| {
+            let path = format!("{member}/Cargo.toml");
+            let parts: Vec<&str> = path.split('/').collect();
+            let mut excluded = false;
+            for (excludes, rule) in &rules {
+                if (1..=parts.len()).any(|end| glob(rule, &parts[..end])) {
+                    excluded = *excludes;
+                }
+            }
+            excluded
+        })
+        .cloned()
+        .collect()
+}
+
+/// Whether the path components `path` match the rule's, where `*` in a
+/// component matches any run of characters and `**` any number of
+/// components.
+fn glob(rule: &[&str], path: &[&str]) -> bool {
+    match rule.split_first() {
+        None => path.is_empty(),
+        Some((&"**", rest)) => (0..=path.len()).any(|skip| glob(rest, &path[skip..])),
+        Some((first, rest)) => path
+            .split_first()
+            .is_some_and(|(part, others)| component(first, part) && glob(rest, others)),
+    }
+}
+
+fn component(pattern: &str, text: &str) -> bool {
+    match pattern.split_once('*') {
+        None => pattern == text,
+        Some((head, tail)) => {
+            text.starts_with(head)
+                && (head.len()..=text.len())
+                    .any(|at| text.is_char_boundary(at) && component(tail, &text[at..]))
+        }
     }
 }
 
@@ -524,6 +687,61 @@ fn raw_outputs(name: &str, source: &str, errors: &mut Vec<String>) {
 mod tests {
     use super::*;
 
+    /// The rules decide by the last that matches a path or a directory
+    /// above it, so a member under an excluded directory needs its own
+    /// re-admission.
+    #[test]
+    fn a_workspace_member_the_container_context_leaves_out_is_named() {
+        let manifest =
+            "[workspace]\nmembers = [\n    \"src/tools/xtask\", # host\n    \"src/app/rust\",\n]\n";
+        let members = workspace_members(manifest);
+        assert_eq!(members, ["src/tools/xtask", "src/app/rust"]);
+
+        let ignore = "*\n!Cargo.toml\n!src/\nsrc/app/\n**/target/\n";
+        assert_eq!(left_out(ignore, &members), ["src/app/rust"]);
+        let admitted = format!("{ignore}!src/app/rust/\n**/target/\n");
+        assert!(left_out(&admitted, &members).is_empty());
+
+        assert!(glob(&["**", "target"], &["src", "a", "target"]));
+        assert!(component("*.md", "README.md"));
+        assert!(!component("*.md", "README.rs"));
+    }
+
+    /// The repository's own context holds every member.
+    #[test]
+    fn the_container_context_holds_every_workspace_member() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let ignore = fs::read_to_string(root.join(".dockerignore")).unwrap();
+        let manifest = fs::read_to_string(root.join("Cargo.toml")).unwrap();
+        let members = workspace_members(&manifest);
+        assert!(members.len() > 10, "{members:?}");
+        assert!(
+            left_out(&ignore, &members).is_empty(),
+            "{:?}",
+            left_out(&ignore, &members)
+        );
+    }
+
+    #[test]
+    fn card_and_finding_ids_are_caught() {
+        // Built from halves, so this file does not cite one itself.
+        for (prefix, number) in [
+            ("see FW", "12"),
+            ("NT", "3a"),
+            ("BT", "07"),
+            ("PE", "25"),
+            ("F-", "117"),
+            ("SV", "69"),
+        ] {
+            let text = format!("{prefix}{number}");
+            assert!(CARD.is_match(&text), "{text}");
+        }
+        for text in ["sha256", "F-1", "PA_12", "FWD3"] {
+            assert!(!CARD.is_match(text), "{text}");
+        }
+        assert!(DATED.is_match(&format!("private/captures-{}/x", "20261112")));
+    }
+
     #[test]
     fn markdown_link_targets() {
         assert_eq!(local_path("docs/a.md#part").as_deref(), Some("docs/a.md"));
@@ -628,7 +846,7 @@ mod tests {
             "[dependencies]\nwellfed-image.workspace = true\n\n[dev-dependencies]\nwellfed-flash = { path = \"../wellfed-flash\" }\n",
         )
         .unwrap();
-        for name in [
+        let names = [
             "README.md",
             "private/x.json",
             "dump.bin",
@@ -641,8 +859,10 @@ mod tests {
             "src/tools/page/Cargo.toml",
             "src/tools/client/Cargo.toml",
             "src/tools/auditor/Cargo.toml",
-        ] {
-            check_file(&root, name, &mut summary);
+        ];
+        let published = BTreeSet::from(names);
+        for name in names {
+            check_file(&root, name, &published, &mut summary);
         }
 
         assert_eq!(summary.links, 2);
@@ -663,6 +883,63 @@ mod tests {
 
     fn lines(count: usize) -> String {
         "x\n".repeat(count)
+    }
+
+    #[test]
+    fn a_release_age_exception_names_one_exact_version() {
+        let workspace = "\
+minimumReleaseAge: 10080
+minimumReleaseAgeExclude:
+  - vite@8.3.5
+  - \"@oxc-project/types@0.155.0\"
+  # A comment.
+  - \"@rolldown/binding-*\"
+  - rolldown
+  - postcss@^8
+savePrefix: \"\"
+";
+        assert_eq!(
+            unpinned_exceptions(workspace),
+            ["\"@rolldown/binding-*\"", "rolldown", "postcss@^8"]
+        );
+        assert!(unpinned_exceptions("minimumReleaseAge: 10080\n").is_empty());
+    }
+
+    /// A link resolves for every reader only to a file a clone has: one
+    /// that exists here but is ignored (private evidence, agent state, a
+    /// build output) is as missing as one that does not exist.
+    #[test]
+    fn a_link_to_an_ignored_file_is_missing() {
+        let checkout = tempfile::tempdir().unwrap();
+        let root = checkout.path().canonicalize().unwrap();
+        for folder in ["private", "docs", ".agents"] {
+            fs::create_dir_all(root.join(folder)).unwrap();
+        }
+        fs::write(root.join("private/x.json"), "{}").unwrap();
+        fs::write(root.join(".agents/RESUME.md"), "x").unwrap();
+        fs::write(root.join("docs/page.md"), "x").unwrap();
+        fs::write(
+            root.join("README.md"),
+            "[x](private/x.json) [resume](.agents/RESUME.md) [page](docs/page.md) [docs](docs) [root](.)\n",
+        )
+        .unwrap();
+
+        let mut summary = Summary {
+            files: 0,
+            links: 0,
+            errors: Vec::new(),
+        };
+        let published = BTreeSet::from(["README.md", "docs/page.md"]);
+        check_file(&root, "README.md", &published, &mut summary);
+
+        assert_eq!(summary.links, 5);
+        assert_eq!(
+            summary.errors,
+            [
+                "README.md: missing/nonlocal link private/x.json",
+                "README.md: missing/nonlocal link .agents/RESUME.md",
+            ]
+        );
     }
 
     #[test]
@@ -762,10 +1039,17 @@ mod tests {
             errors: Vec::new(),
         };
 
-        check_file(&root, "src/server/wellfed-server/src/lib.rs", &mut summary);
+        let published = BTreeSet::new();
+        check_file(
+            &root,
+            "src/server/wellfed-server/src/lib.rs",
+            &published,
+            &mut summary,
+        );
         check_file(
             &root,
             "src/server/wellfed-server/openapi.json",
+            &published,
             &mut summary,
         );
 
@@ -822,8 +1106,14 @@ mod tests {
             errors: Vec::new(),
         };
 
-        check_file(&root, SERVER_CLIPPY, &mut summary);
-        check_file(&root, "src/server/wellfed-store/clippy.toml", &mut summary);
+        let published = BTreeSet::new();
+        check_file(&root, SERVER_CLIPPY, &published, &mut summary);
+        check_file(
+            &root,
+            "src/server/wellfed-store/clippy.toml",
+            &published,
+            &mut summary,
+        );
 
         assert_eq!(summary.errors.len(), 2);
         assert!(

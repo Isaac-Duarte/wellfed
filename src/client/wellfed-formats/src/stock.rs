@@ -227,7 +227,6 @@ pub struct TrialInput {
 #[serde(rename_all = "snake_case")]
 pub enum TrialPhase {
     Submitted,
-    VersionReported,
     ReportedError,
     Uncertain,
     /// Operator-resolved after a quiet period with the source version still
@@ -245,7 +244,7 @@ pub enum TrialPhase {
 pub const SERVER_CONFIG: &str = "private/server.json";
 
 /// An installer's config, root-relative: what `wellfed-stock` uses unless
-/// told otherwise. It holds no plan snapshot.
+/// told otherwise.
 pub const INSTALLER_CONFIG: &str = "private/installer.json";
 
 /// The image server's lease file, beside the server config.

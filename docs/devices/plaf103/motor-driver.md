@@ -92,7 +92,7 @@ The driver pulls white to ground to light the LED. At rest it sits at 2.6 V with
 1. **Emitter current** for both emitters: the voltage across each series resistor, or a supply-current meter.
 2. **Polarity:** trace PA13 and PA14 to INA and INB. The input captures suggest PA13 drives INB, opposite to the stock-derived mapping. Check the clip labels against the pin map before counting that.
 3. **A reset mid-drive:** when a watchdog reset ended a drive, the leads read differently three more times, for 38–110 µs, within 0.2 ms of the drive's end. Two had the drive's polarity and one the opposite, and no drive followed. Back-EMF from the coasting motor would explain the first two, not the third. Capture this with the inputs probed.
-4. **The power-on skew:** inside the supply ramp, before any code runs, single threshold skews of up to 4.5 µs remain between the inputs, unclassified. If they also appear when the loader runs instead of our code, they belong to the probe and the ramp. A scope on the inputs, or a meter on the undriven inputs with the analyzer attached, would settle it.
+4. **The power-on skew:** inside the supply ramp, before any code runs, threshold skews of up to 4.5 µs remain between the inputs, unclassified, and some cycles show several glitches under 2 µs in its first 300 µs. If they also appear when the loader runs instead of our code, they belong to the probe and the ramp. A scope on the inputs, or a meter on the undriven inputs with the analyzer attached, would settle it.
 
 ## Capture startup transients
 
@@ -117,7 +117,7 @@ Use this to repeat the startup check or to record resets.
    wellfed-audit transients --device plaf103 --capture private/captures/NAME --output NEW-REPORT
    ```
 
-A cycle passes when it starts unpowered, no sample has INA ≠ INB or OUTA ≠ OUTB, there is no LOW, LOW coast when the board opens, and the brake is reached and held after boot (or standby held throughout a loader entry).
+A cycle passes when it starts unpowered, no sample has INA ≠ INB or OUTA ≠ OUTB, there is no LOW, LOW coast when the board opens, and the brake is reached and held after boot (or standby held throughout a loader entry). With the inputs probed, the first millisecond after power-on is the supply ramp. One difference there per pair is reported apart as a ramp skew (open check 4) rather than failing the cycle, and only when it fits one threshold crossing of a rising supply: the pair goes from LOW, LOW through one line high for 5 µs or less to HIGH, HIGH. Any other difference fails the cycle, in the ramp or after it. An outputs-only capture takes no ramp. Run on the October 27 sessions (simulation), the audit fails most cycles on later sub-2 µs glitches inside that millisecond, which the evidence's pass rule below excludes; check 4 settles which reading is right.
 
 **If you can reach only the outputs:** the driver's pins are 1.27 mm apart, too close for ordinary hooks. `--probes outputs` records only D2 and D3 at the motor, with analyzer GND on the bench ground rail. Clip the motor terminals, or the suppression capacitor's legs where glue covers the tabs: the curved leg on the blue-lead side to D2, the straight leg to D3. Which is OUTA is untraced, and the check doesn't depend on it. The report records `probed: outputs` and what it could not see, and the polarity check stays open.
 

@@ -153,6 +153,9 @@ pub struct SimPlatform {
     plans_pending: Option<(PlansChange, Option<Stamp>)>,
     /// The writer leaves a queued plans change queued: a slow write.
     plans_held: bool,
+    /// The writer leaves a queued client change queued: a key-store write
+    /// held back, as a running feed holds a join's enrollment.
+    keys_held: bool,
     call: CallStore<Region>,
     /// An upload's start or a delete, or a chunk at its offset with its
     /// bytes, as the writer's one slot holds them.
@@ -256,6 +259,7 @@ impl SimPlatform {
             plans,
             plans_pending: None,
             plans_held: false,
+            keys_held: false,
             call,
             call_pending: None,
             reboot: false,
@@ -448,6 +452,14 @@ impl SimPlatform {
         self.plans_held = held;
     }
 
+    /// Hold a queued client change (an enrollment, a revocation) in the
+    /// writer's slot, as a key-store write the feeder makes later would,
+    /// or let the writer take it. The change is made when let go, whether
+    /// or not the connection that asked for it is still there.
+    pub fn hold_keys(&mut self, held: bool) {
+        self.keys_held = held;
+    }
+
     /// Run with the alert rules (`true`, the default) or without, from the
     /// first pass on: a control for the rules changing nothing about a meal.
     pub fn set_alerts_on(&mut self, on: bool) {
@@ -512,6 +524,9 @@ impl SimPlatform {
                 self.call.chunk(offset, &data);
             }
             None => {}
+        }
+        if self.keys_held {
+            return None;
         }
         self.device.apply_keys()
     }

@@ -26,7 +26,6 @@ pub fn config() -> Config {
         mqtt_listen: "127.0.0.1:18883".parse().unwrap(),
         http_listen: "127.0.0.1:18765".parse().unwrap(),
         timezone: chrono_tz::America::Denver,
-        plans: Some(vec![]),
         binding_response: None,
         hotspot_interface: Some("wlan1".to_owned()),
         target_mac: Some("02:00:00:00:00:42".to_owned()),
@@ -214,12 +213,11 @@ pub fn device_session(config: &Config) -> MqttOptions {
     options
 }
 
-/// A private directory holding [`config`] on free ports, with no plans.
+/// A private directory holding [`config`] on free ports.
 pub fn configured() -> (tempfile::TempDir, PathBuf, Config) {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("server.json");
     let mut config = config();
-    config.plans = None;
     [config.mqtt_listen, config.http_listen] = addresses().unwrap();
     wellfed_stock::storage::write_json(&path, &config).unwrap();
     (dir, path, config)

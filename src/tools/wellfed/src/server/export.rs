@@ -3,7 +3,7 @@
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::Args;
 use futures_util::TryStreamExt;
 use serde::Serialize;
@@ -35,6 +35,11 @@ pub(super) async fn export(client: &Client, args: ExportArgs, out: Output) -> Re
     } else {
         ExportFormat::Json
     };
+    // An earlier archive is never replaced: refused before the export
+    // starts, and again by the move that puts this one in place.
+    if args.file.exists() {
+        bail!("{} exists; export to a new file", args.file.display());
+    }
     let mut chunks = client.export(format).await?;
 
     // Written beside the file and renamed once whole, so a cut export never
@@ -58,8 +63,8 @@ pub(super) async fn export(client: &Client, args: ExportArgs, out: Output) -> Re
         .with_context(|| format!("sync {}", partial.display()))?;
     drop(file);
     whole(&partial)?;
-    std::fs::rename(&partial, &args.file)
-        .with_context(|| format!("rename {} to {}", partial.display(), args.file.display()))?;
+    wellfed_formats::private::rename_new(&partial, &args.file)
+        .with_context(|| format!("move {} to {}", partial.display(), args.file.display()))?;
 
     let saved = Saved {
         file: &args.file,

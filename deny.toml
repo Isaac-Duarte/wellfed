@@ -68,6 +68,10 @@ allow-wildcard-paths = true
 deny = [
     { crate = "wellfed-relay", wrappers = ["wellfed-bench", "wellfed-itest", "wellfed-rig"], reason = "the relay board is driven only by the bench, its rig and its suite" },
     { crate = "wellfed-build", wrappers = ["wellfed-rig"], reason = "the builder runs as its own process; only the rig's tests link it, to freeze a stock review" },
+    # The GPL-2.0 exception above holds only while the emulator stays in the
+    # builder and the flash tool's tests: never firmware or a shipped tool.
+    { crate = "wellfed-emu", wrappers = ["wellfed-build", "wellfed-flash"], reason = "GPL-2.0 Unicorn stays out of firmware and shipped tools" },
+    { crate = "unicorn-engine", wrappers = ["wellfed-emu"], reason = "GPL-2.0 Unicorn is reached only through the emulator crate" },
     # The SDK (src/sdk) depends on no product crate: product policy and
     # schema reach the firmware above it. The device's and the feeder's stores
     # reach the SDK runtime only through the runtime crates every firmware links.

@@ -448,7 +448,11 @@ impl Run {
             Step::Outage => self.outage(ctx),
             Step::Stalls => {
                 self.injected(ctx, cycle, Injected::Stall)?;
-                scenarios::update_power_cuts(ctx, &format!("s{cycle:02}-cut"))
+                scenarios::update_power_cuts(
+                    ctx,
+                    &format!("s{cycle:02}-cut"),
+                    scenarios::AfterFailedCut::Halt,
+                )
             }
         }
     }

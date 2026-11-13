@@ -718,9 +718,6 @@ sealed class StopCase with _$StopCase {
 /// A write whose outcome is not settled. It may have run, and it is never sent
 /// again.
 enum UncertainWrite {
-  /// The update key's enrollment.
-  updateKey,
-
   /// The signed update, pushed into bank 1.
   promotion,
 }

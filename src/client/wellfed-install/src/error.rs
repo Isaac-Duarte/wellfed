@@ -82,15 +82,18 @@ pub enum Error {
     Signing(#[from] wellfed_signing::Error),
 
     #[error("start the stock server")]
-    StockServer(#[source] PlatformError),
+    StockServer(#[source] wellfed_stock::Error),
     #[error("start the image server")]
-    Images(#[source] PlatformError),
+    Images(#[source] wellfed_stock::Error),
     #[error("the stock server has stopped")]
     StockServerGone,
     /// It ended on its own, for a reason other than its enrollment window
     /// closing: its port was taken, or its records could not be read.
-    #[error("the stock server stopped: {0}")]
-    StockServerFailed(String),
+    #[error("the stock server stopped")]
+    StockServerFailed(#[source] std::sync::Arc<wellfed_stock::Error>),
+    /// It ended on its own with no error, though nothing asked it to.
+    #[error("the stock server stopped on its own")]
+    StockServerStopped,
     /// The server would not send the install request, and its ledger shows
     /// no record of it, so nothing reached stock.
     #[error(
@@ -118,16 +121,6 @@ pub enum Error {
         source: std::io::Error,
     },
 
-    /// The broker enrolled another device than the owner pinned: whatever
-    /// reached it first is not the feeder the owner means to install.
-    #[error(
-        "the broker enrolled device {enrolled}, connecting from {address}, but the expected device is {expected}; nothing was sent to stock. Check which device reached the broker before running again"
-    )]
-    OtherDevice {
-        expected: String,
-        enrolled: String,
-        address: String,
-    },
     /// The feeder this install paired with no longer answers where it was
     /// last seen, where stock connected from, or by discovery.
     #[error(
@@ -218,9 +211,6 @@ pub enum Error {
     /// the feeder's only copy of stock, is refused.
     #[error(transparent)]
     Backup(Box<Error>),
-    /// The owner's own stock copy could not be kept before the promotion.
-    #[error(transparent)]
-    KeepGiven(Box<Error>),
     /// Bluetooth setup failed; the replacement runs from bank 0.
     #[error(transparent)]
     Setup(Box<Error>),
@@ -239,6 +229,10 @@ pub enum Error {
     /// holds, and nothing was offered.
     #[error("the restore's update key file went away before the offer, so nothing was offered")]
     RestoreKeyGone,
+    /// The release key signs consumer images on offline media and never a
+    /// restore, which an online computer signs.
+    #[error("the release key never signs a restore; use an update key the feeder trusts")]
+    RestoreReleaseKey,
     /// An install is running on the feeder now, so nothing was cancelled and
     /// nothing offered.
     #[error("an install is running on the feeder ({phase:?}), so nothing was offered")]
@@ -251,16 +245,10 @@ pub enum Error {
     #[error("the restore stopped on {0}, with nothing offered")]
     RestoreStopped(crate::track::Stop),
 
-    #[error("no update key to enroll")]
-    NoUpdateKey,
-    #[error("no review and key to sign the promotion with")]
-    NoSigner,
     #[error("no signed manifest to promote with")]
     NoManifest,
     #[error("image.bin is shorter than its header")]
     ShortImage,
-    #[error("the enrollment ended before this step")]
-    EnrollmentEnded,
 
     /// The steps ended the install.
     #[error(transparent)]

@@ -10,18 +10,15 @@ use serde_json::json;
 use wellfed_stock::protocol::Channel;
 use wellfed_stock::protocol::Message;
 
-fn observe(controller: &mut Controller, channel: &str, value: serde_json::Value) {
+fn observe(controller: &mut Controller, value: serde_json::Value) {
     let message: Message = serde_json::from_value(value).unwrap();
-    controller
-        .observe(Channel::from_name(channel).unwrap(), &message, Utc::now())
-        .unwrap();
+    controller.observe(&message, Utc::now());
 }
 
 fn ready(controller: &mut Controller) {
     controller.status.broker_connected = true;
     observe(
         controller,
-        "heart",
         json!({"cmd":"HEARTBEAT","ts":Utc::now().timestamp_millis()}),
     );
 }
@@ -34,7 +31,6 @@ fn ota_reports_keep_distinct_phases_with_shared_ids_and_bound_history() {
     for progress in 0..=20 {
         observe(
             &mut c,
-            "system",
             json!({"cmd":"OTA_PROGRESS","msgId":"same-update","progress":progress}),
         );
     }
@@ -44,12 +40,10 @@ fn ota_reports_keep_distinct_phases_with_shared_ids_and_bound_history() {
 
     observe(
         &mut c,
-        "system",
         json!({"cmd":"OTA_UPGRADE","msgId":"same-update","phase":"finalize","code":0}),
     );
     observe(
         &mut c,
-        "system",
         json!({"cmd":"OTA_INFORM","msgId":"same-update","state":6,"errCode":4001}),
     );
 
@@ -80,7 +74,6 @@ fn ota_status_drops_unbounded_or_private_fields_and_survives_disconnect_as_histo
 
     observe(
         &mut c,
-        "system",
         json!({"cmd":"OTA_INFORM","msgId":"x".repeat(1000),"phase":"y".repeat(1000),
             "state":256,"progress":101,"errCode":-1,"code":0,
             "errorMsg":"private-url","speedTest":{"url":"private-url"},"password":"secret"}),
@@ -93,10 +86,10 @@ fn ota_status_drops_unbounded_or_private_fields_and_survives_disconnect_as_histo
     assert!(!output.contains("private-url") && !output.contains("secret"));
     assert!(report.received_at <= Utc::now());
 
-    c.disconnected(Utc::now()).unwrap();
+    c.disconnected(Utc::now());
     assert!(!c.status.device_online);
     assert_eq!(c.status.ota_reports.len(), 1);
-    observe(&mut c, "heart", json!({"cmd":"HEARTBEAT"}));
+    observe(&mut c, json!({"cmd":"HEARTBEAT"}));
     assert_eq!(c.status.ota_reports.len(), 1);
 }
 
@@ -108,7 +101,6 @@ fn stale_telemetry_goes_offline_and_private_attributes_are_not_exposed() {
 
     observe(
         &mut c,
-        "event",
         json!({"cmd":"ATTR_PUSH_EVENT","wifiSsid":"secret-network","password":"secret","volume":50}),
     );
     assert!(!c.status.attributes.contains_key("wifiSsid"));
@@ -116,7 +108,7 @@ fn stale_telemetry_goes_offline_and_private_attributes_are_not_exposed() {
     assert_eq!(c.status.attributes["volume"], 50);
 
     assert!(c.status.device_online);
-    c.expire(Utc::now() + Duration::seconds(91)).unwrap();
+    c.expire(Utc::now() + Duration::seconds(91));
     assert!(!c.status.device_online);
 }
 
@@ -128,4 +120,24 @@ fn concurrent_controllers_cannot_share_a_ledger() {
     assert!(common::load(path.clone()).is_err());
     drop(first);
     assert!(common::load(path).is_ok());
+}
+
+/// `ts` is whatever the device sent: a value whose difference from now does
+/// not fit reads as no offset, never a panic or a wrapped one.
+#[test]
+fn an_out_of_range_device_time_leaves_no_clock_offset() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = common::load(dir.path().join("ledger.json")).unwrap();
+    ready(&mut c);
+    assert!(c.status.clock_offset_seconds.is_some());
+
+    observe(&mut c, json!({"cmd":"HEARTBEAT","ts":i64::MIN}));
+    assert_eq!(c.status.clock_offset_seconds, None);
+
+    let calibration = wellfed_stock::clock::calibration(
+        wellfed_stock::clock::StockPlans::Erased,
+        Some(i64::MIN),
+        Utc::now(),
+    );
+    assert_eq!(calibration, wellfed_stock::clock::Calibration::Sent);
 }

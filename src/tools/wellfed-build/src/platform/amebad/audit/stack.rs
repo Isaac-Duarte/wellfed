@@ -10,8 +10,16 @@
 //! (`sdk::task_create(c"name", words, ...)`) or declared by the firmware
 //! (`#[wellfed_sdk::task(name = "name", stack = WORDS, priority = N)] fn entry`),
 //! it walks the direct call graph from the task's entry function and
-//! sums the frames along the deepest path. Frames come from each function's
-//! prologue (`push`, `stmdb sp!`, `vpush`, `str [sp, #-n]!`, `sub sp`), and a linker veneer
+//! sums the frames along the deepest path. A function's frame is the sum of
+//! every stack decrement in it (`push`, `stmdb sp!`, `vpush`, `str [sp, #-n]!`,
+//! `sub sp, #n`), not only the prologue's, and one that sets the stack from
+//! a register's value is refused ([`StackError::Variable`]): `sub sp, rN`
+//! anywhere, and `mov sp, rN` or `add sp, rN` unless the frame's restore
+//! (`pop`, `vpop`, `ldm sp!`) comes next, as in an epilogue's
+//! `mov sp, r7; pop {r7, pc}`. The one bounded exception is aligning the
+//! stack down (`mov r0, sp; bic r0, r0, #7; mov sp, r0`, as the vendor's
+//! `app_start` does), which lowers it by at most the mask and counts as that
+//! much frame. A linker veneer
 //! (`__name_veneer`, the long branch into RAM or ROM) leads to its target.
 //! Recursion is cut at the cycle.
 //!
@@ -92,6 +100,10 @@ pub enum StackError {
          stack audit can read"
     )]
     StackSize { task: String, size: String },
+    /// Two `const NAME: u16` definitions disagree, so which one a task's
+    /// stack takes depends on configuration the audit does not read.
+    #[error("The stack size constant {name} is defined twice with different values")]
+    Constant { name: String },
     #[error("The flash hooks link, but no provider callback the runtime installs")]
     NoCallback,
     #[error("Provider callbacks link, but no flash-hook site calls them: update HOOK_SITES")]
@@ -128,6 +140,16 @@ pub enum StackError {
          it data: the stack audit cannot say what it does"
     )]
     Undecoded {
+        function: String,
+        address: u64,
+        line: String,
+    },
+    /// The stack set from a register, to a depth only the run knows.
+    #[error(
+        "{function} sets the stack from a register's value ({line:?} at {address:#x}): \
+         the stack audit cannot bound a frame sized at run time"
+    )]
+    Variable {
         function: String,
         address: u64,
         line: String,
@@ -431,6 +453,36 @@ static SUB: LazyLock<Regex> = LazyLock::new(|| {
     // up to 4 KiB; missing it hid curve25519's 1948-byte frame.
     pattern(r"^sub(?:w)?{C}(?:\.w)?\s+sp,\s*(?:sp,\s*)?#(\d+)")
 });
+/// A stack decrement by a register's value: a frame sized at run time
+/// (`alloca`, a variable-length array), which no static bound covers.
+static SUB_REGISTER: LazyLock<Regex> =
+    LazyLock::new(|| pattern(r"^subs?{C}(?:\.w)?\s+sp,\s*(?:sp,\s*)?(?:r\d+|sb|sl|fp|ip|lr)\b"));
+
+/// The stack pointer set from a register (`mov sp, r7`, `add sp, sp, r3`):
+/// an epilogue's restore when the frame's pop follows, anything else a
+/// stack the listing cannot bound.
+static SET_REGISTER: LazyLock<Regex> = LazyLock::new(|| {
+    pattern(r"^(?:mov|add)s?{C}(?:\.w)?\s+sp,\s*(?:sp,\s*)?(?:r\d+|sb|sl|fp|ip|lr)\b")
+});
+/// The stack pointer copied to a register, the first step of aligning it.
+static COPY_SP: LazyLock<Regex> =
+    LazyLock::new(|| pattern(r"^movs?{C}(?:\.w)?\s+(r\d+|sb|sl|fp|ip|lr),\s*sp\s*(?:;|$)"));
+/// A register's low bits cleared (`bic r0, r0, #7`): aligning it down.
+static CLEAR_LOW: LazyLock<Regex> = LazyLock::new(|| {
+    pattern(
+        r"^bics?{C}(?:\.w)?\s+(r\d+|sb|sl|fp|ip|lr),\s*(r\d+|sb|sl|fp|ip|lr),\s*#(\d+)\s*(?:;|$)",
+    )
+});
+/// The stack set back from a register (`mov sp, r0`): which register.
+static SET_FROM: LazyLock<Regex> =
+    LazyLock::new(|| pattern(r"^movs?{C}(?:\.w)?\s+sp,\s*(r\d+|sb|sl|fp|ip|lr)\s*(?:;|$)"));
+/// The widest alignment the audit takes as bounded: a page.
+const MAX_ALIGN_MASK: u64 = 4095;
+
+/// What ends a frame: a restore of saved registers from the stack.
+static RESTORE: LazyLock<Regex> = LazyLock::new(|| {
+    pattern(r"^(?:pop{C}(?:\.w)?|vpop{C}|ldmia{C}(?:\.w)?\s+sp!,|ldm{C}(?:\.w)?\s+sp!,)")
+});
 
 /// {entry function name: (task name, stack bytes)} from the task sources.
 ///
@@ -441,10 +493,23 @@ static SUB: LazyLock<Regex> = LazyLock::new(|| {
 /// does not link the task. So is a stack size that is neither a literal nor a
 /// `const NAME: u16` in the same sources.
 fn tasks(source: &str) -> Result<BTreeMap<String, (String, u64)>> {
-    let constants: HashMap<&str, u64> = CONSTANT
-        .captures_iter(source)
-        .filter_map(|c| Some((c.get(1)?.as_str(), c[2].parse().ok()?)))
-        .collect();
+    // Sources are read whole, cfg and all, so two definitions of one name
+    // could each be the one compiled; refuse them unless they agree.
+    let mut constants: HashMap<&str, u64> = HashMap::new();
+    for c in CONSTANT.captures_iter(source) {
+        let (Some(name), Ok(value)) = (c.get(1), c[2].parse::<u64>()) else {
+            continue;
+        };
+        if constants
+            .insert(name.as_str(), value)
+            .is_some_and(|was| was != value)
+        {
+            return Err(StackError::Constant {
+                name: name.as_str().into(),
+            }
+            .into());
+        }
+    }
 
     let (sites, matched) = (
         TASK_SITE.find_iter(source).count(),
@@ -585,7 +650,10 @@ struct Function {
     frame: u64,
     calls: BTreeSet<String>,
     indirect: bool,
-    sized: bool,
+    /// The first stack pointer set from a register (`sub sp, r3`, or a
+    /// `mov sp, r0` no restore follows), whose depth no listing shows: its
+    /// address and text.
+    variable: Option<(u64, String)>,
     /// Addresses the function builds or loads (`movw`/`movt` pairs and
     /// literal words): the formatting methods and vtables it passes on.
     refs: BTreeSet<u64>,
@@ -599,10 +667,23 @@ struct Function {
 fn frames(listing: &str, map: &CodeMap) -> Vec<(String, Function)> {
     let mut functions: Vec<(String, Function)> = Vec::new();
     let mut low: HashMap<String, u64> = HashMap::new();
+    // A `mov sp, rN` waiting for the next instruction to show it restores
+    // the frame; otherwise, or at the function's end, it is variable.
+    let mut setting: Option<(u64, String)> = None;
+    // The register holding the stack pointer as it is being aligned down,
+    // with the mask cleared so far (0 until the `bic`).
+    let mut aligning: Option<(String, u64)> = None;
+    let unrestored = |functions: &mut Vec<(String, Function)>,
+                      setting: &mut Option<(u64, String)>| {
+        if let (Some((_, f)), Some(set)) = (functions.last_mut(), setting.take()) {
+            f.variable.get_or_insert(set);
+        }
+    };
     // The low half of a literal word, waiting for its high half.
     let mut low_half: Option<(u64, u16)> = None;
     for line in listing.lines() {
         if let Some(heading) = HEADING.captures(line) {
+            unrestored(&mut functions, &mut setting);
             let address = u64::from_str_radix(&heading[1], 16).unwrap_or_default();
             let f = Function {
                 address,
@@ -610,6 +691,7 @@ fn frames(listing: &str, map: &CodeMap) -> Vec<(String, Function)> {
             };
             functions.push((heading[2].to_string(), f));
             low.clear();
+            aligning = None;
             continue;
         }
         let Some((name, f)) = functions.last_mut() else {
@@ -646,26 +728,67 @@ fn frames(listing: &str, map: &CodeMap) -> Vec<(String, Function)> {
             continue;
         }
 
-        if !f.sized {
-            if let Some(push) = PUSH.captures(insn) {
-                f.frame += 4 * push[1].split(',').filter(|r| !r.trim().is_empty()).count() as u64;
-                continue;
-            }
-            if let Some(vpush) = VPUSH.captures(insn) {
-                let (low, high): (u64, u64) =
-                    (vpush[1].parse().unwrap_or(0), vpush[2].parse().unwrap_or(0));
-                f.frame += 8 * (high + 1).saturating_sub(low);
-                continue;
-            }
-            if let Some(slot) = WRITEBACK.captures(insn) {
-                f.frame += slot[1].parse::<u64>().unwrap_or(0);
-                continue;
-            }
-            if let Some(sub) = SUB.captures(insn) {
-                f.frame += sub[1].parse::<u64>().unwrap_or(0);
-                f.sized = true;
-                continue;
-            }
+        if let Some(set) = setting.take()
+            && !RESTORE.is_match(insn)
+        {
+            f.variable.get_or_insert(set);
+        }
+        // Aligning the stack down lowers it by at most the mask: only the
+        // exact copy, clear and set back, in a row, counts so.
+        let step = aligning.take();
+        if let Some(copy) = COPY_SP.captures(insn) {
+            aligning = Some((copy[1].to_string(), 0));
+            continue;
+        }
+        if let (Some(clear), Some((register, 0))) = (CLEAR_LOW.captures(insn), &step)
+            && clear[1] == **register
+            && clear[2] == **register
+            && let Ok(mask) = clear[3].parse::<u64>()
+            && mask <= MAX_ALIGN_MASK
+            && (mask + 1).is_power_of_two()
+        {
+            aligning = Some((register.clone(), mask));
+            continue;
+        }
+        if let (Some(set), Some((register, mask))) = (SET_FROM.captures(insn), &step)
+            && set[1] == **register
+            && *mask > 0
+        {
+            f.frame += mask;
+            continue;
+        }
+        if SET_REGISTER.is_match(insn) {
+            setting = Some((address, line.trim().to_string()));
+            continue;
+        }
+
+        // Every stack decrement in the function counts, wherever it sits: a
+        // frame too large for one immediate is two `sub sp`, and GCC spills
+        // stacked argument registers with `sub sp, #8` before its push. The
+        // sum can only overstate a frame (an epilogue's `add sp` is not
+        // taken off), never understate it.
+        if let Some(push) = PUSH.captures(insn) {
+            f.frame += 4 * push[1].split(',').filter(|r| !r.trim().is_empty()).count() as u64;
+            continue;
+        }
+        if let Some(vpush) = VPUSH.captures(insn) {
+            let (low, high): (u64, u64) =
+                (vpush[1].parse().unwrap_or(0), vpush[2].parse().unwrap_or(0));
+            f.frame += 8 * (high + 1).saturating_sub(low);
+            continue;
+        }
+        if let Some(slot) = WRITEBACK.captures(insn) {
+            f.frame += slot[1].parse::<u64>().unwrap_or(0);
+            continue;
+        }
+        if let Some(sub) = SUB.captures(insn) {
+            f.frame += sub[1].parse::<u64>().unwrap_or(0);
+            continue;
+        }
+        if SUB_REGISTER.is_match(insn) {
+            f.variable
+                .get_or_insert_with(|| (address, line.trim().to_string()));
+            continue;
         }
         if let Some(call) = CALL.captures(line) {
             f.calls.insert(call[1].to_string());
@@ -680,6 +803,7 @@ fn frames(listing: &str, map: &CodeMap) -> Vec<(String, Function)> {
             }
         }
     }
+    unrestored(&mut functions, &mut setting);
     functions
 }
 
@@ -971,6 +1095,31 @@ impl<'a> Graph<'a> {
     }
 }
 
+/// Functions by name. Two static C functions can share a name: the one
+/// entry stands for both, with the larger frame, every call either makes
+/// and an indirect call if either makes one, so a call to the deeper one is
+/// never charged the shallower frame.
+fn merged(functions: Vec<(String, Function)>) -> HashMap<String, Function> {
+    let mut merged: HashMap<String, Function> = HashMap::new();
+    for (name, f) in functions {
+        match merged.entry(name) {
+            std::collections::hash_map::Entry::Vacant(slot) => {
+                slot.insert(f);
+            }
+            std::collections::hash_map::Entry::Occupied(mut slot) => {
+                let kept = slot.get_mut();
+                kept.frame = kept.frame.max(f.frame);
+                kept.calls.extend(f.calls);
+                kept.indirect |= f.indirect;
+                kept.refs.extend(f.refs);
+                kept.undecoded = kept.undecoded.take().or(f.undecoded);
+                kept.variable = kept.variable.take().or(f.variable);
+            }
+        }
+    }
+    merged
+}
+
 /// `functions` with each veneer leading to its target.
 fn link(mut functions: HashMap<String, Function>) -> HashMap<String, Function> {
     for (name, f) in &mut functions {
@@ -1004,15 +1153,26 @@ fn listing(elf: &Path, binutils: &Binutils) -> Result<(String, CodeMap)> {
     Ok((tool(&binutils.objdump(), &["-d"], &stripped)?, map))
 }
 
-/// The first line of code in `functions` that didn't decode, refused.
+/// The first line of code in `functions` that didn't decode, or that sizes
+/// a frame at run time, refused.
 fn all_decoded(functions: &HashMap<String, Function>) -> Result<()> {
-    let undecoded = functions
-        .iter()
-        .filter_map(|(name, f)| Some((name, f.undecoded.as_ref()?)))
-        .min_by_key(|(_, (address, _))| *address);
+    let first = |line: fn(&Function) -> Option<&(u64, String)>| {
+        functions
+            .iter()
+            .filter_map(|(name, f)| Some((name, line(f)?)))
+            .min_by_key(|(_, (address, _))| *address)
+    };
 
-    match undecoded {
-        Some((function, (address, line))) => Err(StackError::Undecoded {
+    if let Some((function, (address, line))) = first(|f| f.undecoded.as_ref()) {
+        return Err(StackError::Undecoded {
+            function: demangle(function),
+            address: *address,
+            line: line.clone(),
+        }
+        .into());
+    }
+    match first(|f| f.variable.as_ref()) {
+        Some((function, (address, line))) => Err(StackError::Variable {
             function: demangle(function),
             address: *address,
             line: line.clone(),
@@ -1027,8 +1187,7 @@ fn all_decoded(functions: &HashMap<String, Function>) -> Result<()> {
 /// than its share of the slots.
 pub(crate) fn audit(elf: &Path, binutils: &Binutils, sources: &TaskSources) -> Result<StackAudit> {
     let (listed, map) = listing(elf, binutils)?;
-    // A repeated heading starts that function over, as a later definition.
-    let functions = link(frames(&listed, &map).into_iter().collect());
+    let functions = link(merged(frames(&listed, &map)));
     all_decoded(&functions)?;
     if sources.kind == Runtime::Bare {
         let linked = sdk_runtime_in(functions.keys());
@@ -1525,8 +1684,8 @@ mod tests {
 
         assert_eq!(
             functions["fn"].frame,
-            20 + 4 + 64,
-            "after `sub sp` is the body"
+            20 + 4 + 64 + 4,
+            "a decrement after `sub sp` counts too"
         );
         assert_eq!(functions["other"].frame, 8, "a plain store moves nothing");
     }
@@ -1613,6 +1772,174 @@ mod tests {
         assert!(f.refs.contains(&0x1001_dcc0), "{:x?}", f.refs);
         assert!(f.refs.contains(&0xf800_f000), "{:x?}", f.refs);
         assert_eq!(f.undecoded, None);
+    }
+
+    /// Two static functions with one name are one entry with the deeper
+    /// frame and every call, whichever the listing prints last.
+    #[test]
+    fn functions_sharing_a_name_keep_the_deeper_frame_and_every_call() {
+        let listing = "\
+00001000 <twin>:
+    1000:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}
+    1002:\tb090      \tsub\tsp, #64
+    1004:\tf000 f800 \tbl\t3000 <deep>
+00002000 <twin>:
+    2000:\tb500      \tpush\t{lr}
+    2002:\tf000 f800 \tbl\t4000 <shallow>
+";
+        let functions = merged(frames(listing, &code_only()));
+        assert_eq!(functions["twin"].frame, 20 + 64);
+        let calls: Vec<&str> = functions["twin"].calls.iter().map(String::as_str).collect();
+        assert_eq!(calls, ["deep", "shallow"]);
+    }
+
+    #[test]
+    fn stack_constants_that_disagree_are_refused() {
+        let source = "const STACK: u16 = 512;\n#[cfg(x)]\nconst STACK: u16 = 256;\n";
+        let error = tasks(source).unwrap_err();
+        assert!(
+            matches!(&error, Error::Stack(StackError::Constant { name }) if name == "STACK"),
+            "{error:?}"
+        );
+        assert!(tasks("const STACK: u16 = 512;\nconst STACK: u16 = 512;\n").is_ok());
+    }
+
+    /// A frame of 4 KiB or more is two `sub sp`; GCC spills stacked
+    /// argument registers with `sub sp` before its push; and a split
+    /// allocation can come in two encodable halves. Each decrement counts.
+    #[test]
+    fn every_stack_decrement_counts_not_only_the_first_sub() {
+        let listing = "\
+0e00bebe <split>:
+ e00bebe:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}
+ e00bec0:\te92d 0f00 \tstmdb\tsp!, {r8, r9, sl, fp}
+ e00bec4:\tf5ad 5d88 \tsub.w\tsp, sp, #4352
+ e00bec8:\tb085      \tsub\tsp, #20
+0e00c000 <spill>:
+ e00c000:\tb082      \tsub\tsp, #8
+ e00c002:\tb570      \tpush\t{r4, r5, r6, lr}
+ e00c004:\tb084      \tsub\tsp, #16
+0e00d000 <task>:
+ e00d000:\tb580      \tpush\t{r7, lr}
+ e00d002:\tf5ad 5d80 \tsub.w\tsp, sp, #4096
+ e00d006:\tf5ad 6d00 \tsub.w\tsp, sp, #2048
+";
+        let functions: HashMap<String, Function> =
+            frames(listing, &code_only()).into_iter().collect();
+
+        assert_eq!(functions["split"].frame, 20 + 16 + 4352 + 20);
+        assert_eq!(functions["spill"].frame, 8 + 16 + 16);
+        assert_eq!(functions["task"].frame, 8 + 4096 + 2048);
+
+        let graph = Graph::new(&functions, &[]);
+        let error = bound(&graph, "task", "task", "task", 6144, 0).unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                Error::Stack(StackError::Overflow { bound: 6408, .. })
+            ),
+            "{error:?}"
+        );
+    }
+
+    /// A frame sized by a register has no static bound, so it is refused
+    /// rather than counted as nothing.
+    #[test]
+    fn a_stack_decrement_by_a_register_is_refused() {
+        for line in [
+            "    1002:\tebad 0d03 \tsub.w\tsp, sp, r3",
+            "    1002:\tebad 0d03 \tsub\tsp, r3",
+            "    1002:\tebad 0d03 \tsubne.w\tsp, sp, ip",
+        ] {
+            let listing = format!("00001000 <fn>:\n    1000:\tb500      \tpush\t{{lr}}\n{line}\n");
+            let error = refused(&listing, &code_only());
+            assert!(
+                matches!(&error, StackError::Variable { function, address: 0x1002, .. } if function == "fn"),
+                "{error:?}"
+            );
+        }
+    }
+
+    /// The stack set from a register is refused unless the frame's restore
+    /// follows at once, as in an epilogue; the reset entry's switch to its
+    /// own stack (`mov sp, r0` then a call) is one.
+    #[test]
+    fn a_stack_set_from_a_register_outside_an_epilogue_is_refused() {
+        for (set, next) in [
+            ("4685      \tmov\tsp, r0", "f000 f800 \tbl\t2000 <other>"),
+            ("eb0d 0d03 \tadd.w\tsp, sp, r3", "4770      \tbx\tlr"),
+            ("4685      \tmov\tsp, r0", ""),
+        ] {
+            let mut listing =
+                format!("00001000 <fn>:\n    1000:\tb500      \tpush\t{{lr}}\n    1002:\t{set}\n");
+            if !next.is_empty() {
+                listing.push_str(&format!("    1004:\t{next}\n"));
+            }
+            let error = refused(&listing, &code_only());
+            assert!(
+                matches!(&error, StackError::Variable { function, address: 0x1002, .. } if function == "fn"),
+                "{set} then {next:?}: {error:?}"
+            );
+        }
+
+        let epilogue = "\
+00001000 <fn>:
+    1000:\tb580      \tpush\t{r7, lr}
+    1002:\taf00      \tadd\tr7, sp, #0
+    1004:\t46bd      \tmov\tsp, r7
+    1006:\tbd80      \tpop\t{r7, pc}
+";
+        let functions: HashMap<String, Function> =
+            frames(epilogue, &code_only()).into_iter().collect();
+        assert_eq!(functions["fn"].variable, None);
+        assert_eq!(functions["fn"].frame, 8);
+    }
+
+    /// The vendor's `app_start` aligns its stack down to 8 bytes: that
+    /// lowers it by at most 7, which counts, and only the exact sequence
+    /// does.
+    #[test]
+    fn aligning_the_stack_down_counts_its_mask() {
+        let aligned = "\
+00001000 <app_start>:
+    1000:\tb500      \tpush\t{lr}
+    1002:\t4668      \tmov\tr0, sp
+    1004:\tf020 0007 \tbic.w\tr0, r0, #7
+    1008:\t4685      \tmov\tsp, r0
+    100a:\tf000 f800 \tbl\t2000 <other>
+";
+        let functions: HashMap<String, Function> =
+            frames(aligned, &code_only()).into_iter().collect();
+        assert_eq!(functions["app_start"].variable, None);
+        assert_eq!(functions["app_start"].frame, 4 + 7);
+
+        for (copy, clear) in [
+            // Another register cleared than the one copied.
+            ("4668      \tmov\tr0, sp", "f021 0007 \tbic.w\tr1, r1, #7"),
+            // Not an alignment mask.
+            ("4668      \tmov\tr0, sp", "f020 0006 \tbic.w\tr0, r0, #6"),
+            // Not the stack pointer copied.
+            ("4608      \tmov\tr0, r1", "f020 0007 \tbic.w\tr0, r0, #7"),
+            // Something between the clear and the set.
+            ("f020 0007 \tbic.w\tr0, r0, #7", "3804      \tsubs\tr0, #4"),
+        ] {
+            let listing = format!(
+                "00001000 <fn>:\n    1000:\tb500      \tpush\t{{lr}}\n    \
+                 1002:\t{copy}\n    1004:\t{clear}\n    1008:\t4685      \tmov\tsp, r0\n    \
+                 100a:\tf000 f800 \tbl\t2000 <other>\n"
+            );
+            let error = refused(&listing, &code_only());
+            assert!(
+                matches!(
+                    &error,
+                    StackError::Variable {
+                        address: 0x1008,
+                        ..
+                    }
+                ),
+                "{copy} then {clear}: {error:?}"
+            );
+        }
     }
 
     /// What the pinned objdump hides, once decoded, counts.
@@ -1749,6 +2076,7 @@ mod tests {
         assert_eq!(&SUB.captures("subwls\tsp, sp, #1032").unwrap()[1], "1032");
         assert_eq!(&SUB.captures("subhi.w\tsp, sp, #1032").unwrap()[1], "1032");
         assert_eq!(&MOVE.captures("movwhi\tr0, #4097").unwrap()[3], "4097");
+        assert!(SUB_REGISTER.is_match("subhi.w\tsp, sp, r3"));
         assert!(INDIRECT.is_match("    1010:\t4798      \tblxhi\tr3"));
         assert!(!INDIRECT.is_match("    1010:\t4770      \tbxhi\tlr"));
     }

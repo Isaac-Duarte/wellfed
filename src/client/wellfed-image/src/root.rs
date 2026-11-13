@@ -16,10 +16,13 @@ use crate::error::Result;
 pub enum RootError {
     #[error("{} has no private/ evidence directory", root.display())]
     NoPrivate { root: PathBuf },
-    #[error("Regular private input required")]
+    #[error("{} must be a regular file under private/", path.display())]
     NotPrivateFile { path: PathBuf },
-    #[error("Output must be a new private directory")]
+    #[error("{} must be a new directory under private/", path.display())]
     NotPrivateDirectory { path: PathBuf },
+    /// A private input that passed the check but could not be read.
+    #[error("Cannot read {}: {source}", path.display())]
+    Read { path: PathBuf, source: io::Error },
 }
 
 #[derive(Debug, Clone)]
@@ -60,9 +63,9 @@ impl Root {
                 .unwrap_or_else(|_| path.to_path_buf())
         };
 
-        // Python's non-strict `resolve()`: walk the components, resolving
-        // symlinks wherever the path so far exists, and `..` lexically
-        // where it does not.
+        // Symlinks are resolved wherever the path so far exists, and `..` is
+        // applied lexically past that, so a path through a link out of
+        // private/ is outside it even where its end does not exist yet.
         let mut full = PathBuf::new();
         for part in absolute.components() {
             match part {
@@ -86,7 +89,13 @@ impl Root {
                 path: path.to_path_buf(),
             }
         })?;
-        Ok(fs::read(path)?)
+        fs::read(path).map_err(|source| {
+            RootError::Read {
+                path: path.to_path_buf(),
+                source,
+            }
+            .into()
+        })
     }
 
     /// A new private output directory.
@@ -102,7 +111,7 @@ impl Root {
             .mode(0o700)
             .create(path)
             .or_else(|error| {
-                // Python's mkdir(parents=True) for the reader outputs.
+                // A reader's output may sit below directories not made yet.
                 if error.kind() == io::ErrorKind::NotFound {
                     fs::DirBuilder::new()
                         .recursive(true)

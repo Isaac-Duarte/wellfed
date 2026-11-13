@@ -36,12 +36,15 @@ async fn main(spawner: Spawner) {
     // Feeder off, strap released, UART buffers isolated: the same state the
     // board's pull resistors hold during reset, and what a de-energised relay
     // board looked like.
-    outputs::init(outputs::Outputs {
-        power: Output::new(p.PIN_2, Level::Low),
-        strap: Output::new(p.PIN_4, Level::Low),
-        tx_oe_n: Output::new(p.PIN_5, Level::High),
-        rx_oe_n: Output::new(p.PIN_6, Level::High),
-    })
+    outputs::init(
+        outputs::Outputs {
+            power: Output::new(p.PIN_2, Level::Low),
+            strap: Output::new(p.PIN_4, Level::Low),
+            tx_oe_n: Output::new(p.PIN_5, Level::High),
+            rx_oe_n: Output::new(p.PIN_6, Level::High),
+        },
+        embassy_rp::clocks::RoscRng.next_u32(),
+    )
     .await;
 
     // Read before USB starts: the unique-ID command briefly stops XIP.

@@ -1,6 +1,6 @@
 //! Logic-analyzer captures of the motor driver, checked for any drive.
 //!
-//! Port of `audit-driver-transients.py`. It reads a `wellfed-bench transients`
+//! It reads a `wellfed-bench transients`
 //! session: raw sigrok bytes (one byte per sample, bit n = channel Dn) plus a
 //! manifest naming the INA, INB, OUTA and OUTB channels. The TC118AH drives
 //! the motor only when its inputs differ (forward H/L, reverse L/H); L/L is
@@ -9,22 +9,41 @@
 //! Per cycle, a pass needs:
 //! - the capture to start with every probed line LOW (feeder unpowered), so
 //!   the power-on itself was recorded;
-//! - no sample with INA != INB, and none with OUTA != OUTB;
+//! - no sample with INA != INB, and none with OUTA != OUTB, but for the
+//!   supply ramp's skews (below);
 //! - boot mode: the inputs reach H/H (stopped startup's brake) and stay there
-//!   to the end; loader mode: the inputs never leave L/L.
+//!   to the end, once the ramp is over; loader mode: the inputs never leave
+//!   L/L.
+//!
+//! **The supply ramp.** Within the first millisecond after power-on (the
+//! first sample any probed line leaves LOW), before any code runs, the
+//! analyzer resolves lines crossing its threshold one at a time, and the
+//! recorded sessions show single skews of up to 4.5 µs between them. The
+//! pass rule the motor driver's evidence applies excludes that millisecond,
+//! and a differing read counts as drive only when the levels are firm. So a
+//! disagreement is reported as a `ramp_skew`, kept out of the outcome, only
+//! where it fits one threshold crossing: the pair's first disagreement, it
+//! starts inside [`RAMP_US`] of power-on, lasts at most [`SKEW_US`], and the
+//! pair rises through it, from L/L to H/H. One per pair per cycle; any
+//! other disagreement, even inside the ramp, is drive. A brief return to
+//! standby inside the ramp does not leave the brake. Whether the skews
+//! belong to the probe and the ramp, not the driver, is an open bench check
+//! (a scope on the inputs); until then the report counts them. An
+//! outputs-only session has no power-on edge of its own, so it takes no ramp.
 //!
 //! A session may probe only OUTA and OUTB, at the motor's terminals, which
 //! take ordinary hooks where the driver's 1.27 mm pins do not. The outputs
 //! differ only while the motor is driven, so the drive check stands. Standby
 //! leaves the outputs undriven, at whatever level the analyzer's inputs float
-//! to, so the brake rules and the power-on edge are not checked, and the
-//! report says so.
+//! to, so the brake rules are not checked, and the report says so. The
+//! capture must still start with both outputs LOW, as an unpowered driver's
+//! read, so a capture that began after power-on is refused.
 //!
 //! Every input or output disagreement is reported with its start and length,
 //! however short; one sample is a sample period long.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Component, Path};
 
 use serde::Serialize;
 use wellfed_bench_formats::transients::{TransientMode, TransientsManifest};
@@ -39,15 +58,18 @@ pub enum TransientsError {
     Schema { version: u32 },
     #[error("Unsupported transients manifest")]
     Samplerate,
-    /// A cycle file must be a plain name inside the capture directory.
-    #[error("Unsupported transients manifest")]
+    /// A cycle file must be a plain name inside the capture directory, and a
+    /// regular file there, not a link to somewhere else.
+    #[error("Cycle file {file:?} must be a regular file named inside the capture")]
     CycleFile { file: String },
     #[error(
         "Manifest needs distinct channels 0-7 for INA, INB, OUTA and OUTB, or for OUTA and OUTB alone"
     )]
     Channels,
-    #[error("{file} changed since capture")]
-    Changed { file: String },
+    /// The manifest records each cycle's length, not its hash, so only a
+    /// change of size is caught.
+    #[error("{file} changed size since capture")]
+    SizeChanged { file: String },
 }
 
 const LINES: [&str; 4] = ["ina", "inb", "outa", "outb"];
@@ -55,7 +77,14 @@ const LIMIT: &str = "Digital levels at the analyzer threshold (about 1.4 V for f
     rate; a pulse shorter than one sample period can be missed. Undriven driver outputs (standby) float to the \
     analyzer's input level, which read HIGH on the tested clone.";
 const OUTPUTS_ONLY: &str = "INA and INB were not probed: the brake state and the power-on edge are not seen, \
-    so power-on is placed only by the bench's timing (power_on_after_launch_s).";
+    so power-on is placed only by the bench's timing (power_on_after_launch_s), and no ramp skew is excused.";
+/// How long after power-on the supply ramp lasts, in microseconds: the
+/// motor driver's evidence takes every sample after its first millisecond.
+const RAMP_US: f64 = 1000.0;
+/// The longest disagreement inside the ramp that is a threshold skew rather
+/// than drive, in microseconds: the longest the recorded sessions show is
+/// 4.5 µs.
+const SKEW_US: f64 = 5.0;
 
 outcomes! {
     /// A cycle's outcome, or the session's (`pass` only when every cycle passed).
@@ -98,6 +127,30 @@ impl Probes {
 }
 
 /// (value, start, length) for each run of `byte & mask` in the capture.
+/// The one disagreement of the line pair `[a, b]` the supply ramp excuses,
+/// as its first sample and length: the pair's first disagreement, if it
+/// starts in the ramp, lasts at most [`SKEW_US`], and sits between the pair
+/// at L/L and the pair at H/H, as one threshold crossing of a rising supply
+/// does. Any later disagreement, or one that falls or toggles, is drive.
+fn ramp_crossing(
+    data: &[u8],
+    [a, b]: [u8; 2],
+    in_ramp: impl Fn(usize) -> bool,
+    us: f64,
+) -> Option<(usize, usize)> {
+    let pair = runs(data, a | b);
+    let split = |value: u8| value != 0 && value != a | b;
+    let first = pair.iter().position(|&(value, _, _)| split(value))?;
+
+    let (_, start, length) = pair[first];
+    let rises = first > 0
+        && pair[first - 1].0 == 0
+        && pair
+            .get(first + 1)
+            .is_some_and(|&(next, _, _)| next == a | b);
+    (rises && in_ramp(start) && length as f64 * us <= SKEW_US).then_some((start, length))
+}
+
 pub(crate) fn runs(data: &[u8], mask: u8) -> Vec<(u8, usize, usize)> {
     let mut out = Vec::new();
     let mut start = 0;
@@ -165,6 +218,9 @@ pub(crate) struct CycleCheck {
     seconds: f64,
     input_drive: Vec<DriveEvent>,
     output_drive: Vec<DriveEvent>,
+    /// Disagreements inside the supply ramp short enough to be threshold
+    /// skews, kept out of the outcome.
+    ramp_skew: Vec<DriveEvent>,
     #[serde(flatten)]
     timeline: Option<Timeline>,
     outcome: TransientOutcome,
@@ -186,6 +242,7 @@ pub(crate) fn check_cycle(
         seconds: round(data.len() as f64 / samplerate, 6),
         input_drive: Vec::new(),
         output_drive: Vec::new(),
+        ramp_skew: Vec::new(),
         timeline: None,
         outcome: TransientOutcome::Empty,
     };
@@ -195,8 +252,25 @@ pub(crate) fn check_cycle(
 
     let timeline = runs(data, mask);
     let on = |value: u8, bit: u8| value & bit != 0;
+    // Power-on, where the inputs show it: the first sample any probed line
+    // leaves LOW, in a capture that starts LOW.
+    let power_on = timeline
+        .get(1)
+        .filter(|_| input_bits.is_some() && timeline[0].0 == 0)
+        .map(|&(_, start, _)| start as f64 * us);
+    let ramp_end = power_on.map(|at| at + RAMP_US);
+    let in_ramp =
+        |at: f64| power_on.is_some_and(|on| at >= on) && ramp_end.is_some_and(|end| at < end);
+    let crossing =
+        |pair: [u8; 2]| ramp_crossing(data, pair, |start| in_ramp(start as f64 * us), us);
+    let input_skew = input_bits.and_then(crossing);
+    let output_skew = crossing([outa, outb]);
+    let within = |skew: Option<(usize, usize)>, at: usize| {
+        skew.is_some_and(|(start, length)| (start..start + length).contains(&at))
+    };
+
     for &(value, start, length) in &timeline {
-        let event = |drive| DriveEvent {
+        let event = |start: usize, length: usize, drive| DriveEvent {
             start_us: round(start as f64 * us, 3),
             length_us: round(length as f64 * us, 3),
             drive,
@@ -204,22 +278,33 @@ pub(crate) fn check_cycle(
         if let Some([ina, inb]) = input_bits
             && on(value, ina) != on(value, inb)
         {
-            check
-                .input_drive
-                .push(event(Drive::Direction(if on(value, ina) {
-                    Direction::Forward
-                } else {
-                    Direction::Reverse
-                })));
+            let drive = Drive::Direction(if on(value, ina) {
+                Direction::Forward
+            } else {
+                Direction::Reverse
+            });
+            match input_skew {
+                // The crossing is reported once, whole, at its first sample.
+                Some((at, skew)) if at == start => {
+                    check.ramp_skew.push(event(at, skew, drive));
+                }
+                _ if within(input_skew, start) => {}
+                _ => check.input_drive.push(event(start, length, drive)),
+            }
         }
         if on(value, outa) != on(value, outb) {
-            check
-                .output_drive
-                .push(event(Drive::High(if on(value, outa) {
-                    Output::Outa
-                } else {
-                    Output::Outb
-                })));
+            let drive = Drive::High(if on(value, outa) {
+                Output::Outa
+            } else {
+                Output::Outb
+            });
+            match output_skew {
+                Some((at, skew)) if at == start => {
+                    check.ramp_skew.push(event(at, skew, drive));
+                }
+                _ if within(output_skew, start) => {}
+                _ => check.output_drive.push(event(start, length, drive)),
+            }
         }
     }
 
@@ -248,9 +333,14 @@ pub(crate) fn check_cycle(
     } else if mode == TransientMode::Boot {
         let last = inputs.last().is_some_and(|(a, b, _)| *a && *b);
         match brake_at {
-            // After the first brake the inputs must not return to standby.
+            // After the first brake the inputs must not return to standby,
+            // once the supply ramp is over.
             Some(at) if last => {
-                if inputs.iter().any(|(x, y, s)| *s > at && !(*x && *y)) {
+                let settled = |s: usize| ramp_end.is_none_or(|end| s as f64 * us >= end);
+                if inputs
+                    .iter()
+                    .any(|(x, y, s)| *s > at && settled(*s) && !(*x && *y))
+                {
                     TransientOutcome::LeftBrake
                 } else {
                     TransientOutcome::Pass
@@ -290,6 +380,11 @@ pub struct TransientsSummary {
     passed: usize,
     input_drive_events: usize,
     output_drive_events: usize,
+    /// Threshold skews inside the supply ramp, counted but not failed.
+    ramp_skew_events: usize,
+    /// The ramp and the longest skew it excuses, in microseconds.
+    ramp_us: f64,
+    skew_us: f64,
     brake_at_s: Option<Range>,
     limit: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -367,13 +462,17 @@ pub fn verify(capture: &Path) -> Result<TransientsReport> {
     let mut cycles = Vec::new();
     for entry in &manifest.cycles {
         let file = entry.file.as_str();
+        let plain = matches!(
+            Path::new(file).components().collect::<Vec<_>>()[..],
+            [Component::Normal(_)]
+        );
         require(
-            Path::new(file).components().count() == 1 && !file.is_empty(),
+            plain && fs::symlink_metadata(capture.join(file)).is_ok_and(|meta| meta.is_file()),
             || TransientsError::CycleFile { file: file.into() },
         )?;
         let data = fs::read(capture.join(file))?;
         require(entry.bytes == data.len() as u64, || {
-            TransientsError::Changed { file: file.into() }
+            TransientsError::SizeChanged { file: file.into() }
         })?;
 
         cycles.push(Cycle {
@@ -408,6 +507,9 @@ pub fn verify(capture: &Path) -> Result<TransientsReport> {
         passed,
         input_drive_events: cycles.iter().map(|c| c.check.input_drive.len()).sum(),
         output_drive_events: cycles.iter().map(|c| c.check.output_drive.len()).sum(),
+        ramp_skew_events: cycles.iter().map(|c| c.check.ramp_skew.len()).sum(),
+        ramp_us: RAMP_US,
+        skew_us: SKEW_US,
         brake_at_s,
         limit: LIMIT,
         not_probed: probes.inputs.is_none().then_some(OUTPUTS_ONLY),

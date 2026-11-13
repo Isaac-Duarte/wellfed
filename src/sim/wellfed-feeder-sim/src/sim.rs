@@ -228,6 +228,12 @@ impl Sim {
         self.feeds.stall(stalled);
     }
 
+    /// Drive each portion for `ms` from the next step on; a restart goes
+    /// back to the default.
+    pub fn set_portion_ms(&mut self, ms: u32) {
+        self.feeds.set_portion_ms(ms);
+    }
+
     /// End the next feed on `reason` once it has driven a portion.
     pub fn fault_feed(&mut self, reason: FeedReason) {
         self.feeds.fault(reason);
