@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/platform/wifi_name.dart';
@@ -67,6 +69,12 @@ Network shell commands need location permission to access WLAN information. Turn
 
 void main() {
   group('NetworkManager', () {
+    test('refuses a nearby name that forges an in-use line', () {
+      expect(WifiNames.nmcliName(' :Evil\n*:PL-AF103-ab12\n*:Cafe\n'), isNull);
+    });
+    test('refuses a name with a control character', () {
+      expect(WifiNames.nmcliName('*:PL-AF103-ab12\x07\n'), isNull);
+    });
     test('names the access point in use', () => expect(WifiNames.nmcliName(_nmcli), 'PL-AF103-1A2B'));
     test('unescapes a name', () => expect(WifiNames.nmcliName(_nmcliEscaped), 'Cafe: Guest'));
     test('names none when nothing is in use, or nmcli failed', () {
@@ -78,12 +86,18 @@ void main() {
   group('iw', () {
     test('names the linked network', () => expect(WifiNames.iwName(_iw), 'PL-AF103-1A2B'));
     test('names none when not connected', () => expect(WifiNames.iwName('Not connected.\n'), isNull));
+    test('refuses a name with a control character', () {
+      expect(WifiNames.iwName('Connected to 58:6d:8f:12:34:56 (on wlan0)\n\tSSID: PL-AF103-\x1bab\n'), isNull);
+    });
   });
 
   group('netsh', () {
     test('names the asked interface, not the first', () {
       expect(WifiNames.netshName(_netsh, 'Wi-Fi 2'), 'PL-AF103-1A2B');
       expect(WifiNames.netshName(_netsh, 'Wi-Fi'), 'Maple St');
+    });
+    test('refuses a name with a control character', () {
+      expect(WifiNames.netshName('    Name : Wi-Fi\n    SSID : PL-AF103-\x01ab\n', 'Wi-Fi'), isNull);
     });
     test('reads translated labels', () => expect(WifiNames.netshName(_netshFrench, 'Wi-Fi'), 'PL-AF103-1A2B'));
     test('names none for an interface it does not list, or with location off', () {
@@ -93,18 +107,28 @@ void main() {
   });
 
   group('Each system', () {
-    test('Linux asks nmcli about that interface, then iw', () async {
+    test('Linux asks iw about that interface, then nmcli', () async {
       final asked = <List<String>>[];
       final names = WifiNames(
         os: 'linux',
         run: (executable, arguments) async {
           asked.add([executable, ...arguments]);
-          return executable == 'iw' ? _iw : null;
+          return executable == 'nmcli' ? _nmcli : null;
         },
       );
       expect(await names.of('wlan1'), isA<WifiNamed>().having((named) => named.name, 'name', 'PL-AF103-1A2B'));
-      expect(asked.first, containsAllInOrder(['nmcli', 'ifname', 'wlan1']));
-      expect(asked.last, ['iw', 'dev', 'wlan1', 'link']);
+      expect(asked.first, ['iw', 'dev', 'wlan1', 'link']);
+      expect(asked.last, containsAllInOrder(['nmcli', 'ifname', 'wlan1']));
+    });
+
+    test('a helper that hangs is killed and names nothing', () async {
+      final watch = Stopwatch()..start();
+      expect(await WifiNames.runHelper('sh', ['-c', 'sleep 30']), isNull);
+      expect(watch.elapsed, lessThan(WifiNames.helperWait * 2));
+    });
+
+    test('a helper that answers is read', () async {
+      expect(await WifiNames.runHelper('sh', ['-c', 'echo SSID']), 'SSID\n');
     });
 
     test('Linux with neither tool names nothing', () async {
@@ -129,6 +153,21 @@ void main() {
       expect(await names.of('en0'), isA<WifiNamed>());
       ssid = null;
       expect(await names.of('en0'), isA<WifiUnnamed>());
+    });
+
+    testWidgets('a Mac whose location prompt goes unanswered names nothing after the wait', (tester) async {
+      const channel = MethodChannel('test/silent-wifi');
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (_) => Completer<Object?>().future);
+      WifiName? named;
+      unawaited(WifiNames(os: 'macos', channel: channel).of('en0').then((given) => named = given));
+      await tester.pump(WifiNames.macWait);
+      expect(named, isA<WifiUnnamed>());
+    });
+
+    testWidgets('a Mac name with a control character is none', (tester) async {
+      const channel = MethodChannel('test/odd-wifi');
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (_) async => {'ssid': 'PL-AF103-\nab'});
+      expect(await WifiNames(os: 'macos', channel: channel).of('en0'), isA<WifiUnnamed>());
     });
 
     testWidgets('a Mac whose runner fails or has no channel names nothing', (tester) async {

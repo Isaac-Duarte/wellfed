@@ -47,7 +47,7 @@ On a computer, you switch networks yourself, since no desktop lets an app join o
 
 Before it watches, the app checks two things. A VPN has to be off, since the feeder can't reach a VPN's address. And the computer mustn't already be on another network with `192.168.1.x` addresses, such as a guest network on a second adapter, since your Wi-Fi password would go to that network's router. The screen says which to change.
 
-The app sends nothing until the computer itself says it joined a Wi-Fi network named `PL-AF103-…`. A Mac says so only to apps allowed your location, so allow Wellfed when macOS asks. On Windows 11, turn on Location for desktop apps in **Settings › Privacy & security › Location**. On Linux, the app asks NetworkManager or `iw`.
+The app sends nothing until the computer itself says it joined a Wi-Fi network named `PL-AF103-…`. A Mac says so only to apps allowed your location, so allow Wellfed when macOS asks. On Windows 11, turn on Location for desktop apps in **Settings › Privacy & security › Location**. On Linux, the app asks `iw` or NetworkManager.
 
 A computer with a cable to your router (or a second Wi-Fi adapter) is easier: it stays on your network throughout, so there's nothing to switch back. If your own network uses `192.168.1.x` addresses, as the feeder's does, the computer has to be fully off it while it sends, cable included.
 

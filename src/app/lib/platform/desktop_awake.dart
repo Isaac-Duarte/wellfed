@@ -61,19 +61,30 @@ class DesktopAwake {
 
   Future<bool> _hold(String why) async {
     if (_helper != null || _threadHeld) return true;
-    // A second run's hold while the first's helper starts shares it.
-    if (_starting case final starting?) return starting;
+    if (_starting case final starting?) {
+      // A second run's hold while the first's helper starts shares it,
+      // unless a release came between: that helper is ended once started,
+      // so this hold waits for that, then starts its own.
+      if (_startingAt == _released) return starting;
+      await starting.then<void>((_) {}, onError: (Object _) {});
+      if (identical(_starting, starting)) _starting = null;
+      return _hold(why);
+    }
     final Future<bool> starting = _holdNow(why);
     _starting = starting;
+    _startingAt = _released;
     try {
       return await starting;
     } finally {
-      _starting = null;
+      if (identical(_starting, starting)) _starting = null;
     }
   }
 
   /// A helper being started, until it holds or is refused.
   Future<bool>? _starting;
+
+  /// The release count when [_starting] began.
+  int _startingAt = 0;
 
   Future<bool> _holdNow(String why) async {
     switch (_os) {

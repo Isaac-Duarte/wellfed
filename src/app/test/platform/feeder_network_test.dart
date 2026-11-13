@@ -15,6 +15,9 @@ class _Routes {
 
   String? route(String to) => to == GuidedFeederNetwork.feeder ? toFeeder : toAnywhere;
 
+  /// Runs while a name is read: a test may move the route, or hold the read.
+  Future<void> Function()? reading;
+
   /// `address` on `interface` alone, which takes the route to the feeder.
   void on(String interface, String address, {String? named}) {
     addresses[interface] = [address];
@@ -29,9 +32,12 @@ class _Routes {
       // Named as `iw` would name each interface's Wi-Fi.
       names: WifiNames(
         os: 'linux',
-        run: (executable, arguments) async => switch ((executable, wifi[arguments[1]])) {
-          ('iw', final String name) => '\tSSID: $name\n',
-          _ => null,
+        run: (executable, arguments) async {
+          await reading?.call();
+          return switch ((executable, wifi[arguments[1]])) {
+            ('iw', final String name) => '\tSSID: $name\n',
+            _ => null,
+          };
         },
       ),
     );
@@ -183,6 +189,50 @@ void main() {
     final join = _Join(routes.network(), '192.168.1.100');
     await tester.pump();
     expect(join.problem, FeederJoinProblem.alreadyOnFeeder);
+  });
+
+  testWidgets('a stop ends a name read that hangs', (tester) async {
+    final routes = _Routes()
+      ..on('wlan0', '10.0.0.5')
+      ..reading = () => Completer<void>().future;
+    final join = _Join(routes.network(), '10.0.0.5');
+    await tester.pump();
+    routes.on('wlan0', '192.168.1.100', named: 'PL-AF103-1A2B');
+    await tester.pump(GuidedFeederNetwork.pollEvery);
+    expect(join.failed, isNull);
+
+    _stopAll();
+    await tester.pump();
+    expect(join.joined, isNull);
+    expect(join.problem, FeederJoinProblem.notSeen);
+    await tester.pump(GuidedFeederNetwork.pollEvery);
+  });
+
+  testWidgets('a route that moves while the name is read is read again, not answered', (tester) async {
+    final routes = _Routes()..on('wlan0', '10.0.0.5');
+    final join = _Join(routes.network(), '10.0.0.5');
+    await tester.pump();
+    // The name is the feeder's, but the route goes back home as it is read.
+    routes
+      ..on('wlan0', '192.168.1.100', named: 'PL-AF103-1A2B')
+      ..addresses['eth0'] = ['10.0.0.5']
+      ..reading = () async => routes.toFeeder = '10.0.0.5';
+    await tester.pump(const Duration(seconds: 5));
+    expect(join.joined, isNull);
+    expect(join.failed, isNull);
+    _stopAll();
+    await tester.pump(GuidedFeederNetwork.pollEvery);
+  });
+
+  testWidgets('a home address on 192.168.1.x whose Wi-Fi has no name says the name could not be read', (tester) async {
+    // Perhaps the feeder's own network, joined early, on a Mac without location.
+    final routes = _Routes()..on('en0', '192.168.1.100');
+    final join = _Join(routes.network(), '192.168.1.100');
+    await tester.pump(const Duration(seconds: 10));
+    _stopAll();
+    await tester.pump();
+    expect(join.problem, FeederJoinProblem.nameUnreadable);
+    await tester.pump(GuidedFeederNetwork.pollEvery);
   });
 
   for (final String vpn in ['100.101.7.3', '8.8.4.4']) {

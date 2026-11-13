@@ -131,7 +131,7 @@ String _nameHelp() => switch (defaultTargetPlatform) {
     'Windows names the Wi-Fi only to apps allowed your location. Turn on Location, and Let desktop apps access '
         'your location, in Settings › Privacy & security › Location, then look again.',
   _ =>
-    "Wellfed asks NetworkManager (nmcli) or iw, and needs the feeder's network joined over Wi-Fi. Install either, "
+    "Wellfed asks iw or NetworkManager (nmcli), and needs the feeder's network joined over Wi-Fi. Install either, "
         'or join it with the Wi-Fi rather than a cable, then look again.',
 };
 

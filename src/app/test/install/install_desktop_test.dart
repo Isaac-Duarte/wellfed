@@ -194,7 +194,7 @@ void main() {
     for (final (TargetPlatform platform, String where) in [
       (TargetPlatform.macOS, 'Privacy & Security › Location Services'),
       (TargetPlatform.windows, 'Settings › Privacy & security › Location'),
-      (TargetPlatform.linux, 'NetworkManager (nmcli) or iw'),
+      (TargetPlatform.linux, 'iw or NetworkManager (nmcli)'),
     ]) {
       testWidgets('an unread name on ${platform.name} says how to let Wellfed read it', (tester) async {
         final FakeInstallPorts ports = _computer()..joinFails = const JoinRefused(FeederJoinProblem.nameUnreadable);

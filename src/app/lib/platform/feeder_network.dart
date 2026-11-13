@@ -120,37 +120,54 @@ class GuidedFeederNetwork {
       if (home != null && !reachableHome(home)) throw const JoinRefused(FeederJoinProblem.vpn);
       final Set<String> had = {for (final List<String> addresses in (await _addresses()).values) ...addresses};
       final String? before = _route(feeder);
+      // The home address on 192.168.1.x with no Wi-Fi name to go by: perhaps
+      // the feeder's own network, joined before the handover read where home
+      // is, which only the name could tell. A wait that ends with nothing
+      // seen then says the name couldn't be read.
+      var homeUnnamed = false;
       if (before != null && before.startsWith(setupSubnet)) {
         if (before != home) throw const JoinRefused(FeederJoinProblem.otherNetwork);
-        // The home address itself on the feeder's network: the owner joined
-        // it before the handover read where home is.
-        if (await _nameOf(before) case WifiNamed(:final name) when name.startsWith(feederPrefix)) {
-          throw const JoinRefused(FeederJoinProblem.alreadyOnFeeder);
+        switch (await _readName(before, stop)) {
+          case WifiNamed(:final String name) when name.startsWith(feederPrefix):
+            throw const JoinRefused(FeederJoinProblem.alreadyOnFeeder);
+          case WifiUnnamed():
+            homeUnnamed = true;
+          case WifiNamed() || null:
+            break;
         }
       }
       while (!stop.isCompleted) {
         final String? from = _route(feeder);
         if (from != null && from.startsWith(setupSubnet) && from != home && !had.contains(from)) {
-          final WifiName named = await _nameOf(from);
-          // The name was read across a wait: the owner may have stopped.
-          if (stop.isCompleted) break;
-          switch (named) {
-            case WifiNamed(:final name) when name.startsWith(feederPrefix):
-              _feederLink = from;
-              return from;
-            case WifiNamed():
-              throw const JoinRefused(FeederJoinProblem.otherNetwork);
-            case WifiUnnamed():
-              throw const JoinRefused(FeederJoinProblem.nameUnreadable);
+          final WifiName? named = await _readName(from, stop);
+          // Stopped while the name was read, or the route moved meanwhile:
+          // the name may be another link's.
+          if (named == null || stop.isCompleted) break;
+          if (_route(feeder) == from) {
+            switch (named) {
+              case WifiNamed(:final String name) when name.startsWith(feederPrefix):
+                _feederLink = from;
+                return from;
+              case WifiNamed():
+                throw const JoinRefused(FeederJoinProblem.otherNetwork);
+              case WifiUnnamed():
+                throw const JoinRefused(FeederJoinProblem.nameUnreadable);
+            }
           }
         }
         await Future.any([Future<void>.delayed(pollEvery), stop.future]);
       }
+      if (homeUnnamed) throw const JoinRefused(FeederJoinProblem.nameUnreadable);
       throw const JoinRefused(FeederJoinProblem.notSeen);
     } finally {
       if (identical(_stop, stop)) _stop = null;
     }
   }
+
+  /// The Wi-Fi of the interface holding `address`, or `null` once `stop`
+  /// comes first: a helper or a prompt that hangs never holds up a stop.
+  Future<WifiName?> _readName(String address, Completer<void> stop) =>
+      Future.any([_nameOf(address), stop.future.then((_) => null)]);
 
   /// The Wi-Fi of the interface holding `address`.
   Future<WifiName> _nameOf(String address) async {

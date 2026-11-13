@@ -125,6 +125,21 @@ void main() {
     await awake.apply(null);
   });
 
+  test('a release, then a new hold, while the first helper starts holds with a fresh helper', () async {
+    final awake = DesktopAwake(start: start, os: 'linux');
+    final Future<bool> first = awake.apply('Installing');
+    await Future<void>.delayed(Duration.zero);
+    await awake.apply(null);
+    final Future<bool> second = awake.apply('Updating');
+
+    expect(await first, isFalse);
+    expect(await second, isTrue);
+    expect(started, hasLength(2));
+    expect(helpers.first.killed, isTrue);
+    expect(helpers.last.killed, isFalse);
+    await awake.apply(null);
+  });
+
   test('a helper whose input will not close is killed all the same', () async {
     final awake = DesktopAwake(
       start: (executable, arguments) async {
