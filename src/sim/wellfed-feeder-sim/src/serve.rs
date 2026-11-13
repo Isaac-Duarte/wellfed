@@ -322,8 +322,10 @@ fn open_mdns(advertise: Advertise) -> Result<UdpSocket, ServeError> {
 
     let open = || -> io::Result<UdpSocket> {
         let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
-        // Avahi or another responder may hold the port already.
+        // Avahi or another responder may hold the port already. Windows
+        // shares a port by SO_REUSEADDR alone and has no SO_REUSEPORT.
         socket.set_reuse_address(true)?;
+        #[cfg(unix)]
         socket.set_reuse_port(true)?;
         socket.set_nonblocking(true)?;
         let any = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, mdns::PORT);

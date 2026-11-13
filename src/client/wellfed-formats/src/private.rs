@@ -54,6 +54,7 @@ pub fn require_unshared(path: &Path) -> Result<()> {
 }
 
 /// Whether a filesystem records each file's Unix mode.
+#[cfg(unix)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Modes {
     Kept,
@@ -62,6 +63,7 @@ enum Modes {
 }
 
 /// The permission bits others hold on a file of `mode`, if any matter.
+#[cfg(unix)]
 fn shared(mode: u32, modes: Modes) -> Option<u32> {
     (modes == Modes::Kept && mode & 0o077 != 0).then_some(mode & 0o777)
 }
@@ -142,7 +144,12 @@ pub fn write_new_whole(path: &Path, data: &[u8]) -> Result<()> {
         file.write_all(data)?;
         file.sync_all()?;
         move_new(&temporary, path)?;
-        sync_parent(path)?;
+        // A link leaves the temporary name on the file: it goes before the
+        // flush, so the flush covers its removal too.
+        if MOVE_LEAVES_SOURCE {
+            let _ = fs::remove_file(&temporary);
+        }
+        sync_entry(path)?;
         Ok(())
     })();
 
@@ -163,11 +170,13 @@ fn create_private(path: &Path) -> std::io::Result<fs::File> {
     options.open(path)
 }
 
-/// Move `from` to `to`, failing if anything is there. Android's policy denies an
-/// app hard links, so Linux and Android use `renameat2(RENAME_NOREPLACE)`. A
-/// filesystem that refuses it fails the write: no other step gives both whole
-/// and never-replaces, so there is nothing safe to fall back to.
-#[cfg(any(target_os = "linux", target_os = "android"))]
+/// Move `from` to `to`, failing if anything is there, in one step. Android's
+/// policy denies an app hard links, so Linux and Android use
+/// `renameat2(RENAME_NOREPLACE)`, and Apple's systems the same through
+/// `renameatx_np(RENAME_EXCL)`. A filesystem that refuses it fails the write:
+/// no other step gives both whole and never-replaces, so there is nothing safe
+/// to fall back to.
+#[cfg(any(target_os = "linux", target_os = "android", target_vendor = "apple"))]
 fn move_new(from: &Path, to: &Path) -> std::io::Result<()> {
     use rustix::fs::{CWD, RenameFlags, renameat_with};
 
@@ -175,17 +184,18 @@ fn move_new(from: &Path, to: &Path) -> std::io::Result<()> {
 }
 
 /// Whether [`move_new`] leaves `from` behind, for its caller to remove.
-#[cfg(any(target_os = "linux", target_os = "android"))]
+#[cfg(any(target_os = "linux", target_os = "android", target_vendor = "apple"))]
 const MOVE_LEAVES_SOURCE: bool = false;
 
-/// Move `from` to `to`, failing if anything is there: elsewhere a link, which
-/// never replaces. The caller removes `from`.
-#[cfg(not(any(target_os = "linux", target_os = "android")))]
+/// Move `from` to `to`, failing if anything is there: elsewhere (Windows) a
+/// link, which never replaces, since a rename that refuses to replace has no
+/// safe interface there. The caller removes `from`.
+#[cfg(not(any(target_os = "linux", target_os = "android", target_vendor = "apple")))]
 fn move_new(from: &Path, to: &Path) -> std::io::Result<()> {
     fs::hard_link(from, to)
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "android")))]
+#[cfg(not(any(target_os = "linux", target_os = "android", target_vendor = "apple")))]
 const MOVE_LEAVES_SOURCE: bool = true;
 
 /// The names a file set aside beside `path` takes, numbered, in order.
@@ -208,10 +218,38 @@ fn too_many() -> std::io::Error {
     std::io::Error::other("too many files already set aside")
 }
 
-fn sync_parent(path: &Path) -> std::io::Result<()> {
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        fs::File::open(parent)?.sync_all()?;
+/// Make the name that now leads to `file` durable, with every entry change in
+/// its directory before it: a file's synced data counts for nothing after a
+/// power cut if the rename that made it current is rolled back.
+///
+/// On Unix that is an fsync of the directory. Off Unix it is a flush of the
+/// file itself: Windows can't open a directory as a file without `unsafe`,
+/// and NTFS writes its journal, where the rename is, up to the file's change
+/// when the file is flushed. That flush opens the file for writing, so a file
+/// marked read-only, or held open by another program, fails it: an error from
+/// a move here may mean the move happened and only its durability is unknown.
+fn sync_entry(file: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    if let Some(parent) = file.parent().filter(|p| !p.as_os_str().is_empty()) {
+        sync_entries(parent)?;
     }
+    #[cfg(not(unix))]
+    fs::OpenOptions::new().write(true).open(file)?.sync_all()?;
+    Ok(())
+}
+
+/// Make the entries just created, renamed or removed in `directory` durable,
+/// on Unix by an fsync of the directory itself.
+///
+/// Windows can't open a directory as a file without `unsafe`, so there this
+/// does nothing; a caller that must have a file's name survive a power cut
+/// flushes that file after the change (as [`write_json`] and the moves here
+/// do), which writes NTFS's journal past every entry change before it.
+pub fn sync_entries(directory: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    fs::File::open(directory)?.sync_all()?;
+    #[cfg(not(unix))]
+    let _ = directory;
     Ok(())
 }
 
@@ -223,7 +261,7 @@ pub fn rename_new(from: &Path, to: &Path) -> std::io::Result<()> {
     if MOVE_LEAVES_SOURCE {
         fs::remove_file(from)?;
     }
-    sync_parent(to)
+    sync_entry(to)
 }
 
 /// Rename a file an owner agreed to give up, to a numbered name beside it. It is
@@ -233,25 +271,68 @@ pub fn set_aside(path: &Path) -> std::io::Result<std::path::PathBuf> {
 }
 
 /// [`set_aside`], running `moved` once the file is under its new name: a
-/// test's other writer, placing a new file at `path` then. A rename leaves
-/// nothing at `path`, so only a link's old name is removed, and a file
-/// another writer put there after the move stays.
+/// test's other writer, placing a new file at `path` then. A file another
+/// writer puts at `path` after the move stays, and the one set aside keeps
+/// what `path` held.
+///
+/// Where [`move_new`] is a link, linking `path` itself would leave its name
+/// on the set-aside file until the old name goes, and a writer at `path` in
+/// between would write into the file being kept. So the file first moves to
+/// a private name only this call knows (a plain rename: nothing is there to
+/// replace), and the link is made from that. Any failure after that puts the
+/// file back at `path` if nothing new is there; a crash in between, or a new
+/// file at `path`, leaves it under the `.aside-` name, never deleted.
 fn set_aside_then(path: &Path, moved: impl FnOnce()) -> std::io::Result<std::path::PathBuf> {
+    if !MOVE_LEAVES_SOURCE {
+        let aside = move_aside(path, path, moved)?;
+        sync_entry(&aside)?;
+        return Ok(aside);
+    }
+
+    let mut held = path
+        .file_name()
+        .ok_or_else(|| std::io::Error::other("the path names no file"))?
+        .to_owned();
+    let tag = random::<8>().map_err(std::io::Error::other)?;
+    held.push(format!(".aside-{}", wellfed_session::hex::Lower(&tag)));
+    let held = path.with_file_name(held);
+    fs::rename(path, &held)?;
+
+    match move_aside(&held, path, moved) {
+        Ok(aside) => {
+            sync_entry(&aside)?;
+            Ok(aside)
+        }
+        // No numbered name was made: the file goes back where it was.
+        Err(error) => {
+            if move_new(&held, path).is_ok() {
+                let _ = fs::remove_file(&held);
+            }
+            Err(error)
+        }
+    }
+}
+
+/// Move `from`, the file `path` named, to the first free numbered name
+/// beside `path`, removing `from` where the move is a link. An error means
+/// no numbered name was made.
+fn move_aside(
+    from: &Path,
+    path: &Path,
+    moved: impl FnOnce(),
+) -> std::io::Result<std::path::PathBuf> {
     let mut moved = Some(moved);
     for aside in aside_names(path)? {
-        match move_new(path, &aside) {
+        match move_new(from, &aside) {
             Ok(()) => {
                 if let Some(moved) = moved.take() {
                     moved();
                 }
                 if MOVE_LEAVES_SOURCE {
-                    match fs::remove_file(path) {
-                        Ok(()) => {}
-                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                        Err(error) => return Err(error),
-                    }
+                    // Kept under its numbered name either way; a name left
+                    // behind holds the same file, and is only a second name.
+                    let _ = fs::remove_file(from);
                 }
-                sync_parent(path)?;
                 return Ok(aside);
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
@@ -284,7 +365,7 @@ pub fn copy_aside(path: &Path, data: &[u8]) -> std::io::Result<std::path::PathBu
                     let _ = fs::remove_file(&aside);
                     return Err(error);
                 }
-                sync_parent(path)?;
+                sync_entry(&aside)?;
                 return Ok(aside);
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
@@ -296,7 +377,7 @@ pub fn copy_aside(path: &Path, data: &[u8]) -> std::io::Result<std::path::PathBu
 
 /// Fsync a directory, so the entries just created in it are durable.
 pub fn sync_directory(path: &Path) -> Result<()> {
-    fs::File::open(path)?.sync_all()?;
+    sync_entries(path)?;
     Ok(())
 }
 
@@ -324,7 +405,7 @@ pub fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
         file.write_all(b"\n")?;
         file.sync_all()?;
         fs::rename(&temp, path)?;
-        fs::File::open(parent)?.sync_all()?;
+        sync_entry(path)?;
         Ok(())
     })();
 
@@ -475,6 +556,23 @@ mod tests {
 
         assert_eq!(fs::read(&path).unwrap(), b"x");
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 2);
+    }
+
+    /// With every numbered name taken, nothing is set aside and the file
+    /// stays where it was, under its own name, with no other name left.
+    #[test]
+    fn a_file_with_no_name_free_stays_where_it_was() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.json");
+        fs::write(&path, "old").unwrap();
+        for number in 1..=1000 {
+            fs::write(dir.path().join(format!("a.json.damaged-{number}")), "").unwrap();
+        }
+
+        assert!(set_aside(&path).is_err());
+
+        assert_eq!(fs::read(&path).unwrap(), b"old");
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1001);
     }
 
     /// A file another writer puts at the path just after it was set aside

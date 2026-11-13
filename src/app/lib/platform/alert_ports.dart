@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:wellfed/platform/discovery.dart';
+import 'package:wellfed/platform/host.dart';
 import 'package:wellfed/platform/notices.dart';
 import 'package:wellfed/platform/run_holds.dart';
 import 'package:wellfed/src/rust/api/alerts.dart';
@@ -151,7 +151,7 @@ class AppAlertPorts implements AlertPorts {
 
   final ClientKey _key;
 
-  static Future<String> _dir() async => (await getApplicationSupportDirectory()).path;
+  static Future<String> _dir() async => (await appDataDirectory()).path;
 
   @override
   Future<FeederAlerts> alerts(String identity) async => feederAlerts(dir: await _dir(), identity: identity);

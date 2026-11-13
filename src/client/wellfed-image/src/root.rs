@@ -4,7 +4,6 @@
 
 use std::fs;
 use std::io;
-use std::os::unix::fs::DirBuilderExt;
 use std::path::{Component, Path, PathBuf};
 
 use wellfed_formats::require;
@@ -106,21 +105,30 @@ impl Root {
             }
         })?;
 
-        fs::DirBuilder::new()
-            .recursive(false)
-            .mode(0o700)
-            .create(path)
-            .or_else(|error| {
-                // A reader's output may sit below directories not made yet.
-                if error.kind() == io::ErrorKind::NotFound {
-                    fs::DirBuilder::new()
-                        .recursive(true)
-                        .mode(0o700)
-                        .create(path)
-                } else {
-                    Err(error)
-                }
-            })?;
+        private_directory().create(path).or_else(|error| {
+            // A reader's output may sit below directories not made yet.
+            if error.kind() == io::ErrorKind::NotFound {
+                private_directory().recursive(true).create(path)
+            } else {
+                Err(error)
+            }
+        })?;
         Ok(std::path::absolute(path)?)
     }
+}
+
+/// A builder for a directory only its owner can open: mode 0700 on Unix. Off
+/// Unix there are no modes; the directory takes the access list of the
+/// checkout it is made in.
+fn private_directory() -> fs::DirBuilder {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+
+        let mut builder = fs::DirBuilder::new();
+        builder.mode(0o700);
+        builder
+    }
+    #[cfg(not(unix))]
+    fs::DirBuilder::new()
 }
