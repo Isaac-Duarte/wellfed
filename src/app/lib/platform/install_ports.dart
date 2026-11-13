@@ -124,6 +124,12 @@ abstract interface class InstallPorts {
   /// running, and waiting for its owner. Each sighting is an event.
   Stream<void> setupHeard();
 
+  /// Whether this phone's Bluetooth is on, now and as it changes.
+  Stream<BluetoothPower> bluetooth();
+
+  /// Ask Android to turn Bluetooth on.
+  Future<void> turnOnBluetooth();
+
   /// A feeder's identity, as lowercase hex.
   String hexOf(List<int> identity);
 
@@ -263,6 +269,12 @@ class AppInstallPorts implements InstallPorts {
 
   @override
   Stream<void> setupHeard() => SetupLink.scan().map((_) {});
+
+  @override
+  Stream<BluetoothPower> bluetooth() => SetupLink.power();
+
+  @override
+  Future<void> turnOnBluetooth() => SetupLink.askToTurnOn();
 
   @override
   String hexOf(List<int> identity) => identityHex(identity: identity);

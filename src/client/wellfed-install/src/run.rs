@@ -94,6 +94,12 @@ pub enum Start {
 pub enum Unjoined {
     /// Wait for it to join: it may be restarting still.
     Wait,
+    /// Wait for it to join, and the feeder `Plan::feeder` names is that
+    /// feeder: an earlier run on this platform paired it and never saw it
+    /// join, but left no record to say so (one with no stock device to key it
+    /// to). It is waited for as a record's would be, rather than stopping the
+    /// run as a feeder the owner picked from a list and that does not answer.
+    WaitForPick,
     /// Go through Bluetooth setup again with `Plan::home`: the owner says the
     /// Wi-Fi it was given was wrong, and has put it back in setup mode.
     SetUpAgain,
@@ -314,9 +320,12 @@ fn looked_up(
             },
             None,
         ) => Ok(match unjoined {
-            Unjoined::Wait => Looked::Rejoining(identity),
+            Unjoined::Wait | Unjoined::WaitForPick => Looked::Rejoining(identity),
             Unjoined::SetUpAgain => Looked::SetUp,
         }),
+        (Lookup::Picked { identity }, None) if unjoined == Unjoined::WaitForPick => {
+            Ok(Looked::Rejoining(identity))
+        }
         (Lookup::Recorded { identity, .. } | Lookup::Picked { identity }, None) => {
             Err(Error::NotAnswering { feeder: identity })
         }
@@ -820,10 +829,16 @@ where
         // At the listener's address, only the feeder this install recorded,
         // or the one the owner picked, is tried: any other key the phone
         // holds may open another of the owner's feeders there.
+        let recorded = record.as_ref().map(|record| record.identity.0);
         let known = match self.located {
-            Located::Given if self.feeder.is_none() => record.map(|record| record.identity.0),
+            Located::Given if self.feeder.is_none() => recorded,
             _ => self.io.keys.feeder(self.feeder.as_deref()),
         };
+        // As in setup: a feeder the owner picked from bank 0 says nothing about
+        // where stock's install went, so it never takes the device's one record,
+        // which may name the feeder this install really went to.
+        let picking = self.located != Located::Stock && self.feeder.is_some();
+        let picked = |identity: [u8; 32]| picking && recorded != Some(identity);
         if let Some(identity) = known {
             let deadline = Instant::now() + REPLACEMENT_WAIT;
             loop {
@@ -838,9 +853,10 @@ where
                     Ok(_) => {
                         self.io.report.event(Event::KeyKnown);
                         self.identity = Some(identity);
-                        // As in setup: a feeder answering at a given address is
-                        // not recorded as this device's install.
-                        if self.located == Located::Given {
+                        // As in setup: a feeder answering at a given address, or
+                        // one the owner picked, is not recorded as this device's
+                        // install.
+                        if self.located == Located::Given || picked(identity) {
                             self.found = Some(address);
                         } else {
                             self.record_paired(identity, Some(address))?;
@@ -884,7 +900,12 @@ where
                 // The feeder took this key after all: a session opened.
                 let identity = *identity;
                 self.io.report.event(Event::KeyKnown);
-                self.paired_at(identity, address)?;
+                if picked(identity) {
+                    self.identity = Some(identity);
+                    self.found = Some(address);
+                } else {
+                    self.paired_at(identity, address)?;
+                }
                 install.paired();
                 return Ok(());
             }
@@ -894,7 +915,11 @@ where
         };
         self.io.report.event(Event::Recovered { identity, outcome });
         self.identity = Some(identity);
-        self.record_paired(identity, Some(address))?;
+        if picked(identity) {
+            self.found = Some(address);
+        } else {
+            self.record_paired(identity, Some(address))?;
+        }
         install.paired();
         Ok(())
     }
@@ -1561,6 +1586,12 @@ mod tests {
             looked_up(picked, None, Unjoined::Wait),
             Err(Error::NotAnswering { .. })
         ));
+        // Unless the pick is the feeder an earlier run paired and never saw
+        // join, which the owner keeps waiting for.
+        assert_eq!(
+            looked_up(picked, None, Unjoined::WaitForPick).unwrap(),
+            Looked::Rejoining([0xcd; 32])
+        );
 
         // From bank 0 at the address the stock listener found, as it resumes a
         // run where something answered at stock's old address, the keys'

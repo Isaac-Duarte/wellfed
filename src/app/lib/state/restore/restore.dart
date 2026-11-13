@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import 'package:wellfed/platform/restore_ports.dart';
+import 'package:wellfed/platform/setup_link.dart' show BluetoothPower, bluetoothNow;
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/restore.dart';
 import 'package:wellfed/state/install/install_state.dart' show CheckState;
@@ -59,6 +60,11 @@ class RestoreFlow extends ChangeNotifier {
   int _looks = 0;
   StreamSubscription<void>? _setup;
   bool _sighted = false;
+
+  /// This phone's Bluetooth is off, so a look can't hear a feeder in setup
+  /// mode, and its finding nothing says nothing.
+  bool _bluetoothOff = false;
+  StreamSubscription<BluetoothPower>? _power;
 
   /// How long a feeder has to come back: a restart, then its join.
   static const lookFor = Duration(minutes: 3);
@@ -270,6 +276,26 @@ class RestoreFlow extends ChangeNotifier {
     _lookEnd = Timer(lookFor, () => _looked(_sighted ? RestoreLook.sighted : RestoreLook.nothing));
     _setup = _ports.setupHeard().listen((_) => _looked(RestoreLook.setup), onError: (Object _) {});
     unawaited(_locate(_looks));
+    unawaited(_checkBluetooth());
+  }
+
+  /// Ask Android to turn this phone's Bluetooth on.
+  Future<void> turnOnBluetooth() => _ports.turnOnBluetooth();
+
+  /// With Bluetooth off, say so until it comes on, then look again from the
+  /// start: the look so far could not have heard a feeder in setup mode.
+  Future<void> _checkBluetooth() async {
+    if (await bluetoothNow(_ports.bluetooth()) != BluetoothPower.off || _disposed) return;
+    _bluetoothOff = true;
+    _changed();
+    _power ??= _ports.bluetooth().listen((power) {
+      if (power == BluetoothPower.off) return;
+      _bluetoothOff = false;
+      unawaited(_power?.cancel());
+      _power = null;
+      if (_stage == _Stage.uncertain && _look != RestoreLook.wellfed) _startLook();
+      _changed();
+    }, onError: (Object _) {});
   }
 
   /// One round of look `look`, which a later look's start leaves to lapse:
@@ -332,7 +358,12 @@ class RestoreFlow extends ChangeNotifier {
       holdRefused: _holdRefused,
     ),
     _Stage.done => RestoreDone(version: _version),
-    _Stage.uncertain => RestoreUncertain(why: _uncertain ?? UncertainWhy.failed, detail: _detail, look: _look),
+    _Stage.uncertain => RestoreUncertain(
+      why: _uncertain ?? UncertainWhy.failed,
+      detail: _detail,
+      look: _look,
+      bluetoothOff: _bluetoothOff,
+    ),
     _Stage.stopped => RestoreStopped(stop: _stop ?? RestoreStop.other, detail: _detail),
   };
 
@@ -340,6 +371,7 @@ class RestoreFlow extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _stopLook();
+    unawaited(_power?.cancel());
     if (_run case final run?) {
       // Its end does the rest: the key goes once the run can no longer use it.
       run.stop();

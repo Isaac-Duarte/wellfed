@@ -165,6 +165,7 @@ extension InstallSteps on InstallFlow {
   /// nothing.
   void newWifiForSetup() {
     _settingUpAgain = true;
+    _keepWaiting = false;
     _pickedFeeder = null;
     _home = null;
     _resumeAfterWifi = true;
@@ -186,6 +187,7 @@ extension InstallSteps on InstallFlow {
   /// A feeder that never joined may still be restarting: look again.
   Future<void> keepWaiting() async {
     _settingUpAgain = false;
+    _keepWaiting = true;
     await again();
   }
 

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:file_selector/file_selector.dart';
 import 'package:wellfed/platform/host.dart';
 import 'package:wellfed/platform/install_ports.dart';
+import 'package:wellfed/platform/setup_link.dart';
 import 'package:wellfed/src/rust/api/alerts.dart' show AlertHold;
 import 'package:wellfed/src/rust/api/install.dart' as install;
 import 'package:wellfed/src/rust/api/keys.dart';
@@ -50,6 +51,12 @@ abstract interface class RestorePorts {
 
   /// Each sighting of a feeder advertising Bluetooth setup.
   Stream<void> setupHeard();
+
+  /// Whether this phone's Bluetooth is on, now and as it changes.
+  Stream<BluetoothPower> bluetooth();
+
+  /// Ask Android to turn Bluetooth on.
+  Future<void> turnOnBluetooth();
 
   /// Forget the restore's key for the feeder with `identity`.
   void forgetKey(String dataDir, List<int> identity);
@@ -108,6 +115,12 @@ class AppRestorePorts implements RestorePorts {
 
   @override
   Stream<void> setupHeard() => _install.setupHeard();
+
+  @override
+  Stream<BluetoothPower> bluetooth() => _install.bluetooth();
+
+  @override
+  Future<void> turnOnBluetooth() => _install.turnOnBluetooth();
 
   @override
   void forgetKey(String dataDir, List<int> identity) =>

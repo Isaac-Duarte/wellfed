@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:wellfed/platform/install_ports.dart';
+import 'package:wellfed/platform/setup_link.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/setup.dart';
 import 'package:wellfed/state/wifi/networks.dart';
@@ -209,6 +210,7 @@ class FakeInstallPorts implements InstallPorts {
   }) async {
     // ignore: only_throw_errors, this stands in for the bridge, whose errors aren't Exceptions.
     if (linkFails case final error?) throw error;
+    linksOpened++;
     this.onBytes = onBytes;
     this.onLost = onLost;
     await linkGate?.future;
@@ -221,6 +223,28 @@ class FakeInstallPorts implements InstallPorts {
 
   @override
   Stream<void> setupHeard() => heard.stream;
+
+  /// This phone's Bluetooth, and its changes to each listener.
+  BluetoothPower power = BluetoothPower.on;
+  final _powerChanges = StreamController<BluetoothPower>.broadcast();
+  int turnOnAsks = 0;
+  int linksOpened = 0;
+
+  /// Turn Bluetooth to `to`, as the owner would in Android.
+  void setPower(BluetoothPower to) {
+    power = to;
+    _powerChanges.add(to);
+  }
+
+  @override
+  Stream<BluetoothPower> bluetooth() => Stream.multi((listener) {
+    listener.add(power);
+    final StreamSubscription<BluetoothPower> changes = _powerChanges.stream.listen(listener.add);
+    listener.onCancel = changes.cancel;
+  });
+
+  @override
+  Future<void> turnOnBluetooth() async => turnOnAsks++;
 
   @override
   String hexOf(List<int> identity) => identity.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();

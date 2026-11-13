@@ -11,6 +11,10 @@ enum PairingFailure {
   /// The radio link failed or dropped.
   link,
 
+  /// This phone's Bluetooth went off during the exchange, which the feeder
+  /// never finished. A new try waits for it to come back on.
+  bluetoothOff,
+
   /// The feeder said no; see [PairingFailed.refusal].
   refused,
 
@@ -61,6 +65,13 @@ final class PairingFinding extends PairingState {
 
   /// Feeders in setup mode heard so far, by radio id.
   final Map<String, DiscoveredDevice> found;
+}
+
+/// This phone's Bluetooth is off, and setup waits for it to come on; it goes
+/// on by itself once it does.
+final class PairingBluetoothOff extends PairingState {
+  /// Setup waiting for Bluetooth.
+  const PairingBluetoothOff({required super.feederName, super.network});
 }
 
 /// Opening a session.

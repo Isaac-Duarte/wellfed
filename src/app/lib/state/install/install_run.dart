@@ -9,6 +9,12 @@ extension InstallRunning on InstallFlow {
     if (paths == null || _run != null) return;
     final bool forget = _forget;
     _forget = false;
+    final UnjoinedFeeder unjoined = _settingUpAgain
+        ? UnjoinedFeeder.setUpAgain
+        : _keepWaiting
+        ? UnjoinedFeeder.waitForPick
+        : UnjoinedFeeder.wait;
+    _keepWaiting = false;
     final InstallRun run = _ports.newRun(
       InstallSpec(
         start: start,
@@ -23,7 +29,7 @@ extension InstallRunning on InstallFlow {
         dataDir: paths.data,
         forgetEnrollment: forget,
         feeder: _pickedFeeder,
-        setupAgain: _settingUpAgain,
+        unjoined: unjoined,
       ),
     );
     _run = run;
@@ -98,6 +104,13 @@ extension InstallRunning on InstallFlow {
       case InstallAsk_OpenLink():
         _stage = InstallStage.claim;
         _searchBluetooth();
+        // Nothing can be found with Bluetooth off. The run asks again every few
+        // seconds, so the screen only has to say to turn it on.
+        if (await bluetoothNow(_ports.bluetooth()) == BluetoothPower.off) {
+          _watchBluetooth();
+          answer(const InstallAnswer.failed(reason: "this phone's Bluetooth is off"));
+          return;
+        }
         final InstallLink link;
         try {
           link = await _ports.openLink(
@@ -275,6 +288,24 @@ extension InstallRunning on InstallFlow {
         }
     }
     _notify();
+  }
+
+  /// Say Bluetooth is off until it comes on.
+  void _watchBluetooth() {
+    _bluetoothOff = true;
+    if (_power != null) return;
+    _power = _ports.bluetooth().listen(
+      (power) {
+        _bluetoothOff = power == BluetoothPower.off;
+        if (!_bluetoothOff) {
+          unawaited(_power?.cancel());
+          _power = null;
+        }
+        _notify();
+      },
+      // A plugin that can no longer say leaves the notice to the run's own end.
+      onError: (Object _) {},
+    );
   }
 
   /// A feeder still linked does not advertise, so a pick-up would never find

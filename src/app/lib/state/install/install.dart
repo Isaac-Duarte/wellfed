@@ -4,6 +4,7 @@ import 'package:clock/clock.dart';
 import 'package:flutter/foundation.dart';
 
 import 'package:wellfed/platform/install_ports.dart';
+import 'package:wellfed/platform/setup_link.dart' show BluetoothPower, bluetoothNow;
 import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/setup.dart';
@@ -138,8 +139,18 @@ class InstallFlow extends ChangeNotifier {
   /// feeder there.
   bool _settingUpAgain = false;
 
+  /// The owner keeps waiting for the feeder this flow paired, which never
+  /// joined. With no record to name it, it goes to the run as the pick, and the
+  /// run waits for it to join rather than stopping because it does not answer.
+  bool _keepWaiting = false;
+
   /// Android refused Bluetooth to a pick-up that may need it.
   bool _bluetoothRefused = false;
+
+  /// This phone's Bluetooth was off when the run looked for the feeder over it.
+  /// The run looks again on its own, so turning it on is all the owner does.
+  bool _bluetoothOff = false;
+  StreamSubscription<BluetoothPower>? _power;
   bool _permitted = false;
 
   InstallRun? _run;
@@ -318,6 +329,7 @@ class InstallFlow extends ChangeNotifier {
     _pickedFeeder = null;
     _resumeAddress = null;
     _settingUpAgain = false;
+    _keepWaiting = false;
     final InstallPaths? paths = _paths;
     if (to == InstallStage.before && paths != null) {
       _pending = _ports.pending(paths);
@@ -336,6 +348,9 @@ class InstallFlow extends ChangeNotifier {
 
   /// Why the last repair of a record failed, when it did.
   String? _repairFailed;
+
+  /// Ask Android to turn this phone's Bluetooth on.
+  Future<void> turnOnBluetooth() => _ports.turnOnBluetooth();
 
   /// End the run through its cleanup; the end says what it left.
   void stopRun() => _run?.stop();
@@ -373,6 +388,7 @@ class InstallFlow extends ChangeNotifier {
     final facts = InstallFacts(
       pending: _pending,
       bluetoothRefused: _bluetoothRefused,
+      bluetoothOff: _bluetoothOff,
       repairFailed: _repairFailed,
       phoneIp: _phoneIp,
     );
@@ -450,6 +466,7 @@ class InstallFlow extends ChangeNotifier {
     _stopListening();
     _closeLink();
     _holdHintTimer?.cancel();
+    unawaited(_power?.cancel());
     unawaited(_release());
     super.dispose();
   }

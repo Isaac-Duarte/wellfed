@@ -6548,7 +6548,7 @@ impl SseDecode for crate::api::install::InstallSpec {
         let mut var_dataDir = <String>::sse_decode(deserializer);
         let mut var_forgetEnrollment = <bool>::sse_decode(deserializer);
         let mut var_feeder = <Option<String>>::sse_decode(deserializer);
-        let mut var_setupAgain = <bool>::sse_decode(deserializer);
+        let mut var_unjoined = <crate::api::install::UnjoinedFeeder>::sse_decode(deserializer);
         return crate::api::install::InstallSpec {
             start: var_start,
             address: var_address,
@@ -6562,7 +6562,7 @@ impl SseDecode for crate::api::install::InstallSpec {
             data_dir: var_dataDir,
             forget_enrollment: var_forgetEnrollment,
             feeder: var_feeder,
-            setup_again: var_setupAgain,
+            unjoined: var_unjoined,
         };
     }
 }
@@ -9174,6 +9174,19 @@ impl SseDecode for () {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {}
 }
 
+impl SseDecode for crate::api::install::UnjoinedFeeder {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::install::UnjoinedFeeder::Wait,
+            1 => crate::api::install::UnjoinedFeeder::WaitForPick,
+            2 => crate::api::install::UnjoinedFeeder::SetUpAgain,
+            _ => unreachable!("Invalid variant for UnjoinedFeeder: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for crate::api::update::UnknownEnd {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -11571,7 +11584,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::install::InstallSpec {
             self.data_dir.into_into_dart().into_dart(),
             self.forget_enrollment.into_into_dart().into_dart(),
             self.feeder.into_into_dart().into_dart(),
-            self.setup_again.into_into_dart().into_dart(),
+            self.unjoined.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -13720,6 +13733,28 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::install::UncertainWrite>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::install::UnjoinedFeeder {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Wait => 0.into_dart(),
+            Self::WaitForPick => 1.into_dart(),
+            Self::SetUpAgain => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::install::UnjoinedFeeder
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::install::UnjoinedFeeder>
+    for crate::api::install::UnjoinedFeeder
+{
+    fn into_into_dart(self) -> crate::api::install::UnjoinedFeeder {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::update::UnknownEnd {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
@@ -15811,7 +15846,7 @@ impl SseEncode for crate::api::install::InstallSpec {
         <String>::sse_encode(self.data_dir, serializer);
         <bool>::sse_encode(self.forget_enrollment, serializer);
         <Option<String>>::sse_encode(self.feeder, serializer);
-        <bool>::sse_encode(self.setup_again, serializer);
+        <crate::api::install::UnjoinedFeeder>::sse_encode(self.unjoined, serializer);
     }
 }
 
@@ -18099,6 +18134,23 @@ impl SseEncode for crate::api::install::UncertainWrite {
 impl SseEncode for () {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {}
+}
+
+impl SseEncode for crate::api::install::UnjoinedFeeder {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::install::UnjoinedFeeder::Wait => 0,
+                crate::api::install::UnjoinedFeeder::WaitForPick => 1,
+                crate::api::install::UnjoinedFeeder::SetUpAgain => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
 }
 
 impl SseEncode for crate::api::update::UnknownEnd {

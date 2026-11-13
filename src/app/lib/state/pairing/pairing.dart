@@ -71,6 +71,7 @@ class PairingFlow extends ChangeNotifier {
   StreamSubscription<List<int>>? _notifications;
   Timer? _timer;
   Completer<SetupStep>? _ended;
+  Completer<void>? _bluetoothWait;
   Recovery? _recovery;
   Future<void> _writing = Future.value();
   bool _disposed = false;
@@ -90,21 +91,26 @@ class PairingFlow extends ChangeNotifier {
     _feederName = name;
     _network = wifi?.ssid;
 
-    final DiscoveredDevice target;
-    if (device != null) {
-      target = device;
-    } else {
+    if (!await _bluetoothOn()) return;
+    DiscoveredDevice? found = device;
+    while (found == null) {
       _showFinding();
       try {
-        target = await _pick();
+        found = await _pick();
       } on TimeoutException {
         _stop(PairingFailure.notFound, null);
         return;
       } on _Failed catch (failed) {
+        // A scan stops when Bluetooth goes off: wait for it, and look again.
+        if (failed.why == PairingFailure.link && await _bluetoothIsOff()) {
+          if (!await _bluetoothOn()) return;
+          continue;
+        }
         _stop(failed.why, failed.detail);
         return;
       }
     }
+    final DiscoveredDevice target = found;
     _target = target;
     // A screen that went away must not then hold the feeder's only link.
     if (_disposed) return;
@@ -134,6 +140,17 @@ class PairingFlow extends ChangeNotifier {
       // without the link: a drop or a wait that ends says nothing of it.
       if (driver.proven() case final Uint8List feeder?) {
         await _finish(SetupStep.unsettled(feeder: feeder), knownAddress: null);
+        return;
+      }
+      // A link that went with this phone's Bluetooth is not fixed by moving
+      // closer: the owner turns it back on.
+      final bool radio = switch (error) {
+        _Failed(why: PairingFailure.link || PairingFailure.timeout) || TimeoutException() => true,
+        _Failed() || BridgeError() => false,
+        _ => true,
+      };
+      if (radio && await _bluetoothIsOff()) {
+        _stop(PairingFailure.bluetoothOff, null);
         return;
       }
       switch (error) {
@@ -215,6 +232,38 @@ class PairingFlow extends ChangeNotifier {
     }
     await _finish(ended, knownAddress: address);
   }
+
+  /// Ask Android to turn this phone's Bluetooth on; setup goes on by itself
+  /// once it is.
+  Future<void> turnOnBluetooth() => _ports.turnOnBluetooth();
+
+  /// Wait until this phone's Bluetooth is on, saying so while it is off.
+  /// `false` when the screen went first.
+  Future<bool> _bluetoothOn() async {
+    if (!await _bluetoothIsOff()) return !_disposed;
+    _set(PairingBluetoothOff(feederName: _feederName, network: _network));
+    final on = Completer<void>();
+    _bluetoothWait = on;
+    final StreamSubscription<BluetoothPower> watching = _ports.bluetooth().listen(
+      (power) {
+        if (power == BluetoothPower.on && !on.isCompleted) on.complete();
+      },
+      // A plugin that can no longer say is left to the scan, which will.
+      onError: (Object _) {
+        if (!on.isCompleted) on.complete();
+      },
+    );
+    try {
+      await on.future;
+    } finally {
+      _bluetoothWait = null;
+      // Not waited for: nothing more is read from it either way.
+      unawaited(watching.cancel());
+    }
+    return !_disposed;
+  }
+
+  Future<bool> _bluetoothIsOff() async => await bluetoothNow(_ports.bluetooth()) == BluetoothPower.off;
 
   /// Scan until the owner picks a feeder; a timeout when none shows up.
   Future<DiscoveredDevice> _pick() async {
@@ -407,6 +456,8 @@ class PairingFlow extends ChangeNotifier {
       choosing.completeError(const _Failed(PairingFailure.other, 'the screen closed'));
     }
     _fail(PairingFailure.other, 'the screen closed');
+    final Completer<void>? waiting = _bluetoothWait;
+    if (waiting != null && !waiting.isCompleted) waiting.complete();
     // Hang up in Rust too, so the feeder's window is free for a retry. The
     // run's stream is left to end by itself: a close after the feeder's
     // proof ends it unsettled, and that feeder is saved all the same.

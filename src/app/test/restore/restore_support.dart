@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart' show RustOpaqueInterface;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/platform/restore_ports.dart';
+import 'package:wellfed/platform/setup_link.dart';
 import 'package:wellfed/screens/restore/restore_screen.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/restore.dart';
@@ -100,6 +101,27 @@ class FakeRestorePorts implements RestorePorts {
 
   @override
   Stream<void> setupHeard() => heard.stream;
+
+  /// This phone's Bluetooth, and its changes to each listener.
+  BluetoothPower power = BluetoothPower.on;
+  final _powerChanges = StreamController<BluetoothPower>.broadcast();
+  int turnOnAsks = 0;
+
+  /// Turn Bluetooth to `to`, as the owner would in Android.
+  void setPower(BluetoothPower to) {
+    power = to;
+    _powerChanges.add(to);
+  }
+
+  @override
+  Stream<BluetoothPower> bluetooth() => Stream.multi((listener) {
+    listener.add(power);
+    final StreamSubscription<BluetoothPower> changes = _powerChanges.stream.listen(listener.add);
+    listener.onCancel = changes.cancel;
+  });
+
+  @override
+  Future<void> turnOnBluetooth() async => turnOnAsks++;
 
   @override
   void forgetKey(String dataDir, List<int> identity) => forgotten++;

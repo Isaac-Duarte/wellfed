@@ -172,7 +172,7 @@ wellfed calibrate --weighed 71.1 --portions 10
 
 A feed that was interrupted reads as a range, such as **Fed between 0 and 3**, because the feeder can't know how far it got. **Fed 2 of 2** counts rotor marks. It doesn't mean the food reached the bowl, and the feeder never knows what your pet ate.
 
-The feeder keeps a limited history: its own record of recent events. See the [roadmap](../roadmap.md).
+The feeder keeps the last 1,408 events or more. That is a few months of an ordinary feeder's history, and at least a week of a very busy one's ([how many days it holds](../firmware/device-api.md#events-and-samples)).
 
 ## When something is down
 

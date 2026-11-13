@@ -16,6 +16,7 @@ use wellfed_app_bridge::api::install::PendingInstall;
 use wellfed_app_bridge::api::install::{
     ImageCheck, ImageProvisioning, InstallAnswer, InstallAsk, InstallEnd, InstallEvent,
     InstallSpec, InstallStart, InstallUpdate, ListenFailure, ListenUpdate, Resume, StopCase,
+    UnjoinedFeeder,
 };
 use wellfed_app_bridge::api::model::SetupRefusal;
 use wellfed_app_bridge::api::setup::WifiCredentials;
@@ -155,7 +156,7 @@ impl Fixture {
             data_dir: path("install"),
             forget_enrollment: false,
             feeder: None,
-            setup_again: false,
+            unjoined: UnjoinedFeeder::Wait,
         }
     }
 }
@@ -1156,7 +1157,7 @@ fn a_run_that_cannot_start_says_why_and_touches_nothing() {
         // A new Wi-Fi for a feeder that never joined needs one too.
         let mut spec = fixture.spec(InstallStart::Bank0, "127.41.8.30");
         spec.home = None;
-        spec.setup_again = true;
+        spec.unjoined = UnjoinedFeeder::SetUpAgain;
         let (_run, mut heard) = started(&fixture, spec);
         let InstallEnd::Stopped { case, resume, .. } = ended(&mut heard).await else {
             panic!("a run with no Wi-Fi started");
@@ -1292,7 +1293,7 @@ fn a_new_wifi_goes_through_setup_again_for_a_feeder_that_never_joined() {
         let fixture = Fixture::new(Provisioning::Consumer);
         let feeder = Keypair::from_secret([0x71; 32]);
         let mut spec = fixture.spec(InstallStart::Bank0, "127.41.8.33");
-        spec.setup_again = true;
+        spec.unjoined = UnjoinedFeeder::SetUpAgain;
         paired_unjoined(&spec, feeder.public());
         let record = fixture.spec(InstallStart::Bank0, "127.41.8.33");
 
@@ -1320,7 +1321,7 @@ fn setup_again_on_another_feeder_stops_and_keeps_the_record() {
         let ours = Keypair::from_secret([0x71; 32]);
         let other = Keypair::from_secret([0x72; 32]);
         let mut spec = fixture.spec(InstallStart::Bank0, "127.41.8.35");
-        spec.setup_again = true;
+        spec.unjoined = UnjoinedFeeder::SetUpAgain;
         paired_unjoined(&spec, ours.public());
         let record = fixture.spec(InstallStart::Bank0, "127.41.8.35");
 
@@ -1417,6 +1418,70 @@ async fn known_feeder_is_left_alone(ip: &str) {
 #[test]
 fn a_known_feeder_that_answers_gets_nothing_unless_picked() {
     local(known_feeder_is_left_alone("127.41.8.56"));
+}
+
+/// A feeder this phone paired and never saw join, with no record to name it,
+/// goes to the run as the owner's pick. Picked from a list, a feeder that does not
+/// answer stops the run at once; when the owner keeps waiting for the one this
+/// phone paired, the run waits for it to join, as it would for a record's.
+#[test]
+fn keeping_waiting_for_a_paired_feeder_with_no_record_waits_for_it() {
+    local(async {
+        let fixture = Fixture::new(Provisioning::Consumer);
+        let hex = wellfed_session::hex::Lower(&[0x66; 32]).to_string();
+        let spec = |unjoined| {
+            let mut spec = fixture.spec(InstallStart::Bank0, "127.41.8.60");
+            spec.known_feeders = vec![KnownFeeder {
+                identity: hex.clone(),
+                name: "Kitchen".into(),
+                address: None,
+                manual_address: None,
+            }];
+            spec.feeder = Some(hex.clone());
+            spec.unjoined = unjoined;
+            spec
+        };
+
+        let (run, mut heard) = started(&fixture, spec(UnjoinedFeeder::Wait));
+        let end = loop {
+            match next(&mut heard).await {
+                InstallUpdate::Ask { id, .. } => {
+                    run.answer(id, InstallAnswer::Located { address: None });
+                }
+                InstallUpdate::Ended { end } => break end,
+                InstallUpdate::Event { .. } => {}
+            }
+        };
+        let InstallEnd::Stopped { case, .. } = end else {
+            panic!("{end:?}");
+        };
+        assert_eq!(case, StopCase::NotAnswering);
+
+        let (run, mut heard) = started(&fixture, spec(UnjoinedFeeder::WaitForPick));
+        loop {
+            match next(&mut heard).await {
+                InstallUpdate::Ask { id, .. } => {
+                    run.answer(id, InstallAnswer::Located { address: None });
+                }
+                InstallUpdate::Event {
+                    event:
+                        InstallEvent::Paired {
+                            identity,
+                            rebooting,
+                            ..
+                        },
+                } => {
+                    assert_eq!(wellfed_session::hex::Lower(&identity).to_string(), hex);
+                    assert!(rebooting, "waited for as one still joining");
+                    break;
+                }
+                InstallUpdate::Ended { end } => panic!("{end:?}"),
+                InstallUpdate::Event { .. } => {}
+            }
+        }
+        run.stop();
+        ended(&mut heard).await;
+    });
 }
 
 /// Forgetting leaves no record, and a feeder this phone knows on bank 0 is still
@@ -1624,8 +1689,20 @@ fn a_pick_up_that_reads_the_build_lets_the_next_install_ask() {
 /// no trial on its word, unless the record already names it.
 #[test]
 fn a_picked_feeder_leaves_another_devices_record_and_trial() {
+    picked_feeder_leaves_the_record(Provisioning::Consumer);
+}
+
+/// The same on a bench image, which pairs through the recovery window: a wrong
+/// pick that goes on to the end leaves the record of the feeder the install
+/// really went to, for a later pick-up to match.
+#[test]
+fn a_picked_bench_feeder_leaves_another_devices_record_and_trial() {
+    picked_feeder_leaves_the_record(Provisioning::Bench);
+}
+
+fn picked_feeder_leaves_the_record(provisioning: Provisioning) {
     local(async {
-        let fixture = Fixture::new(Provisioning::Consumer);
+        let fixture = Fixture::new(provisioning);
         let keys = Keypair::from_secret([0x51; 32]);
         let sim = Running::start(&Flash::memory(), Some(*keys.public())).await;
         let hex = wellfed_session::hex::Lower(&sim.identity).to_string();

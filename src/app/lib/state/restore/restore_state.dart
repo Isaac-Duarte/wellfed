@@ -137,7 +137,7 @@ final class RestoreDone extends RestoreState {
 /// The feeder stopped answering once the offer was out.
 final class RestoreUncertain extends RestoreState {
   /// An end nobody can state yet.
-  const RestoreUncertain({required this.why, required this.detail, required this.look});
+  const RestoreUncertain({required this.why, required this.detail, required this.look, this.bluetoothOff = false});
 
   /// Why the end is not known.
   final UncertainWhy why;
@@ -147,6 +147,10 @@ final class RestoreUncertain extends RestoreState {
 
   /// What the look after it has found.
   final RestoreLook look;
+
+  /// This phone's Bluetooth is off, so the look can't hear a feeder in setup
+  /// mode; it starts again once Bluetooth is on.
+  final bool bluetoothOff;
 }
 
 /// The run stopped, as [stop] says.

@@ -99,7 +99,7 @@ One table names every sector, `wellfed_board::storage` (the PLAF103 board's), ch
 | 7–8 | RNG seed |
 | 9–10 | Identity and clients |
 | 11–12 | Feeding plans ([schedules](schedules.md#storage)) |
-| 13–24 | 7-day event ring ([device API](device-api.md#events-and-samples)) |
+| 13–24 | Event ring: at least 1,408 events, about 4 to 6 months at a normal day's rate and a week at 200 a day, estimated ([device API](device-api.md#events-and-samples)) |
 | 25–26 | Update store: the anti-rollback floor, the give-way's candidate, update keys, bank 0's image ([OTA design](ota-design.md#keys-and-anti-rollback)) |
 | 27–28 | Time settings: the zone's rule and the NTP server ([clock](clock.md#time-settings)) |
 | 29–31 | Per-feed trace ring: the last 8 to 12 feeds' traces ([feed traces](device-api-diagnostics.md#feed-traces)) |

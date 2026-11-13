@@ -294,7 +294,7 @@ void main() {
         final InstallSpec again = ports.specs.last;
         expect(again.start, InstallStart.bank0);
         expect(again.home?.passphrase, 'rightpassword');
-        expect(again.setupAgain, isTrue);
+        expect(again.unjoined, UnjoinedFeeder.setUpAgain);
 
         expect(find.text('Wellfed is running. Now claim it.'), findsOneWidget);
         expect(find.textContaining('Mic', findRichText: true), findsOneWidget);
@@ -310,7 +310,7 @@ void main() {
         await installTap(tester, 'Pick up where it stopped');
         expect(ports.specs.last.start, InstallStart.bank0);
         expect(ports.specs.last.feeder, 'abcd');
-        expect(ports.specs.last.setupAgain, isFalse);
+        expect(ports.specs.last.unjoined, UnjoinedFeeder.wait);
       });
 
       testWidgets('a new Wi-Fi drops the pick, and setup runs again', (tester) async {
@@ -321,7 +321,9 @@ void main() {
         await settle(tester);
 
         await installTap(tester, 'Keep waiting for it');
+        // No record names it, so the run waits for the pick to join.
         expect(ports.specs.last.feeder, 'abcd');
+        expect(ports.specs.last.unjoined, UnjoinedFeeder.waitForPick);
         ports.run.stopped(const StopCase.notJoined(), resume: Resume.fromBank0);
         await settle(tester);
 
@@ -332,7 +334,7 @@ void main() {
         await installTap(tester, 'Continue');
 
         expect(ports.specs.last.feeder, isNull);
-        expect(ports.specs.last.setupAgain, isTrue);
+        expect(ports.specs.last.unjoined, UnjoinedFeeder.setUpAgain);
       });
 
       testWidgets('a pick-up that finds no feeder keeps going through setup', (tester) async {
@@ -347,7 +349,7 @@ void main() {
         ports.run.stopped(const StopCase.noSetupFeeder(), resume: Resume.fromBank0);
         await settle(tester);
         await installTap(tester, 'Pick up where it stopped');
-        expect(ports.specs.last.setupAgain, isTrue);
+        expect(ports.specs.last.unjoined, UnjoinedFeeder.setUpAgain);
       });
 
       testWidgets('Back from the Wi-Fi leaves setup alone', (tester) async {
@@ -365,7 +367,7 @@ void main() {
         await notJoined(tester, ports);
         await installTap(tester, 'Keep waiting for it');
         expect(ports.specs.last.start, InstallStart.bank0);
-        expect(ports.specs.last.setupAgain, isFalse);
+        expect(ports.specs.last.unjoined, UnjoinedFeeder.waitForPick);
       });
     });
 

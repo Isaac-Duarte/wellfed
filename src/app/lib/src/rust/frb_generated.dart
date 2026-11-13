@@ -5582,7 +5582,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       dataDir: dco_decode_String(arr[9]),
       forgetEnrollment: dco_decode_bool(arr[10]),
       feeder: dco_decode_opt_String(arr[11]),
-      setupAgain: dco_decode_bool(arr[12]),
+      unjoined: dco_decode_unjoined_feeder(arr[12]),
     );
   }
 
@@ -7195,6 +7195,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void dco_decode_unit(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return;
+  }
+
+  @protected
+  UnjoinedFeeder dco_decode_unjoined_feeder(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return UnjoinedFeeder.values[raw as int];
   }
 
   @protected
@@ -9528,7 +9534,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_dataDir = sse_decode_String(deserializer);
     var var_forgetEnrollment = sse_decode_bool(deserializer);
     var var_feeder = sse_decode_opt_String(deserializer);
-    var var_setupAgain = sse_decode_bool(deserializer);
+    var var_unjoined = sse_decode_unjoined_feeder(deserializer);
     return InstallSpec(
       start: var_start,
       address: var_address,
@@ -9542,7 +9548,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       dataDir: var_dataDir,
       forgetEnrollment: var_forgetEnrollment,
       feeder: var_feeder,
-      setupAgain: var_setupAgain,
+      unjoined: var_unjoined,
     );
   }
 
@@ -11706,6 +11712,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   void sse_decode_unit(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+  }
+
+  @protected
+  UnjoinedFeeder sse_decode_unjoined_feeder(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return UnjoinedFeeder.values[inner];
   }
 
   @protected
@@ -14072,7 +14085,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.dataDir, serializer);
     sse_encode_bool(self.forgetEnrollment, serializer);
     sse_encode_opt_String(self.feeder, serializer);
-    sse_encode_bool(self.setupAgain, serializer);
+    sse_encode_unjoined_feeder(self.unjoined, serializer);
   }
 
   @protected
@@ -15972,6 +15985,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   void sse_encode_unit(void self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+  }
+
+  @protected
+  void sse_encode_unjoined_feeder(
+    UnjoinedFeeder self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
   }
 
   @protected

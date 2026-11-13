@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart' show DiscoveredDevice;
 import 'package:go_router/go_router.dart';
@@ -30,6 +32,15 @@ class PairingView extends StatelessWidget {
     listenable: flow,
     builder: (context, _) => switch (flow.state) {
       final PairingFinding finding => _Find(flow: flow, finding: finding),
+      PairingBluetoothOff() => StepScaffold(
+        stepLabel: 'Step 4 of 4',
+        progress: 1,
+        title: 'Bluetooth is off',
+        body: 'Setup finds the feeder over Bluetooth. Turn it on, and setup goes on by itself.',
+        actions: [
+          FilledButton(onPressed: () => unawaited(flow.turnOnBluetooth()), child: const Text('Turn on Bluetooth')),
+        ],
+      ),
       PairingConnecting() => _Waiting(
         stepLabel: ble ? 'Step 4 of 4' : null,
         title: 'Connecting',
@@ -357,6 +368,10 @@ class _Failed extends StatelessWidget {
     PairingFailure.link => (
       'The Bluetooth link dropped',
       'Move closer to the feeder and try again. It stays in setup mode.',
+    ),
+    PairingFailure.bluetoothOff => (
+      "This $deviceName's Bluetooth went off",
+      'Setup needs it on until the feeder answers. Try again: it waits for Bluetooth, and the feeder stays in setup mode.',
     ),
     PairingFailure.refused => _refusal(state.refusal),
     PairingFailure.mismatch => (

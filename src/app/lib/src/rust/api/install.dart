@@ -15,7 +15,7 @@ import 'setup.dart';
 import 'store.dart';
 part 'install.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// The image unpacked in `dir`, checked against this build's pin and against
 /// its own review.
@@ -398,10 +398,8 @@ class InstallSpec {
   /// in hex. With none, a known feeder that answers is left alone.
   final String? feeder;
 
-  /// The owner gave a new Wi-Fi for a feeder that paired and never joined,
-  /// and put it back in setup mode: Bluetooth setup goes again rather than
-  /// waiting for it.
-  final bool setupAgain;
+  /// What the run does about a feeder that paired and never joined.
+  final UnjoinedFeeder unjoined;
 
   const InstallSpec({
     required this.start,
@@ -416,7 +414,7 @@ class InstallSpec {
     required this.dataDir,
     required this.forgetEnrollment,
     this.feeder,
-    required this.setupAgain,
+    required this.unjoined,
   });
 
   @override
@@ -433,7 +431,7 @@ class InstallSpec {
       dataDir.hashCode ^
       forgetEnrollment.hashCode ^
       feeder.hashCode ^
-      setupAgain.hashCode;
+      unjoined.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -452,7 +450,7 @@ class InstallSpec {
           dataDir == other.dataDir &&
           forgetEnrollment == other.forgetEnrollment &&
           feeder == other.feeder &&
-          setupAgain == other.setupAgain;
+          unjoined == other.unjoined;
 }
 
 /// How the feeder finds this phone.
@@ -720,6 +718,21 @@ sealed class StopCase with _$StopCase {
 enum UncertainWrite {
   /// The signed update, pushed into bank 1.
   promotion,
+}
+
+/// What a run does about a feeder an earlier run paired that never joined.
+enum UnjoinedFeeder {
+  /// Wait for the feeder this install's record names. A picked feeder that
+  /// does not answer stops the run.
+  wait,
+
+  /// The owner keeps waiting for the feeder this phone paired, given as
+  /// [`InstallSpec::feeder`] since no record names it: it is waited for too.
+  waitForPick,
+
+  /// The owner gave a new Wi-Fi and put the feeder back in setup mode:
+  /// Bluetooth setup goes again rather than waiting for it.
+  setUpAgain,
 }
 
 /// Why the run still waits for stock.

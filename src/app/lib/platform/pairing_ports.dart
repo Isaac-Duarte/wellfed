@@ -23,6 +23,12 @@ abstract interface class PairingPorts {
   /// Connect to `device`.
   Future<BleLink> open(DiscoveredDevice device);
 
+  /// Whether this phone's Bluetooth is on, now and as it changes.
+  Stream<BluetoothPower> bluetooth();
+
+  /// Ask Android to turn Bluetooth on.
+  Future<void> turnOnBluetooth();
+
   /// Where the feeder with `identity` (hex) answers, within `wait`.
   Future<String?> locate(String identity, Duration wait);
 
@@ -59,6 +65,12 @@ class AppPairingPorts implements PairingPorts {
 
   @override
   Future<BleLink> open(DiscoveredDevice device) => SetupLink.open(device);
+
+  @override
+  Stream<BluetoothPower> bluetooth() => SetupLink.power();
+
+  @override
+  Future<void> turnOnBluetooth() => SetupLink.askToTurnOn();
 
   @override
   Future<String?> locate(String identity, Duration wait) => Discovery.locate(identity, wait);

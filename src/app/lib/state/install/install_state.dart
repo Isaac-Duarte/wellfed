@@ -110,6 +110,7 @@ final class InstallFacts {
   const InstallFacts({
     this.pending = PendingInstall.nothing,
     this.bluetoothRefused = false,
+    this.bluetoothOff = false,
     this.repairFailed,
     this.phoneIp,
   });
@@ -119,6 +120,9 @@ final class InstallFacts {
 
   /// Android refused Bluetooth to a pick-up that may need it.
   final bool bluetoothRefused;
+
+  /// This phone's Bluetooth is off, and the run needs it to find the feeder.
+  final bool bluetoothOff;
 
   /// Why a repair of this phone's records did not work.
   final String? repairFailed;
@@ -140,6 +144,9 @@ sealed class InstallState {
 
   /// Android refused Bluetooth to a pick-up that may need it.
   bool get bluetoothRefused => facts.bluetoothRefused;
+
+  /// This phone's Bluetooth is off, and the run needs it to find the feeder.
+  bool get bluetoothOff => facts.bluetoothOff;
 
   /// Why a repair of this phone's records did not work.
   String? get repairFailed => facts.repairFailed;

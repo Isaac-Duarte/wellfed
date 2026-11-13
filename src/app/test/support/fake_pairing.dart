@@ -80,8 +80,10 @@ class FakePairingPorts implements PairingPorts {
 
   final drivers = <FakeDriver>[];
   final recoveries = <FakeRecovery>[];
+
+  /// The scan running now; a test gives a second scan its own.
   // ignore: close_sinks, the test ends with it
-  final scans = StreamController<DiscoveredDevice>(onCancel: () async {});
+  StreamController<DiscoveredDevice> scans = StreamController<DiscoveredDevice>(onCancel: () async {});
   final opened = <DiscoveredDevice>[];
   FakeBleLink link = FakeBleLink();
   String? located = '192.168.1.40:4747';
@@ -105,6 +107,27 @@ class FakePairingPorts implements PairingPorts {
 
   @override
   Stream<DiscoveredDevice> scan() => scans.stream;
+
+  /// This phone's Bluetooth, and its changes to each listener.
+  BluetoothPower power = BluetoothPower.on;
+  final _powerChanges = StreamController<BluetoothPower>.broadcast();
+  int turnOnAsks = 0;
+
+  /// Turn Bluetooth to `to`, as the owner would in Android.
+  void setPower(BluetoothPower to) {
+    power = to;
+    _powerChanges.add(to);
+  }
+
+  @override
+  Stream<BluetoothPower> bluetooth() => Stream.multi((listener) {
+    listener.add(power);
+    final StreamSubscription<BluetoothPower> changes = _powerChanges.stream.listen(listener.add);
+    listener.onCancel = changes.cancel;
+  });
+
+  @override
+  Future<void> turnOnBluetooth() async => turnOnAsks++;
 
   @override
   Future<BleLink> open(DiscoveredDevice device) async {

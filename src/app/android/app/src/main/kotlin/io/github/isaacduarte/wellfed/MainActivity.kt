@@ -1,6 +1,8 @@
 package io.github.isaacduarte.wellfed
 
 import android.Manifest
+import android.bluetooth.BluetoothAdapter
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.LocationManager
@@ -119,6 +121,16 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BLUETOOTH_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "turnOn" -> {
+                        askBluetoothOn()
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SCREEN_CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -137,6 +149,28 @@ class MainActivity : FlutterActivity() {
         val intent =
             Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
         startActivity(intent)
+    }
+
+    // Android's own "turn on Bluetooth?" dialog, or Bluetooth settings where it
+    // can't be shown: without the Nearby devices permission (Android 12+ needs it
+    // for the request), or with no activity for it. The answer comes back as the
+    // Bluetooth plugin's status, so nothing waits for a result here.
+    private fun askBluetoothOn() {
+        try {
+            startActivity(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
+        } catch (_: ActivityNotFoundException) {
+            openBluetoothSettings()
+        } catch (_: SecurityException) {
+            openBluetoothSettings()
+        }
+    }
+
+    private fun openBluetoothSettings() {
+        try {
+            startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+        } catch (error: ActivityNotFoundException) {
+            Log.w(TAG, "no Bluetooth settings to open: $error")
+        }
     }
 
     // For the length of a run: the flag holds only while this activity is on
@@ -294,6 +328,7 @@ class MainActivity : FlutterActivity() {
         const val TAG = "wellfed"
         const val CHANNEL = "io.github.isaacduarte.wellfed/wifi"
         const val SCREEN_CHANNEL = "io.github.isaacduarte.wellfed/screen"
+        const val BLUETOOTH_CHANNEL = "io.github.isaacduarte.wellfed/bluetooth"
         const val ALERTS_CHANNEL = "io.github.isaacduarte.wellfed/alerts"
         const val SETUP_PREFIX = "PL-AF103-"
         const val JOIN_TIMEOUT_MS = 60_000
