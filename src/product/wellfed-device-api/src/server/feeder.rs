@@ -587,6 +587,12 @@ enum Erase {
 /// came after the one the client read, and stays. Only the loop queues a
 /// change to the clip, and only once none is pending, so the clip read
 /// here is the one the erase meets.
+///
+/// A read with a change pending, or one that is not `Current` (busy, read
+/// only, or no meal call served), skips the clip check. That is safe only
+/// because `put_call` reads again and refuses each of those (`Busy`,
+/// `NotWritable`, `Unavailable`) before it queues anything, so no erase is
+/// queued past an unchecked clip.
 fn delete_call_if<F: FeederDevice>(bytes: u32, crc: u32, device: &mut F) -> Result<Erase, Refusal> {
     if let CallResult::Current {
         view,

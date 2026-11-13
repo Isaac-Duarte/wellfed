@@ -58,7 +58,10 @@ pub fn decode<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> Result<T, Error> {
 /// Only bytes the value encodes back to are a record. Postcard reads an
 /// overlong varint (`0x96 0x00` for 22) as the value it ends on, which no
 /// build ever writes, so such a body would read as an event whose bytes
-/// differ from the ones stored, hashed and passed on.
+/// differ from the ones stored, hashed and passed on. A body whose
+/// [`Lenient`](grow::Lenient) index is 256 or more is refused too: it reads
+/// as `Unknown` saturated to 255 and so encodes back to other bytes, and no
+/// unit enum comes near that many variants.
 pub fn decode_padded<'a, T: Deserialize<'a> + Serialize>(bytes: &'a [u8]) -> Option<T> {
     let (value, rest) = postcard::take_from_bytes::<T>(bytes).ok()?;
     let read = bytes.get(..bytes.len() - rest.len())?;
