@@ -119,7 +119,7 @@ On a readback mismatch the record holds the first differing word as programmed, 
 - the signing key's id (the first 8 bytes of SHA-256 over its public key);
 - the image's SHA-256 and the build ID.
 
-A feeder admits only its own model: once the signature checks, a manifest naming another is refused (`Target`) before anything is written. The server lists releases by model (`GET /releases?model=`) and offers one only to a device of that model (`409 other_model`). The model travels in the manifest, which heads every release file, so the OTA container and bank image don't carry it.
+A feeder admits only its own model: once the signature checks, a manifest naming another is refused (`Target`) before anything is written. The model travels in the manifest, which heads every release file, so the OTA container and bank image don't carry it.
 
 Version 1 (`PLOTA1`) is deleted: an offer carrying its magic is refused as the wrong version. The bench still reads the versions of the version 1 manifests on disk when it picks the next.
 
@@ -238,7 +238,7 @@ Confirmation proves one boot, but a confirmed build can still fault into a reset
 
 ### Recovering a held or halted feeder
 
-- **Held.** The app and server reach the feeder, but every feed is refused with a fault (`Blocked::Fault`), and the log tail shows `PLSUP1 storm … mode=held`. It feeds again by itself once the hold ends: 10 minutes the first time, doubling for each storm in a row, at most 160 minutes. To retry at once, reboot it from the app, since a requested reboot clears the count. If it keeps coming back, install a fixed build; updates install as usual while held.
+- **Held.** The app and Home Assistant reach the feeder, but every feed is refused with a fault (`Blocked::Fault`), and the log tail shows `PLSUP1 storm … mode=held`. It feeds again by itself once the hold ends: 10 minutes the first time, doubling for each storm in a row, at most 160 minutes. To retry at once, reboot it from the app, since a requested reboot clears the count. If it keeps coming back, install a fixed build; updates install as usual while held.
 - **Halted.** The feeder doesn't answer at all for up to an hour, then comes back held. Waiting is enough. To start over at once, cut power fully: unplug the adapter **and** take out the D cells for a few seconds.
 - **Bank 1 gave way.** The feeder answers as its bank-0 build (the update view shows bank 0) and feeds. Install a build with a higher version than the one that stormed.
 

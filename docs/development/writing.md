@@ -151,7 +151,7 @@ Every device folder starts from [the template](../devices/_template/README.md), 
 | Time-bound wording | "come next", "on the way", "not built" and their like, and a past date in "until <date>" | The roadmap, this page, and "for now" and "not yet", which are often true |
 | Anchors | A link's `#anchor` with no heading to land on, GitHub's way of writing them | Links to other sites, and `#L12` line links |
 
-No check can catch a wrong statement about the code, such as which crates the server links. **A change to behavior updates its page in the same change.** Search the docs for the name you changed, and if a status moved, update the roadmap.
+No check can catch a wrong statement about the code, such as which crates the app links. **A change to behavior updates its page in the same change.** Search the docs for the name you changed, and if a status moved, update the roadmap.
 
 ## Before you finish
 

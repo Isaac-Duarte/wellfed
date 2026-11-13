@@ -4,7 +4,7 @@ This page explains how the Wellfed replacement firmware is put together and why.
 
 ## The one idea
 
-One task owns the feeder. A single loop task runs the network, the panel and feeding, and inside it the [feeding owner](../glossary.md) is the only code allowed to move the motor. The Dispense button, the `wellfed` CLI, the app and the server all ask that owner through the same [device API](device-api.md) requests, in the same loop.
+One task owns the feeder. A single loop task runs the network, the panel and feeding, and inside it the [feeding owner](../glossary.md) is the only code allowed to move the motor. The Dispense button, the `wellfed` CLI, the app and Home Assistant all ask that owner through the same [device API](device-api.md) requests, in the same loop.
 
 That rule makes the safety promises simple. Two clients and a button press can't race into a double feed, because there is nobody to race. A feed is written down before the motor turns, so a power cut can't make the feeder repeat it. And the motor's stop guarantees live in timers and the watchdog, below the loop, so a slow network can't keep the motor running.
 
@@ -38,7 +38,7 @@ From the bottom up:
 | Alerts | The feeder's table of what is wrong, for every client to read | [Alerts](alerts.md) |
 | Bring-up and devices | The probes that first brought the hardware up, the QA self-test, and how a second model or kind slots in | [Bring-up probes](bring-up-probes.md), [QA firmware](qa.md), [device kinds](device-kinds.md) |
 
-The design behind all of this, from "one firmware, server optional" to the choice of Noise, is in [product architecture](product-architecture.md). Whether it fits the chip is measured in [resource budget](resource-budget.md), with its [scheduling gap check](scheduling-gap-check.md). How a stock feeder moves to Wellfed, and back, is in [consumer installation](consumer-installation.md).
+The design behind all of this, from "one firmware, and no server" to the choice of Noise, is in [product architecture](product-architecture.md). Whether it fits the chip is measured in [resource budget](resource-budget.md), with its [scheduling gap check](scheduling-gap-check.md). How a stock feeder moves to Wellfed, and back, is in [consumer installation](consumer-installation.md).
 
 Wellfed has a second, separate path to the feeder. The `wellfed-stock` server talks to **stock 1.1.15** over stock's own MQTT protocol. It never runs inside the feeder, and the replacement firmware doesn't use it except to install itself. Stock 1.1.15 can install the replacement over its own updater, with no UART write.
 
@@ -84,7 +84,7 @@ The full inventory, with how to write a firmware, is the [firmware guide](../../
 | Crate | In short |
 | --- | --- |
 | `wellfed-session` | Noise, HMAC, the setup code and framing, shared with clients |
-| `wellfed-signed` | The frozen signed update formats bank 0 checks (manifest, key statements, key ids, image bounds), shared with clients and the server |
+| `wellfed-signed` | The frozen signed update formats bank 0 checks (manifest, key statements, key ids, image bounds), shared with clients |
 | `wellfed-core` | Device-neutral logic: the clock, the shared slot store with the seed and update stores, the updater's checks, the indicators, the UART records |
 | `wellfed-core-feeder` | The feeder's logic on the SDK: the feed controller, portions, sensors, motor gate, the feed journal, the meal schedule and the pack's floor for feeding |
 | `wellfed-hal-common` | Code both cores link: RAM parking, flash hooks, the boot trial, panics |

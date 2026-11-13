@@ -19,7 +19,7 @@ src/integrations/homeassistant/
 
 | Rule | Why | Enforced by |
 | --- | --- | --- |
-| **No wire logic in Python.** Sessions, invites, request ids, retries, event cursors, release checks and installs live in the Rust bridge; Python moves updates into Home Assistant and hands writes to the bridge. | The feeder's rules exist once, shared with the app, the CLI and the server, and a feed is sent once, from Rust. | Review; the bridge's tests |
+| **No wire logic in Python.** Sessions, invites, request ids, retries, event cursors, release checks and installs live in the Rust bridge; Python moves updates into Home Assistant and hands writes to the bridge. | The feeder's rules exist once, shared with the app and the CLI, and a feed is sent once, from Rust. | Review; the bridge's tests |
 | **Typed values only.** The bridge returns classes from its stub, never JSON. Compare its enums with `==`, since PyO3 may build a new object for each access. | A key read by hand is a quiet copy of a Rust type, and drifts. | mypy against the stub |
 | **The stub is generated.** Regenerate `bridge/wellfed_homeassistant.pyi` after any change to the bridge's Python surface, and commit it with that change; every wheel ships it. | Python is checked against what the module really exposes. | `check-homeassistant` fails on a stale stub |
 | **Strict types.** `mypy --strict` over the integration and its tests, with `warn_unreachable`. | A wrong field name fails before a feeder is involved. | mypy |

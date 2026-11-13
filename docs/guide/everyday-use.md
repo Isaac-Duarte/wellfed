@@ -5,9 +5,9 @@ This page covers life with a feeder running Wellfed: meals, feeding now, the but
 > [!NOTE]
 > There's no public build to install yet, so this describes Wellfed as it runs on our test feeder. The [roadmap](../roadmap.md) shows how far along each piece is. Don't rely on it alone to feed a pet yet.
 
-The app has one screen per feeder, with four tabs: **Today**, **Schedule**, **History** and **Settings**. The app talks to the feeder directly on your home network. Away from home it reaches the feeder only through your own server, once you sign in to one.
+The app has one screen per feeder, with four tabs: **Today**, **Schedule**, **History** and **Settings**. The app talks to the feeder directly on your home network, so away from home it can't reach it.
 
-The CLI keeps your key, your stock backups and your server login in one folder, whichever folder you run it from: `~/.local/share/wellfed` on Linux (or `$XDG_DATA_HOME/wellfed`) and `~/Library/Application Support/io.github.isaacduarte.wellfed` on a Mac, the two systems the CLI runs on. Set `WELLFED_HOME` to use another folder, or pass `--keys`. It makes a key only when you ask: the first time on a computer, add `--create-key` to `wellfed setup`, `wellfed recover` or `wellfed join`. Any other command with no key stops and names the file it looked for.
+The CLI keeps your key and your stock backups in one folder, whichever folder you run it from: `~/.local/share/wellfed` on Linux (or `$XDG_DATA_HOME/wellfed`) and `~/Library/Application Support/io.github.isaacduarte.wellfed` on a Mac, the two systems the CLI runs on. Set `WELLFED_HOME` to use another folder, or pass `--keys`. It makes a key only when you ask: the first time on a computer, add `--create-key` to `wellfed setup`, `wellfed recover` or `wellfed join`. Any other command with no key stops and names the file it looked for.
 
 ![The app's Today tab, with Ready to feed at the top, 3 portions fed today, the day's meals (fed at 7:00 AM, a Dispense button press at 9:12 AM, missed at noon, next at 5:00 PM, one later), a line saying power, Wi-Fi and clock look fine, and a Feed now button](app-today.png)
 
@@ -15,7 +15,7 @@ When something needs you, Today says so. A feed cut short by a power loss gets a
 
 ## Meals
 
-The feeder keeps up to ten meals and runs them itself, so no phone or server has to be around. Each meal has a time, 1 to 48 portions, and the days it repeats on. A meal set to run once stays in the list, switched off, after it has run.
+The feeder keeps up to ten meals and runs them itself, so no phone or computer has to be around. Each meal has a time, 1 to 48 portions, and the days it repeats on. A meal set to run once stays in the list, switched off, after it has run.
 
 <!-- tabs -->
 
@@ -172,7 +172,7 @@ wellfed calibrate --weighed 71.1 --portions 10
 
 A feed that was interrupted reads as a range, such as **Fed between 0 and 3**, because the feeder can't know how far it got. **Fed 2 of 2** counts rotor marks. It doesn't mean the food reached the bowl, and the feeder never knows what your pet ate.
 
-The feeder keeps a limited history, and a long one needs the optional server. See the [roadmap](../roadmap.md).
+The feeder keeps a limited history: its own record of recent events. See the [roadmap](../roadmap.md).
 
 ## When something is down
 
@@ -180,7 +180,7 @@ Your feeder needs the time to run meals, and it has no battery-backed clock. "No
 
 | What's down | Scheduled meals | Feeding by hand |
 | --- | --- | --- |
-| Your phone, or the server | They run, unless the clock depends on that phone (below) | Dispense works. Feed now needs a phone or computer |
+| Your phone | They run, unless the clock depends on that phone (below) | Dispense works. Feed now needs a phone or computer |
 | The internet, with your router still on | They run if your router still answers with the time. A router that says its own clock isn't set is refused. How routers behave here varies, and we haven't tested it. To check yours, see whether **Clock** on Today reads **Set by your router** | Dispense and Feed now work |
 | Your Wi-Fi or router | They run until the clock's possible error passes 2 minutes, then they hold. That limit counts from the last time the clock was fully set, not from the last poll, so it can come any time up to about 6.6 hours after the drop, or about a week once your syncs have taught the feeder its clock's rate ([clock](../firmware/clock.md#the-clock)) | Dispense works. Feed now needs Wi-Fi |
 | Mains, with no batteries | Nothing runs while it's off. The clock is lost, so meals hold until it's set again | Dispense works once power is back |

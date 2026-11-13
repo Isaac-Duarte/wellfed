@@ -43,7 +43,7 @@ flowchart LR
 ```
 
 - **Bluetooth setup** is above. You start it on a running feeder by holding Lock, then Mic, for 5 seconds on an unlocked panel.
-- **An invite** comes from a paired client, as a code or a link. An owner can invite an owner, a member or a server. A member can invite members, from the CLI only, since the app shows **People** only to owners. It works once, and within 10 minutes. A restart cancels it. The person redeeming it has to be on the same network as the feeder.
+- **An invite** comes from a paired client, as a code or a link. An owner can invite an owner or a member. A member can invite members, from the CLI only, since the app shows **People** only to owners. It works once, and within 10 minutes. A restart cancels it. The person redeeming it has to be on the same network as the feeder.
 - **The recovery hold** is the way back in when every client is lost. Holding Lock, then Dispense, for 5 seconds on an unlocked panel opens a window of 2 minutes, and a client then proves a code you key in. It doesn't erase anything.
 - **An update key** can sign firmware and never opens a session. An owner asks, and you press Dispense to approve. The restore to stock uses a temporary one. The project's release key can sign firmware too, but only an owner can offer an update to the feeder.
 
@@ -55,17 +55,16 @@ You can lock the buttons and still answer a pairing: the presses for a code, and
 | --- | --- | --- |
 | Owner | Everything, including Wi-Fi, updates, restart, and removing people | |
 | Member | Feed, edit meals and settings, set the portion weight, lock the buttons, and invite members | Change Wi-Fi or time settings, restart, remove people, install updates, enroll update keys, upload or delete the meal call, read logs, or read the backup |
-| Server | The same as a member, except inviting and setting the portion weight | The same as a member, and invite anyone or set the portion weight |
 | Update key | Sign firmware, once an owner has enrolled it | Open a session |
 
-So the server has the owner's powers only if you adopt it with an owner's invite. That's the supported setup, since it's the only one where every route works, so expect a normal server to hold full authority. Treat its data directory like your own key. Removing someone closes their connection at once. It doesn't remove what they did from History.
+The device API also keeps a server role, from an optional server Wellfed no longer has; no Wellfed client invites one. Removing someone closes their connection at once. It doesn't remove what they did from History.
 
 ## What crosses your network
 
 ```mermaid
 %% svg: access-network.svg
 flowchart LR
-  feeder["The feeder"] -->|encrypted sessions on TCP 4747| clients["Phones, computers, a server"]
+  feeder["The feeder"] -->|encrypted sessions on TCP 4747| clients["Phones, computers, Home Assistant"]
   feeder -->|in the clear: mDNS with its public key and port, DHCP, ARP| lan["Anyone on your network"]
   feeder -->|in the clear: a time request with a random number, a ping every 5 seconds| router["Your router, by default"]
   feeder -.->|nothing, by design| cloud["The vendor's cloud and the internet"]

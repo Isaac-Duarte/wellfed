@@ -1,6 +1,6 @@
 # Desiccant reminder
 
-The hopper's desiccant pack keeps the food dry and needs replacing every few weeks. The feeder counts the days since you last replaced it and reports when it is due, with no server and no cloud. This page is for owners and anyone changing the reminder. The count has run on our feeder; status is on the [roadmap](../roadmap.md).
+The hopper's desiccant pack keeps the food dry and needs replacing every few weeks. The feeder counts the days since you last replaced it and reports when it is due, with no cloud. This page is for owners and anyone changing the reminder. The count has run on our feeder; status is on the [roadmap](../roadmap.md).
 
 ## Using it
 
@@ -10,7 +10,7 @@ wellfed desiccant                      # where the count stands
 wellfed settings --desiccant-days 21   # the period, 1 to 90 days, 14 by default
 ```
 
-Through the server: `wellfed server desiccant [--reset]` and `wellfed server settings --desiccant-days`. Owners, members and the server may record a replacement, as they may change the plans, and the period is a setting like any other: a change names the generation it read.
+Owners and members may record a replacement, as they may change the plans, and the period is a setting like any other: a change names the generation it read.
 
 ## The count
 

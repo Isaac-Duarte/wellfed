@@ -1,6 +1,6 @@
 # Feeding schedules
 
-The feeder keeps up to ten feeding plans and runs them itself, with no server. This page explains what a plan is, when one runs, and how the feeder makes sure a meal runs at most once through restarts, clock jumps and daylight changes. It is for owners who want to know what to expect, and for anyone changing the schedule code.
+The feeder keeps up to ten feeding plans and runs them itself, with no phone or computer on. This page explains what a plan is, when one runs, and how the feeder makes sure a meal runs at most once through restarts, clock jumps and daylight changes. It is for owners who want to know what to expect, and for anyone changing the schedule code.
 
 Plans, the meal reminder and the meal call have all run on our feeder. So has the autumn daylight change: on November 1, 2026 a 01:30 meal ran once, in daylight time, and not again in standard time. The spring change, power cuts between a claim and its feed, and skipping a meal are tested in simulation only. Status is on the [roadmap](../roadmap.md).
 
@@ -62,7 +62,7 @@ wellfed plans skip 2      # skip plan 2's next meal, if it falls today
 wellfed plans unskip 2    # bring it back, until its time
 ```
 
-The CLI finds the meal from the plans, the feeder's clock and its zone, so you never type a time. `wellfed plans list` shows a skip beside its plan. `wellfed server plans skip` and `unskip` do the same through the server (`POST /feeders/{id}/meals/skip` and `/meals/unskip`), and the server's next meal passes over a skipped one.
+The CLI finds the meal from the plans, the feeder's clock and its zone, so you never type a time. `wellfed plans list` shows a skip beside its plan.
 
 A client sends `SkipMeal { slot, due_s }`, naming the plan's slot and the meal's due instant, and `UnskipMeal` with the same two ([device API](device-api-ops.md#time-and-calibration)). Each is answered once stored, and recorded as a `Skipped` or `Unskipped` event with its client. `GetPlans` names each slot's skipped meal while its skip stands, until the plan's next meal is taken or passed, so a skip in the past is spent.
 
@@ -79,7 +79,7 @@ A client sends `SkipMeal { slot, due_s }`, naming the plan's slot and the meal's
 
 ## Meal reminder
 
-The feeder can announce each scheduled meal ahead of time, so the app, the server or a home automation can tell you food is coming. It records a `MealSoon` event on the event stream. It plays no sound and sends no phone notification itself. The reminder is off until you set it:
+The feeder can announce each scheduled meal ahead of time, so the app or a home automation can tell you food is coming. It records a `MealSoon` event on the event stream. It plays no sound and sends no phone notification itself. The reminder is off until you set it:
 
 ```sh
 wellfed settings --meal-reminder 10    # 10 minutes before each meal

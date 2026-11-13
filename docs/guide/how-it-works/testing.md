@@ -19,7 +19,7 @@ Each row links to its entry, which has the numbers and what the fix did and didn
 | [Installing from stock](#installed-from-stock-on-a-route-weve-since-removed) | Stock refused the install, then our backup check refused a correct copy. | **Fixed** |
 | [The clock across an install](#compared-the-clock-with-the-bench-computer) | The clock read 12.2 s behind while claiming 5.5 s of error. | **Fixed** |
 | [A 40 s hotspot drop](#dropped-the-hotspot-for-40-s) | The feeder took 64 to 68 s to answer again after the hotspot came back. | **Fixed** |
-| [Two history readers](#two-clients-reading-history-at-once) | With the server's stream open, a second client got one backlog event in 25 s and no live ones. | **Fixed** |
+| [Two history readers](#two-clients-reading-history-at-once) | With one client following live, a second client got one backlog event in 25 s and no live ones. | **Fixed** |
 | [Power cuts with no cells](#cut-the-power-with-no-cells-fitted) | The record read a 3,861 mV battery with no batteries fitted. | **Partly fixed** |
 | [72 hours on schedules alone](#72-hours-on-schedules-alone) | Offline during a feed, the device log lost that meal's result lines, 3 times in 3. | **Passed with gaps** |
 
@@ -415,24 +415,16 @@ We measured what a rejoin does to the firmware.
 
 **Measured.** An association stalled every task for about 0.45 s, and a rejected one for about 0.72 s. That's why feeds and joins now take turns. The loop also crashed once, on what looked like a bad read from flash. That came before the flash clock change, and we haven't shown the change fixed it.
 
-### Pointed the optional server at it
-
-*Oct 28 · No motion*
-
-Through a restart, a power cut and a 38 s Wi-Fi drop.
-
-**Passed with gaps.** The server's history matched the feeder's event for event, 1 to 1,049, with no gaps or duplicates. The backlog of 1,039 events took 216 s. A dead feeder still showed online for 90 s. Feeds through the server haven't run on hardware. The server has since been restructured, and this run hasn't been repeated on it.
-
 ### Two clients reading history at once
 
 *Oct 28, 31 and Nov 6*
 
 **Fixed.**
 
-- **Oct 28:** with the server's stream open, a second client got one backlog event in 25 s and no live ones.
+- **Oct 28:** with one client following live (the owner's server, since removed), a second client got one backlog event in 25 s and no live ones.
 - **Oct 31, after the fix:** two readers from different points, five times, each got every event once, in about 0.6 s.
 
-- **Nov 6:** beside a client following live with samples on, as the server's stream does, a second client caught up 674 events in 0.46 s, in order. Both got two new events at once, and the first client's samples kept their 5 s pace. The first client was the CLI, not the server itself.
+- **Nov 6:** beside a client following live with samples on, a second client caught up 674 events in 0.46 s, in order. Both got two new events at once, and the first client's samples kept their 5 s pace. The first client was the CLI.
 
 ### Turned Wi-Fi leisure power save off
 

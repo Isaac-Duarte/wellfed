@@ -36,7 +36,7 @@ If your environment forbids local sockets, give the network tests permission. Sk
 
 `make check` runs on an Apple Silicon Mac with the same prerequisites, CMake and a C compiler coming from Homebrew and the Xcode command line tools. None of this is the desktop app, which is on the [roadmap](../roadmap.md).
 
-The simulator, the server, the `wellfed` CLI's device API commands, and `wellfed-bench` with its lease and console work as on Linux. These still need Linux:
+The simulator, the `wellfed` CLI's device API commands, and `wellfed-bench` with its lease and console work as on Linux. These still need Linux:
 
 | What | Why | On macOS |
 | --- | --- | --- |
@@ -57,10 +57,9 @@ Under `nohup`, macOS doesn't show that SIGHUP is ignored, so `wellfed restore-st
 | Folder | Contents |
 | --- | --- |
 | `src/sdk/` | The SDK every firmware builds on: runtime, feeding core, hardware ports and board map ([firmware architecture](../firmware/README.md)) |
-| `src/product/` | Product policy shared by the firmware and the server: the device protocol and the feeder's stores |
-| `src/client/` | The clients the CLI, the server and the Android app share, and the libraries host programs share: file formats, image checks, signing and stock's protocol ([server design](../server/design.md#crates)) |
-| `src/server/` | The owner's optional server ([the server](../server/README.md)) |
-| `src/sim/` | The simulated devices, which the tools, the server's test kit and other crates' tests run ([simulators](../../src/tools/README.md#simulators)) |
+| `src/product/` | Product policy shared by the firmware and the simulators: the device protocol and the feeder's stores |
+| `src/client/` | The clients the CLI, the Android app and Home Assistant share, and the libraries host programs share: file formats, image checks, signing and stock's protocol |
+| `src/sim/` | The simulated devices, which the tools and other crates' tests run ([simulators](../../src/tools/README.md#simulators)) |
 | `src/tools/` | Host tools, including the `wellfed` CLI ([tool list](../../src/tools/README.md)) |
 | `src/firmware/wellfed/` | One crate per firmware: `feeder`, `qa`, `bringup` and `blink` ([firmware guide](../../src/firmware/wellfed/README.md)) |
 | `src/firmware/vendor/` | The vendor SDK side: C hooks and ports, pinned SDK and toolchain locks, the stock layout, simulator scenarios and the image build (`make -C src/firmware/vendor`) |
@@ -99,8 +98,6 @@ The repository is self-contained: SDK and toolchain copies and fixtures resolve 
 
 - `check-cross` proves portable compilation, not the SDK-linked hardware ports.
 - Evidence tests are `#[ignore]`d in the ordinary suite; only `check-fixtures` selects them. An ignored test is not passing evidence.
-- `check-rust` also checks the server's committed contracts: a test fails when `src/server/wellfed-server/openapi.json` is stale, and `UPDATE_OPENAPI=1 cargo test -p wellfed-server --test openapi` rewrites it.
-- The store's SQL compiles only against its committed `.sqlx/` metadata. After changing a query or a migration, run `make sqlx-prepare` to rebuild it from a scratch database. Only that target needs the `sqlite3` command line. `check-rust` describes every recorded query against a freshly migrated database and fails when the metadata no longer matches, as after a migration that changed no query's text.
 
 ## Which tool do I use?
 

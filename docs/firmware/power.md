@@ -84,7 +84,7 @@ The 2 s and 500 ms are provisional.
 
 **Turns.** `wifi_off` and `wifi_on` stall every task in the vendor driver, like an association ([scheduling gaps](resource-budget.md#scheduling-gaps-across-wi-fi-rejoins)), which would break a feed's 1 s beat. So they share the join's turn ([the interlock](resource-budget.md#the-interlock)): a moving feed defers the change, and a feed asked during one is refused (`DispenseRefused` for a press; a meal retries within its grace).
 
-**Installs.** Wi-Fi going off sends a receiving install a cancel at the update stage; it would otherwise hold the write turn about 65 s until it timed out. Bank 1 stays invalid, as at any stop before activation, the server sees `Cancelled`, and the next offer installs.
+**Installs.** Wi-Fi going off sends a receiving install a cancel at the update stage; it would otherwise hold the write turn about 65 s until it timed out. Bank 1 stays invalid, as at any stop before activation, the client sending it sees `Cancelled`, and the next offer installs.
 
 **Setup mode** keeps Wi-Fi on, since the vendor's BLE stack needs the WLAN driver. It already stops advertising without the adapter ([Bluetooth](bluetooth.md)); after it ends (with a restart), battery mode turns Wi-Fi off.
 
