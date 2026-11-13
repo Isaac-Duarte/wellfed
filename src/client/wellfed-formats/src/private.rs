@@ -144,6 +144,11 @@ pub fn write_new_whole(path: &Path, data: &[u8]) -> Result<()> {
         file.write_all(data)?;
         file.sync_all()?;
         move_new(&temporary, path)?;
+        // A link leaves the temporary name on the file: it goes before the
+        // flush, so the flush covers its removal too.
+        if MOVE_LEAVES_SOURCE {
+            let _ = fs::remove_file(&temporary);
+        }
         sync_entry(path)?;
         Ok(())
     })();
@@ -220,7 +225,9 @@ fn too_many() -> std::io::Error {
 /// On Unix that is an fsync of the directory. Off Unix it is a flush of the
 /// file itself: Windows can't open a directory as a file without `unsafe`,
 /// and NTFS writes its journal, where the rename is, up to the file's change
-/// when the file is flushed.
+/// when the file is flushed. That flush opens the file for writing, so a file
+/// marked read-only, or held open by another program, fails it: an error from
+/// a move here may mean the move happened and only its durability is unknown.
 fn sync_entry(file: &Path) -> std::io::Result<()> {
     #[cfg(unix)]
     if let Some(parent) = file.parent().filter(|p| !p.as_os_str().is_empty()) {
@@ -277,7 +284,9 @@ pub fn set_aside(path: &Path) -> std::io::Result<std::path::PathBuf> {
 /// file at `path`, leaves it under the `.aside-` name, never deleted.
 fn set_aside_then(path: &Path, moved: impl FnOnce()) -> std::io::Result<std::path::PathBuf> {
     if !MOVE_LEAVES_SOURCE {
-        return move_aside(path, path, moved);
+        let aside = move_aside(path, path, moved)?;
+        sync_entry(&aside)?;
+        return Ok(aside);
     }
 
     let mut held = path
@@ -289,15 +298,24 @@ fn set_aside_then(path: &Path, moved: impl FnOnce()) -> std::io::Result<std::pat
     let held = path.with_file_name(held);
     fs::rename(path, &held)?;
 
-    let result = move_aside(&held, path, moved);
-    if result.is_err() && fs::metadata(&held).is_ok() && move_new(&held, path).is_ok() {
-        let _ = fs::remove_file(&held);
+    match move_aside(&held, path, moved) {
+        Ok(aside) => {
+            sync_entry(&aside)?;
+            Ok(aside)
+        }
+        // No numbered name was made: the file goes back where it was.
+        Err(error) => {
+            if move_new(&held, path).is_ok() {
+                let _ = fs::remove_file(&held);
+            }
+            Err(error)
+        }
     }
-    result
 }
 
 /// Move `from`, the file `path` named, to the first free numbered name
-/// beside `path`, removing `from` where the move is a link.
+/// beside `path`, removing `from` where the move is a link. An error means
+/// no numbered name was made.
 fn move_aside(
     from: &Path,
     path: &Path,
@@ -315,7 +333,6 @@ fn move_aside(
                     // behind holds the same file, and is only a second name.
                     let _ = fs::remove_file(from);
                 }
-                sync_entry(&aside)?;
                 return Ok(aside);
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}

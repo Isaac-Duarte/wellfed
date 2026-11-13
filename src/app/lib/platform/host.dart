@@ -22,8 +22,14 @@ bool get hostCanScan => !onDesktopHost || Platform.isMacOS;
 /// older written-before-sent record over a newer one, and it is named from
 /// the runner's company and product strings, so renaming either would strand
 /// every store.
+///
+/// Windows always sets `LOCALAPPDATA`; a launch without it fails rather than
+/// open a second, empty set of stores somewhere else.
 Future<Directory> appDataDirectory() async {
-  final String? local = Platform.isWindows ? Platform.environment['LOCALAPPDATA'] : null;
-  if (local == null) return getApplicationSupportDirectory();
+  if (!Platform.isWindows) return getApplicationSupportDirectory();
+  final String local = Platform.environment['LOCALAPPDATA'] ?? '';
+  if (local.isEmpty) {
+    throw const FileSystemException('LOCALAPPDATA is not set, so the app has nowhere to keep its stores');
+  }
   return Directory('$local${Platform.pathSeparator}Wellfed').create(recursive: true);
 }
