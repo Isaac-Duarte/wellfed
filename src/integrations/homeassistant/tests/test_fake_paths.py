@@ -14,6 +14,7 @@ from collections.abc import Callable, Iterator
 import json
 import os
 from pathlib import Path
+import sys
 import threading
 from typing import Any, cast
 
@@ -363,7 +364,11 @@ async def test_a_store_in_another_shape_is_set_aside_and_setup_goes_on(
     feeder: fake.FakeFeeder,
     hass_storage: dict[str, Any],
     caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # The store is only in memory here, so the copy beside it is made up.
+    module = sys.modules["custom_components.wellfed.kept"]
+    monkeypatch.setattr(module, "set_aside", lambda path: f"{path}.bad-1")
     entry = _entry(hass)
     hass_storage[f"{DOMAIN}.{entry.entry_id}"] = {
         "version": 1,
@@ -395,6 +400,35 @@ async def test_a_store_in_another_shape_is_set_aside_and_setup_goes_on(
     feeder.push(fake.update(bridge.UpdateKind.BowlsChecked))
     await _until(hass, lambda: not session.kept.unread)
     assert _issue(hass, "store_unread") is None
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_a_store_that_cannot_be_set_aside_stops_feeding_and_asks_for_no_bowl_check(
+    hass: HomeAssistant,
+    feeder: fake.FakeFeeder,
+    hass_storage: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def refused(path: str) -> str:
+        raise OSError(f"no room beside {path}")
+
+    module = sys.modules["custom_components.wellfed.kept"]
+    monkeypatch.setattr(module, "set_aside", refused)
+    entry = _entry(hass)
+    hass_storage[f"{DOMAIN}.{entry.entry_id}"] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": f"{DOMAIN}.{entry.entry_id}",
+        "data": {"pending": [{"id": "x"}]},
+    }
+    feeder.push(fake.connected(), fake.update(bridge.UpdateKind.State, state=fake.state()))
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entry.runtime_data.kept.read_only
+    assert _issue(hass, "store_unread") is None
+    stopped = _issue(hass, "store_read_only")
+    assert stopped is not None and not stopped.is_fixable
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
