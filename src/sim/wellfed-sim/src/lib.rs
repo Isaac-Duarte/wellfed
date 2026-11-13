@@ -11,6 +11,8 @@
 //! while the motor drives. Power cuts and watchdog resets restart the worker
 //! on the same journal image, with the rotor where it stopped.
 
+#![forbid(unsafe_code)]
+
 use std::fs;
 use std::path::{Path, PathBuf};
 

@@ -1,7 +1,8 @@
 <script lang="ts">
   import { GitHubMark as GitHub } from "@wellfed/ui";
   import { drawing } from "#lib/drawing.ts";
-  import { DOCS, REPO } from "#lib/links.ts";
+  import { REPO } from "@wellfed/ui";
+  import { DOCS } from "#lib/links.ts";
 
   // The whole page: a headline over the feeder, traced from its 3D model,
   // with what Wellfed is pinned to either side of it. Each claim is one the

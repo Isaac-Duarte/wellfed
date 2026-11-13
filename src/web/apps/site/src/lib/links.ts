@@ -1,7 +1,5 @@
-// Every outbound link in one place, so moving the repository or a doc is one edit.
-export const SITE = "https://well-fed.dev";
-export const REPO = "https://github.com/Isaac-Duarte/wellfed";
-export const DISCORD = "https://discord.gg/5UfwjAsnw9";
+// Every outbound link the landing page adds to @wellfed/ui's, so moving a doc is one edit.
+import { REPO } from "@wellfed/ui";
 
 const doc = (path: string) => `${REPO}/blob/master/${path}`;
 

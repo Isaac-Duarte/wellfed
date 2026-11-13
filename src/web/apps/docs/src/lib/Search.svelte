@@ -66,6 +66,9 @@
     return pagefind;
   }
 
+  // Each await can let a newer query (or clearing the box) finish first, and
+  // Pagefind only drops a superseded search while it is still debouncing, so
+  // results land only if the box still holds the text they answer.
   async function search(text: string) {
     const engine = await load();
     if (engine === undefined) return;
@@ -77,8 +80,9 @@
 
     status = "searching";
     const response = await engine.debouncedSearch(text);
-    if (response === null) return;
+    if (response === null || text !== query) return;
     const data = await Promise.all(response.results.slice(0, 8).map((result) => result.data()));
+    if (text !== query) return;
     hits = data.map(toHit).filter((hit) => hit !== undefined);
     active = 0;
     status = "idle";

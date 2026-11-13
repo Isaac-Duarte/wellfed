@@ -2,11 +2,11 @@
 
 ## Start here
 
-- The working files live in the ignored `.agents/` folder, not in Git: `.agents/RESUME.md` (the bench handoff), `.agents/FIRMWARE_BOARD.md`, `.agents/FEATURE_BOARD.md`, `.agents/SERVER_BOARD.md` (server crates and capabilities), `.agents/PERFORMANCE_BOARD.md` (CPU time, latency, stack, RAM and code size) and `.agents/SERVER_SPEC.md` (the owner's server design decisions). These hold open work only: closed cards, older checkpoints and the former API design move to `.agents/archive/`. Tracked docs never link to them; the public summary is [the roadmap](docs/roadmap.md), and card ids stay out of tracked docs.
+- The working files live in the ignored `.agents/` folder, not in Git: `.agents/RESUME.md` (the bench handoff), the boards (`.agents/*_BOARD.md`, one for each area of open work) and `.agents/SERVER_SPEC.md` (the owner's server design decisions). These hold open work only: closed cards, older checkpoints and the former API design move to `.agents/archive/`. Tracked docs never link to them; the public summary is [the roadmap](docs/roadmap.md), and card ids stay out of tracked docs.
 - Read `.agents/RESUME.md` when continuing firmware work, then the boards, [README.md](README.md) and the [development guide](docs/development/README.md). Write docs by the [writing guide](docs/development/writing.md). Use docs/chips/ (shared SoC facts), docs/devices/ (one folder per feeder model, its board and stock firmware) and docs/firmware/ (the replacement firmware) for hardware assumptions and component contracts, and [product architecture](docs/firmware/product-architecture.md) for the product the SDK, server and app are built toward, with [server docs](docs/server/README.md) for its contracts and crates.
 - Read [bench hardware](docs/development/bench-hardware.md) before wiring, checking or flashing anything on the bench. The Wellfed Bench board's FEEDER UART header names the feeder's pins, so feeder TX goes to the board's TX (label to label, never crossed), and nothing connects to a feeder's 3V3.
 - Keep RESUME's checkpoint and its ignored local evidence index current when bench state changes. Reconfirm physical state rather than assuming the handoff is live.
-- Keep the three boards (SDK and hardware capability; owner-visible behavior and stock parity; the server) current when implementation, dependencies or acceptance evidence change, and update [the roadmap](docs/roadmap.md) when a capability's public status changes. Card status never authorizes physical operations.
+- Keep the boards current when implementation, dependencies or acceptance evidence change, and update [the roadmap](docs/roadmap.md) when a capability's public status changes. Card status never authorizes physical operations.
 - Label every finding as physical observation, static analysis or simulation. Host checks do not establish hardware reliability.
 
 ## Hard rules
@@ -96,7 +96,7 @@ A skipped or missing fixture is not a passing check.
 
 For an agent working an owner-assigned firmware task:
 - It may flash any flash region through the reviewed bench tools, as many times as needed.
-- For live tests it may bring the feeder hotspot up and run `wellfed-stock serve` (until October 26, `wellfed-local serve`), including OTA offers, as a bounded foreground test process.
+- For live tests it may bring the feeder hotspot up and run `wellfed-stock serve`, including OTA offers, as a bounded foreground test process.
 - Afterwards it must restore the prior network and service state and record what ran.
 
 This does not cover motor motion, host firewall or system-service changes, publishing outside this repository's remote, or weakening any pinned check above.

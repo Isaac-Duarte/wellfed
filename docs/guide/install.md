@@ -3,7 +3,7 @@
 This page walks through moving a feeder from the vendor's firmware to Wellfed. It is for owners who have read [Before you start](before-you-start.md). The screenshots are drawn from the app with made-up details.
 
 > [!NOTE]
-> **You can't follow this yet.** There's no public build: no release exists, and the signing key a release needs hasn't been generated. Today the install only runs on our bench, from an image we build ourselves. This page shows what it will involve, and the [roadmap](../roadmap.md) shows when that changes.
+> **You can't follow this yet.** There's no public build: no release has been published. Today the install only runs on our bench, from an image we build ourselves. This page shows what it will involve, and the [roadmap](../roadmap.md) shows when that changes.
 
 The install has five steps and takes about 10 minutes. Keep the app open and the feeder plugged in for all of it.
 

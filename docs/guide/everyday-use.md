@@ -5,7 +5,7 @@ This page covers life with a feeder running Wellfed: meals, feeding now, the but
 > [!NOTE]
 > There's no public build to install yet, so this describes Wellfed as it runs on our test feeder. The [roadmap](../roadmap.md) shows how far along each piece is. Don't rely on it alone to feed a pet yet.
 
-The app has one screen per feeder, with four tabs: **Today**, **Schedule**, **History** and **Settings**. Your phone has to be on the same network as the feeder, since the app talks to it directly.
+The app has one screen per feeder, with four tabs: **Today**, **Schedule**, **History** and **Settings**. The app talks to the feeder directly on your home network. Away from home it reaches the feeder only through your own server, once you sign in to one.
 
 The CLI keeps your key, your stock backups and your server login in one folder, whichever folder you run it from: `~/.local/share/wellfed` on Linux (or `$XDG_DATA_HOME/wellfed`) and `~/Library/Application Support/io.github.isaacduarte.wellfed` on a Mac, the two systems the CLI runs on. Set `WELLFED_HOME` to use another folder, or pass `--keys`. It makes a key only when you ask: the first time on a computer, add `--create-key` to `wellfed setup`, `wellfed recover` or `wellfed join`. Any other command with no key stops and names the file it looked for.
 
@@ -55,7 +55,7 @@ A few rules are worth knowing:
 
 **Meal call** plays your own recording before a meal, up to five times, and ends as the meal is due. Uploading a recording takes an owner. In the app, open **Settings**, then **Meal call** (or the meal editor), and either tap the round record button or **Use an audio file instead** to choose a WAV file. Tap it again to stop and send; a recording stops by itself at 8 seconds, and the app asks for the microphone the first time. Another file format, such as MP3, needs converting to WAV first, for example with `ffmpeg -i call.mp3 call.wav`. The play button beside your recording plays it once on the feeder so you can hear it; anyone with the feeder can do that. On the CLI, it's `wellfed call upload dinner.wav`, then `wellfed plans edit 0 --call 2`. With sound off or outside its hours, the meal runs silently.
 
-**Before each meal**, under Settings and Reminders, adds a **Meal coming** entry to History up to 60 minutes ahead. On the CLI, it's `wellfed settings --meal-reminder 10`. It's only a history entry: it plays nothing and sends no notification. Phone alerts are planned for the app, but they haven't been designed or built.
+**Before each meal**, under Settings and Reminders, adds a **Meal coming** entry to History up to 60 minutes ahead. On the CLI, it's `wellfed settings --meal-reminder 10`. It's only a history entry: it plays nothing and sends no notification. Alerts are separate: the app notifies the feeder's alerts, such as a failed or missed meal, low food or a feeder that can't feed ([the app's alerts](../../src/app/README.md#alerts)).
 
 ## Feeding now
 
@@ -182,7 +182,7 @@ Your feeder needs the time to run meals, and it has no battery-backed clock. "No
 | --- | --- | --- |
 | Your phone, or the server | They run, unless the clock depends on that phone (below) | Dispense works. Feed now needs a phone or computer |
 | The internet, with your router still on | They run if your router still answers with the time. A router that says its own clock isn't set is refused. How routers behave here varies, and we haven't tested it. To check yours, see whether **Clock** on Today reads **Set by your router** | Dispense and Feed now work |
-| Your Wi-Fi or router | They run until the clock's possible error passes 2 minutes, then they hold. That limit counts from the last time the clock was fully set, not from the last poll, so it can come any time up to about 6.6 hours after the drop | Dispense works. Feed now needs Wi-Fi |
+| Your Wi-Fi or router | They run until the clock's possible error passes 2 minutes, then they hold. That limit counts from the last time the clock was fully set, not from the last poll, so it can come any time up to about 6.6 hours after the drop, or about a week once your syncs have taught the feeder its clock's rate ([clock](../firmware/clock.md#the-clock)) | Dispense works. Feed now needs Wi-Fi |
 | Mains, with no batteries | Nothing runs while it's off. The clock is lost, so meals hold until it's set again | Dispense works once power is back |
 | Mains, with batteries | They run while the clock stays good, then hold until mains returns and it's set again. Wi-Fi turns off after 5 seconds. Below the batteries' floor, no feed starts | Dispense works. Feed now doesn't work until mains returns |
 
@@ -194,7 +194,7 @@ The feeder also needs your time zone, since meals are set in local time. The app
 
 When the time returns, a meal less than 15 minutes late runs, and an older one is missed. On a day with a long outage, feed your pet another way.
 
-Even with your router answering, the clock reads invalid for up to a minute about every 6.6 hours, until the next poll sets it again. A meal due in that minute runs once it's back.
+Even with your router answering, the clock reads invalid for up to a minute about every 6.6 hours (about weekly once your syncs have taught it its rate), until the next poll sets it again. A meal due in that minute runs once it's back.
 
 A longer limit, about a week, needs two `wellfed time` syncs from an owner about 11 hours apart. The feeder forgets that on every restart, and the app doesn't do it.
 

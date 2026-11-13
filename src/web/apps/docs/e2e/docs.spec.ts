@@ -67,6 +67,19 @@ test("search finds a published page and opens it", async ({ page }) => {
   await expect(page.locator("h1")).toBeVisible();
 });
 
+test("clearing the box drops a search still in flight", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Search docs" }).click();
+  const box = page.getByRole("combobox");
+
+  await box.fill("roadmap");
+  await box.fill("");
+
+  // Longer than Pagefind's debounce and a fragment fetch, so a stale answer would have landed.
+  await page.waitForTimeout(1000);
+  await expect(page.getByRole("option")).toHaveCount(0);
+});
+
 test("search knows nothing of an unpublished page", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Search docs" }).click();
@@ -101,11 +114,13 @@ test.describe("App and CLI tabs", () => {
 
   test("move with the arrow keys", async ({ page }) => {
     await page.goto("/going-back");
-    await page.getByRole("tab", { name: "App" }).first().focus();
 
-    await page.keyboard.press("ArrowRight");
-
-    await expect(page.getByRole("tab", { name: "CLI" }).first()).toBeFocused();
+    // The keys work once the layout has mounted, which can come after "load".
+    await expect(async () => {
+      await page.getByRole("tab", { name: "App" }).first().focus();
+      await page.keyboard.press("ArrowRight");
+      await expect(page.getByRole("tab", { name: "CLI" }).first()).toBeFocused({ timeout: 500 });
+    }).toPass();
     await expect(page.locator('.tab-panel[data-tab-panel="cli"]').first()).toBeVisible();
   });
 
@@ -151,6 +166,43 @@ test("copies a page as Markdown with absolute links", async ({ page, context, ba
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   expect(copied).toMatch(/^# Before you start/);
   expect(copied).toContain("](https://docs.well-fed.dev/devices)");
+});
+
+test("copy names a failed copy, not a success", async ({ page }) => {
+  await page.addInitScript(() => {
+    navigator.clipboard.writeText = () => Promise.reject(new DOMException("denied", "NotAllowedError"));
+  });
+  await page.goto("/before-you-start");
+
+  await page.getByRole("button", { name: "Copy as Markdown" }).click();
+  await expect(page.getByRole("button", { name: "Copy failed" })).toBeVisible();
+});
+
+test("a page left before its Markdown arrived doesn't take the copy button", async ({ page }) => {
+  let release: (() => void) | undefined;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/install.md", async (route) => {
+    await held;
+    await route.continue();
+  });
+  await page.goto("/install");
+
+  await page.locator('a[rel="next"]').click();
+  await expect(page).not.toHaveURL(/\/install$/);
+  await expect(page.getByRole("button", { name: "Copy as Markdown" })).toBeVisible();
+
+  const late = page.waitForResponse("**/install.md");
+  release?.();
+  await late;
+  await expect(page.getByRole("button", { name: "Copy as Markdown" })).toBeVisible();
+});
+
+test("every response carries the production policy from _headers", async ({ request }) => {
+  for (const path of ["/", "/roadmap.md", "/app-installing.png"]) {
+    const policy = (await request.get(path)).headers()["content-security-policy"] ?? "";
+    expect(policy, path).toContain("default-src 'none'");
+    expect(policy, path).toContain("style-src 'self'");
+  }
 });
 
 test("serves each page's Markdown beside it", async ({ request }) => {

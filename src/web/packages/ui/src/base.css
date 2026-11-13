@@ -1,8 +1,8 @@
 /*
  * The page base every wellfed web frontend imports: the Midnight tokens
  * (generated from assets/brand/tokens.json), the bundled fonts and element
- * defaults. Components use the token names only, so a theme switch
- * (prefers-color-scheme, or data-theme on <html>) never needs a branch.
+ * defaults. Components use the token names only, so following the system's
+ * light or dark theme (prefers-color-scheme) never needs a branch.
  */
 @import "@wellfed/tokens/tokens.css";
 
@@ -93,6 +93,22 @@ button {
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* The skip link each site puts first: off screen until focused. It sits above
+   the docs site's sticky header. */
+.skip {
+  position: absolute;
+  left: var(--space-4);
+  top: -100px;
+  z-index: 30;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+}
+.skip:focus {
+  top: var(--space-3);
 }
 
 ::selection {

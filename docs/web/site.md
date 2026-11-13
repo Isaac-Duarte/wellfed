@@ -12,8 +12,8 @@ It is one screen: a headline over the feeder, a short honest line about where We
 | Style | The [tokens](../../assets/brand/tokens.json) and `@wellfed/ui`'s base, following the system's light or dark. Typography and hairlines do the work: no product renders, fills, gradients, cards or badges |
 | Picture | The feeder's line drawing, centered over a faint dot grid, with four claims pinned to its sides. On a phone the claims move under it as one line of text |
 | Brand | The favicon, lockups and theme colors are imported from `assets/brand/`, never copied |
-| Requests | None off its own origin: no analytics, CDN or web fonts. `static/_headers` sets a CSP that allows only `'self'` |
-| Tests | `svelte-check`, ESLint and Prettier with the workspace, and a Playwright smoke test against `vite preview` at desktop and phone width |
+| Requests | None off its own origin: no analytics, CDN or web fonts. `static/_headers` sets a CSP that allows only `'self'`, and the e2e tests serve it, so a violation fails them |
+| Tests | `svelte-check`, ESLint and Prettier with the workspace, and a Playwright smoke test at desktop and phone width against `scripts/serve.ts`, which serves the build with `_headers` as the Worker does |
 
 ## Keeping it true
 

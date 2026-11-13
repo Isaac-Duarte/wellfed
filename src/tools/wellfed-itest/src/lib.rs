@@ -17,6 +17,8 @@
 //! Scenarios see
 //! only the trait, so they are tested on scripted feeders without hardware.
 
+#![forbid(unsafe_code)]
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;

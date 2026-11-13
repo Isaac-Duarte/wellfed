@@ -13,6 +13,8 @@
 //! `wellfed-server reset-owner` gives a locked-out owner a new temporary
 //! password, straight on the database, and prints it.
 
+#![forbid(unsafe_code)]
+
 use std::path::PathBuf;
 use std::sync::Arc;
 

@@ -6,6 +6,8 @@
 //! an owner without BLE setup; after that, invites work as on a feeder.
 //! Standard input is the panel: type `help` for the commands.
 
+#![forbid(unsafe_code)]
+
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;

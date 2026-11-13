@@ -806,4 +806,36 @@ mod tests {
             ["dependency rule: wellfed-service → sqlx: only wellfed-store depends on sqlx"]
         );
     }
+
+    /// The design's table of allowed dependencies is the arrows written for
+    /// people, so the two may not drift: each row names exactly its crate's
+    /// arrows, and every crate with arrows has a row.
+    #[test]
+    fn the_design_table_names_the_arrows() {
+        let design = include_str!("../../../../docs/server/design.md");
+        let backticked = regex::Regex::new(r"`(wellfed-[a-z-]+)`").expect("a fixed pattern");
+
+        let table: BTreeMap<&str, BTreeSet<&str>> = design
+            .lines()
+            .skip_while(|line| !line.starts_with("| Crate | May depend on"))
+            .skip(2)
+            .take_while(|line| line.starts_with('|'))
+            .filter_map(|line| {
+                let mut cells = line.split('|').skip(1);
+                let name = backticked.captures(cells.next()?)?.get(1)?.as_str();
+                let allowed = backticked
+                    .captures_iter(cells.next()?)
+                    .filter_map(|capture| capture.get(1))
+                    .map(|found| found.as_str())
+                    .collect();
+                Some((name, allowed))
+            })
+            .collect();
+        let arrows: BTreeMap<&str, BTreeSet<&str>> = ARROWS
+            .iter()
+            .map(|(name, allowed)| (*name, allowed.iter().copied().collect()))
+            .collect();
+
+        assert_eq!(table, arrows);
+    }
 }

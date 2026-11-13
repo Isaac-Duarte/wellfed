@@ -191,12 +191,10 @@ export function render(tokens: Tokens): string {
     ...root,
     "}",
     "",
-    "/* Dark follows the system unless the page sets data-theme; both blocks define the same names. */",
+    "/* Dark follows the system; both blocks define the same names. */",
     "@media (prefers-color-scheme: dark) {",
-    ...themeBlock(':root:not([data-theme="light"])', tokens, "dark", "  "),
+    ...themeBlock(":root", tokens, "dark", "  "),
     "}",
-    "",
-    ...themeBlock(':root[data-theme="dark"]', tokens, "dark", ""),
     "",
   ].join("\n");
 }

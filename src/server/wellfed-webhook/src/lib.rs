@@ -38,6 +38,8 @@
 //!
 //! [server docs]: ../../../../docs/server/README.md#alert-webhook
 
+#![forbid(unsafe_code)]
+
 mod body;
 mod target;
 mod told;

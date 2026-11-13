@@ -7,8 +7,9 @@ import svelte from "eslint-plugin-svelte";
 import globals from "globals";
 import ts from "typescript-eslint";
 
-// The network is reached through an app's lib/api, so
-// a request's retry and idempotency rules live in one place.
+// The network is reached only through an app's lib/api, so every request a
+// page makes (the docs site's Markdown and search index) is in one place,
+// where the CSP's connect-src can be read against it.
 const network = ["fetch", "EventSource", "BroadcastChannel", "WebSocket", "XMLHttpRequest"].map((name) => ({
   name,
   message: "Only an app's lib/api reaches the network.",
@@ -44,7 +45,7 @@ export default ts.config(
     languageOptions: {
       globals: { ...globals.browser },
       parserOptions: {
-        projectService: { allowDefaultProject: ["*/*/svelte.config.js"] },
+        projectService: true,
         tsconfigRootDir: import.meta.dirname,
         extraFileExtensions: [".svelte"],
       },
@@ -85,14 +86,7 @@ export default ts.config(
 
   // Node scripts: the build-time generators and the e2e server.
   {
-    files: [
-      "**/*.mjs",
-      "**/*.config.js",
-      "**/*.config.ts",
-      "scripts/**",
-      "packages/tokens/src/generate.ts",
-      "apps/docs/e2e/serve.ts",
-    ],
+    files: ["**/*.mjs", "**/*.config.js", "**/*.config.ts", "scripts/**", "packages/tokens/src/generate.ts"],
     languageOptions: { globals: { ...globals.node } },
   },
   {

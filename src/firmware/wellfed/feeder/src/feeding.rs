@@ -139,20 +139,19 @@ pub const CONFIG: OwnerConfig = OwnerConfig {
         // `FeedbackTimeout`, so the rotor's speed on D cells needs a check.
         mark_gap_ms: 11_000,
         mark_low_ms: 4000,
-        // Scaled counts (stock's unit; milliamps need a reference): a drive
-        // reads a mean of 59-64 and peaks of 164-168 empty, a mean of 82-87
-        // with food, and 15-16 stopped. Stock reverses over 300. A start-up
-        // surge read 333 on one poll at 17 ms and up to 447 at 10 ms
-        // polling; the 150 ms after each change of drive (50 ms of it the
-        // driver's deadtime) count toward no jam, and only a reading past
-        // twice the highest surge stops at once.
+        // Scaled counts (stock's unit; milliamps need a reference). Stock
+        // reverses over 300. A start-up surge read 333 on one poll at 17 ms
+        // and up to 447 at 10 ms polling; the 150 ms after each change of
+        // drive (50 ms of it the driver's deadtime) count toward no jam, and
+        // only a reading past twice the highest surge stops at once.
         //
-        // Risk: both come from empty and light-food drives on the adapter.
-        // A full hopper's peaks, the peaks on batteries, and a real stall's
-        // current are unmeasured. Peaks near 300 would reverse sound feeds
-        // (and end them after three); a stall reading over 1000 would stop
-        // every jam at once with no reversal, which is safe but never frees
-        // one. Both want measuring before the limits are trusted.
+        // Risk: sound feeds peak close to 300. Empty, food and battery
+        // feeds have peaked between 236 and 289, and one empty feed at 324
+        // still finished, so a sound feed can back off (and end after three
+        // reversals). A real stall's current is unmeasured: one over 1000
+        // would stop every jam at once with no reversal, which is safe but
+        // never frees one. The measurements are in
+        // docs/firmware/jams-and-sensor-faults.md.
         current_limit_ma: 300,
         current_max_ma: 1000,
         surge_ms: 150,
