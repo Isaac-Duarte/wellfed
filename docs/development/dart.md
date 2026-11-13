@@ -53,7 +53,7 @@ src/app/tools/wellfed_lints/   the analyzer plugin behind the architecture rules
 
 Goldens belong to Linux, since font rasterizers differ by as much as a real change: a dropped letter moved 22 pixels, and macOS's fonts move thousands. x86_64 and arm64 Linux agree within the comparator's tolerance, where no pixel may have a channel move by more than 8 of 255. So a deliberate colour change that small passes, and a token change needs its images looked at. On any other host `make app-goldens` (and so `make check-app`) runs them in a Linux container (Docker, or `CONTAINER=podman`). After a deliberate change, run `make app-goldens UPDATE=1` and look at the images: a golden proves nothing changed, not that it looks right.
 
-The smoke tests run when `WELLFED_SMOKE_TARGET` names the directory holding the bridge and the simulator, as `make check-app` does, and start and stop the simulator on a loopback port themselves. The radio can't run on a computer, so BLE setup, the install and the restore have no smoke test.
+The smoke tests run when `WELLFED_SMOKE_TARGET` names the directory holding the bridge and the simulator, as `make check-app` does, and start and stop the simulator on a loopback port themselves. No host test has a radio to reach, so BLE setup, the install and the restore have no smoke test; the desktops' link is tested over fake bridge handles (`test/platform/desktop_bluetooth_test.dart`).
 
 ## Before a release
 

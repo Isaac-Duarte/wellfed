@@ -22,6 +22,7 @@ etcetera = "0.11.0"
 futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
 jiff = "0.2.38"
 wellfed-bench-formats = { path = "../wellfed-bench-formats", features = ["device"] }
+wellfed-ble.workspace = true
 wellfed-client.workspace = true
 wellfed-connect.workspace = true
 wellfed-formats = { workspace = true, features = ["clap"] }
@@ -36,14 +37,6 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "signal", "sync", "time"] }
 uuid = { workspace = true, features = ["v4"] }
 rpassword = "7"
-
-# BlueZ, for `wellfed setup` on Linux.
-[target.'cfg(target_os = "linux")'.dependencies]
-bluer = { version = "0.17.4", features = ["bluetoothd"] }
-
-# CoreBluetooth, for `wellfed setup` on macOS.
-[target.'cfg(target_os = "macos")'.dependencies]
-btleplug = "0.13.5"
 
 [dev-dependencies]
 # `wellfed status` through a stand-in for the bench server's device routes,

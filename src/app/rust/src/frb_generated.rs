@@ -27,6 +27,7 @@
 
 // Section: imports
 
+use crate::api::bluetooth::*;
 use crate::api::discovery::*;
 use crate::api::install::*;
 use crate::api::keys::*;
@@ -47,7 +48,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -2137833666;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -632942352;
 
 // Section: executor
 
@@ -55,6 +56,188 @@ flutter_rust_bridge::frb_generated_default_handler!();
 
 // Section: wire_funcs
 
+fn wire__crate__api__bluetooth__BluetoothLink_close_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "BluetoothLink_close",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BluetoothLink>,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, ()>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, false,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let api_that_guard = api_that_guard.unwrap();
+                        let output_ok = Ok::<_, ()>({
+                            crate::api::bluetooth::BluetoothLink::close(&*api_that_guard).await;
+                        })?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__bluetooth__BluetoothLink_notifications_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "BluetoothLink_notifications",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BluetoothLink>,
+            >>::sse_decode(&mut deserializer);
+            let api_notified =
+                <StreamSink<Vec<u8>, flutter_rust_bridge::for_generated::SseCodec>>::sse_decode(
+                    &mut deserializer,
+                );
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, ()>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, false,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let api_that_guard = api_that_guard.unwrap();
+                        let output_ok = Ok::<_, ()>({
+                            crate::api::bluetooth::BluetoothLink::notifications(
+                                &*api_that_guard,
+                                api_notified,
+                            )
+                            .await;
+                        })?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__bluetooth__BluetoothLink_write_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "BluetoothLink_write",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BluetoothLink>,
+            >>::sse_decode(&mut deserializer);
+            let api_piece = <Vec<u8>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::api::error::BridgeError>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, false,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let api_that_guard = api_that_guard.unwrap();
+                        let output_ok = crate::api::bluetooth::BluetoothLink::write(
+                            &*api_that_guard,
+                            api_piece,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__keys__ClientKey_generate_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -1824,6 +2007,145 @@ fn wire__crate__api__install__InstallRun_stop_impl(
         },
     )
 }
+fn wire__crate__api__bluetooth__PowerWatch_new_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "PowerWatch_new",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>(crate::api::bluetooth::PowerWatch::new())?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__bluetooth__PowerWatch_run_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "PowerWatch_run",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<PowerWatch>,
+            >>::sse_decode(&mut deserializer);
+            let api_power = <StreamSink<
+                crate::api::bluetooth::AdapterPower,
+                flutter_rust_bridge::for_generated::SseCodec,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, ()>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, false,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let api_that_guard = api_that_guard.unwrap();
+                        let output_ok = Ok::<_, ()>({
+                            crate::api::bluetooth::PowerWatch::run(&*api_that_guard, api_power)
+                                .await;
+                        })?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__bluetooth__PowerWatch_stop_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "PowerWatch_stop",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<PowerWatch>,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let mut api_that_guard = None;
+                let decode_indices_ =
+                    flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                        flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                            &api_that, 0, false,
+                        ),
+                    ]);
+                for i in decode_indices_ {
+                    match i {
+                        0 => api_that_guard = Some(api_that.lockable_decode_sync_ref()),
+                        _ => unreachable!(),
+                    }
+                }
+                let api_that_guard = api_that_guard.unwrap();
+                let output_ok = Ok::<_, ()>({
+                    crate::api::bluetooth::PowerWatch::stop(&*api_that_guard);
+                })?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__api__setup__Recovery_close_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -2475,6 +2797,145 @@ fn wire__crate__api__setup__SetupDriver_start_impl(
                 }
                 let mut api_that_guard = api_that_guard.unwrap();
                 let output_ok = crate::api::setup::SetupDriver::start(&mut *api_that_guard)?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__bluetooth__SetupScan_new_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "SetupScan_new",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>(crate::api::bluetooth::SetupScan::new())?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__bluetooth__SetupScan_run_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "SetupScan_run",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SetupScan>,
+            >>::sse_decode(&mut deserializer);
+            let api_events = <StreamSink<
+                crate::api::bluetooth::ScanEvent,
+                flutter_rust_bridge::for_generated::SseCodec,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, ()>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, false,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let api_that_guard = api_that_guard.unwrap();
+                        let output_ok = Ok::<_, ()>({
+                            crate::api::bluetooth::SetupScan::run(&*api_that_guard, api_events)
+                                .await;
+                        })?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__bluetooth__SetupScan_stop_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "SetupScan_stop",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SetupScan>,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let mut api_that_guard = None;
+                let decode_indices_ =
+                    flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                        flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                            &api_that, 0, false,
+                        ),
+                    ]);
+                for i in decode_indices_ {
+                    match i {
+                        0 => api_that_guard = Some(api_that.lockable_decode_sync_ref()),
+                        _ => unreachable!(),
+                    }
+                }
+                let api_that_guard = api_that_guard.unwrap();
+                let output_ok = Ok::<_, ()>({
+                    crate::api::bluetooth::SetupScan::stop(&*api_that_guard);
+                })?;
                 std::result::Result::Ok(output_ok)
             })())
         },
@@ -3755,6 +4216,42 @@ fn wire__crate__api__alerts__notifications_refused_impl(
         },
     )
 }
+fn wire__crate__api__bluetooth__open_bluetooth_link_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "open_bluetooth_link",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::api::error::BridgeError>(
+                    (move || async move {
+                        let output_ok = crate::api::bluetooth::open_bluetooth_link(api_id).await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__store__open_store_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -4646,6 +5143,9 @@ const _: fn() = || {
 // Section: related_funcs
 
 flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
+    flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BluetoothLink>
+);
+flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
     flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ClientKey>
 );
 flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
@@ -4667,6 +5167,9 @@ flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
     flutter_rust_bridge::for_generated::RustAutoOpaqueInner<InstallRun>
 );
 flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
+    flutter_rust_bridge::for_generated::RustAutoOpaqueInner<PowerWatch>
+);
+flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
     flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Recovery>
 );
 flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
@@ -4674,6 +5177,9 @@ flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
 );
 flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
     flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SetupDriver>
+);
+flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
+    flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SetupScan>
 );
 
 // Section: dart2rust
@@ -4683,6 +5189,16 @@ impl SseDecode for flutter_rust_bridge::for_generated::anyhow::Error {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut inner = <String>::sse_decode(deserializer);
         return flutter_rust_bridge::for_generated::anyhow::anyhow!("{}", inner);
+    }
+}
+
+impl SseDecode for BluetoothLink {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <RustOpaqueMoi<
+            flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BluetoothLink>,
+        >>::sse_decode(deserializer);
+        return flutter_rust_bridge::for_generated::rust_auto_opaque_decode_owned(inner);
     }
 }
 
@@ -4756,6 +5272,16 @@ impl SseDecode for InstallRun {
     }
 }
 
+impl SseDecode for PowerWatch {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <RustOpaqueMoi<
+            flutter_rust_bridge::for_generated::RustAutoOpaqueInner<PowerWatch>,
+        >>::sse_decode(deserializer);
+        return flutter_rust_bridge::for_generated::rust_auto_opaque_decode_owned(inner);
+    }
+}
+
 impl SseDecode for Recovery {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -4783,6 +5309,26 @@ impl SseDecode for SetupDriver {
             flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SetupDriver>,
         >>::sse_decode(deserializer);
         return flutter_rust_bridge::for_generated::rust_auto_opaque_decode_owned(inner);
+    }
+}
+
+impl SseDecode for SetupScan {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <RustOpaqueMoi<
+            flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SetupScan>,
+        >>::sse_decode(deserializer);
+        return flutter_rust_bridge::for_generated::rust_auto_opaque_decode_owned(inner);
+    }
+}
+
+impl SseDecode
+    for RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BluetoothLink>>
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <usize>::sse_decode(deserializer);
+        return decode_rust_opaque_moi(inner);
     }
 }
 
@@ -4857,6 +5403,16 @@ impl SseDecode
 }
 
 impl SseDecode
+    for RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<PowerWatch>>
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <usize>::sse_decode(deserializer);
+        return decode_rust_opaque_moi(inner);
+    }
+}
+
+impl SseDecode
     for RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Recovery>>
 {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -4887,6 +5443,29 @@ impl SseDecode
 }
 
 impl SseDecode
+    for RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SetupScan>>
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <usize>::sse_decode(deserializer);
+        return decode_rust_opaque_moi(inner);
+    }
+}
+
+impl SseDecode
+    for StreamSink<
+        crate::api::bluetooth::AdapterPower,
+        flutter_rust_bridge::for_generated::SseCodec,
+    >
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <String>::sse_decode(deserializer);
+        return StreamSink::deserialize(inner);
+    }
+}
+
+impl SseDecode
     for StreamSink<crate::api::discovery::FoundFeeder, flutter_rust_bridge::for_generated::SseCodec>
 {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -4899,6 +5478,14 @@ impl SseDecode
 impl SseDecode
     for StreamSink<crate::api::install::InstallUpdate, flutter_rust_bridge::for_generated::SseCodec>
 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <String>::sse_decode(deserializer);
+        return StreamSink::deserialize(inner);
+    }
+}
+
+impl SseDecode for StreamSink<Vec<u8>, flutter_rust_bridge::for_generated::SseCodec> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut inner = <String>::sse_decode(deserializer);
@@ -4928,6 +5515,16 @@ impl SseDecode
 
 impl SseDecode
     for StreamSink<crate::api::router::RouterUpdate, flutter_rust_bridge::for_generated::SseCodec>
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <String>::sse_decode(deserializer);
+        return StreamSink::deserialize(inner);
+    }
+}
+
+impl SseDecode
+    for StreamSink<crate::api::bluetooth::ScanEvent, flutter_rust_bridge::for_generated::SseCodec>
 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -4971,6 +5568,18 @@ impl SseDecode for String {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut inner = <Vec<u8>>::sse_decode(deserializer);
         return String::from_utf8(inner).unwrap();
+    }
+}
+
+impl SseDecode for crate::api::bluetooth::AdapterPower {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::bluetooth::AdapterPower::PoweredOn,
+            1 => crate::api::bluetooth::AdapterPower::PoweredOff,
+            _ => unreachable!("Invalid variant for AdapterPower: {}", inner),
+        };
     }
 }
 
@@ -5526,6 +6135,7 @@ impl SseDecode for crate::api::error::ErrorKind {
             15 => crate::api::error::ErrorKind::Invite,
             16 => crate::api::error::ErrorKind::Interrupted,
             17 => crate::api::error::ErrorKind::InUse,
+            18 => crate::api::error::ErrorKind::Bluetooth,
             _ => unreachable!("Invalid variant for ErrorKind: {}", inner),
         };
     }
@@ -6096,6 +6706,20 @@ impl SseDecode for crate::api::discovery::FoundFeeder {
     }
 }
 
+impl SseDecode for crate::api::bluetooth::HeardFeeder {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_id = <String>::sse_decode(deserializer);
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_rssi = <i16>::sse_decode(deserializer);
+        return crate::api::bluetooth::HeardFeeder {
+            id: var_id,
+            name: var_name,
+            rssi: var_rssi,
+        };
+    }
+}
+
 impl SseDecode for crate::api::session::HistoryBody {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -6241,6 +6865,13 @@ impl SseDecode for crate::api::session::HistoryEntry {
             at_ms: var_atMs,
             body: var_body,
         };
+    }
+}
+
+impl SseDecode for i16 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        deserializer.cursor.read_i16::<NativeEndian>().unwrap()
     }
 }
 
@@ -8430,6 +9061,26 @@ impl SseDecode for crate::api::router::RouterUpdate {
     }
 }
 
+impl SseDecode for crate::api::bluetooth::ScanEvent {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                let mut var_feeder = <crate::api::bluetooth::HeardFeeder>::sse_decode(deserializer);
+                return crate::api::bluetooth::ScanEvent::Heard { feeder: var_feeder };
+            }
+            1 => {
+                let mut var_error = <crate::api::error::BridgeError>::sse_decode(deserializer);
+                return crate::api::bluetooth::ScanEvent::Failed { error: var_error };
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
 impl SseDecode for crate::api::session::SessionUpdate {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -9607,74 +10258,91 @@ fn pde_ffi_dispatcher_primary_impl(
 ) {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        6 => wire__crate__api__discovery__FeederBrowse_run_impl(port, ptr, rust_vec_len, data_len),
-        9 => wire__crate__api__router__FeederRouter_ask_impl(port, ptr, rust_vec_len, data_len),
-        12 => wire__crate__api__router__FeederRouter_cancel_feed_impl(
+        1 => {
+            wire__crate__api__bluetooth__BluetoothLink_close_impl(port, ptr, rust_vec_len, data_len)
+        }
+        2 => wire__crate__api__bluetooth__BluetoothLink_notifications_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        14 => wire__crate__api__router__FeederRouter_feed_impl(port, ptr, rust_vec_len, data_len),
-        19 => {
+        3 => {
+            wire__crate__api__bluetooth__BluetoothLink_write_impl(port, ptr, rust_vec_len, data_len)
+        }
+        9 => wire__crate__api__discovery__FeederBrowse_run_impl(port, ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__router__FeederRouter_ask_impl(port, ptr, rust_vec_len, data_len),
+        15 => wire__crate__api__router__FeederRouter_cancel_feed_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        17 => wire__crate__api__router__FeederRouter_feed_impl(port, ptr, rust_vec_len, data_len),
+        22 => {
             wire__crate__api__router__FeederRouter_updates_impl(port, ptr, rust_vec_len, data_len)
         }
-        23 => wire__crate__api__session__FeederSession_run_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__update__FirmwareUpdate_run_impl(port, ptr, rust_vec_len, data_len),
-        28 => {
+        26 => wire__crate__api__session__FeederSession_run_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__update__FirmwareUpdate_run_impl(port, ptr, rust_vec_len, data_len),
+        31 => {
             wire__crate__api__install__InstallListener_run_impl(port, ptr, rust_vec_len, data_len)
         }
-        35 => wire__crate__api__install__InstallRun_run_impl(port, ptr, rust_vec_len, data_len),
-        40 => wire__crate__api__setup__Recovery_run_impl(port, ptr, rust_vec_len, data_len),
-        43 => wire__crate__api__restore__RestoreRun_run_impl(port, ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__alerts__alert_settings_impl(port, ptr, rust_vec_len, data_len),
-        51 => wire__crate__api__alerts__alerts_notice_read_impl(port, ptr, rust_vec_len, data_len),
-        52 => wire__crate__api__alerts__alerts_set_aside_impl(port, ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__alerts__alerts_swept_impl(port, ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__alerts__alerts_to_sweep_impl(port, ptr, rust_vec_len, data_len),
-        55 => wire__crate__api__store__app_store_default_impl(port, ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__store__appearance_default_impl(port, ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__alerts__catch_up_with_impl(port, ptr, rust_vec_len, data_len),
-        62 => wire__crate__api__alerts__confirm_notices_impl(port, ptr, rust_vec_len, data_len),
-        63 => wire__crate__api__alerts__dismiss_notice_impl(port, ptr, rust_vec_len, data_len),
-        66 => wire__crate__api__alerts__feeder_alerts_impl(port, ptr, rust_vec_len, data_len),
-        69 => wire__crate__api__alerts__forget_alerts_impl(port, ptr, rust_vec_len, data_len),
-        75 => wire__crate__api__init_app_impl(port, ptr, rust_vec_len, data_len),
-        78 => wire__crate__api__join__join_feeder_impl(port, ptr, rust_vec_len, data_len),
-        81 => wire__crate__api__store__load_store_impl(port, ptr, rust_vec_len, data_len),
-        82 => wire__crate__api__alerts__note_notifications_refused_impl(
+        38 => wire__crate__api__install__InstallRun_run_impl(port, ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__bluetooth__PowerWatch_run_impl(port, ptr, rust_vec_len, data_len),
+        46 => wire__crate__api__setup__Recovery_run_impl(port, ptr, rust_vec_len, data_len),
+        49 => wire__crate__api__restore__RestoreRun_run_impl(port, ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__bluetooth__SetupScan_run_impl(port, ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__alerts__alert_settings_impl(port, ptr, rust_vec_len, data_len),
+        60 => wire__crate__api__alerts__alerts_notice_read_impl(port, ptr, rust_vec_len, data_len),
+        61 => wire__crate__api__alerts__alerts_set_aside_impl(port, ptr, rust_vec_len, data_len),
+        62 => wire__crate__api__alerts__alerts_swept_impl(port, ptr, rust_vec_len, data_len),
+        63 => wire__crate__api__alerts__alerts_to_sweep_impl(port, ptr, rust_vec_len, data_len),
+        64 => wire__crate__api__store__app_store_default_impl(port, ptr, rust_vec_len, data_len),
+        66 => wire__crate__api__store__appearance_default_impl(port, ptr, rust_vec_len, data_len),
+        67 => wire__crate__api__alerts__catch_up_with_impl(port, ptr, rust_vec_len, data_len),
+        71 => wire__crate__api__alerts__confirm_notices_impl(port, ptr, rust_vec_len, data_len),
+        72 => wire__crate__api__alerts__dismiss_notice_impl(port, ptr, rust_vec_len, data_len),
+        75 => wire__crate__api__alerts__feeder_alerts_impl(port, ptr, rust_vec_len, data_len),
+        78 => wire__crate__api__alerts__forget_alerts_impl(port, ptr, rust_vec_len, data_len),
+        84 => wire__crate__api__init_app_impl(port, ptr, rust_vec_len, data_len),
+        87 => wire__crate__api__join__join_feeder_impl(port, ptr, rust_vec_len, data_len),
+        90 => wire__crate__api__store__load_store_impl(port, ptr, rust_vec_len, data_len),
+        91 => wire__crate__api__alerts__note_notifications_refused_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        83 => wire__crate__api__alerts__notifications_offer_due_impl(
+        92 => wire__crate__api__alerts__notifications_offer_due_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        84 => {
+        93 => {
             wire__crate__api__alerts__notifications_offered_impl(port, ptr, rust_vec_len, data_len)
         }
-        85 => {
+        94 => {
             wire__crate__api__alerts__notifications_refused_impl(port, ptr, rust_vec_len, data_len)
         }
-        86 => wire__crate__api__store__open_store_impl(port, ptr, rust_vec_len, data_len),
-        88 => wire__crate__api__alerts__pending_notices_impl(port, ptr, rust_vec_len, data_len),
-        89 => {
+        95 => {
+            wire__crate__api__bluetooth__open_bluetooth_link_impl(port, ptr, rust_vec_len, data_len)
+        }
+        96 => wire__crate__api__store__open_store_impl(port, ptr, rust_vec_len, data_len),
+        98 => wire__crate__api__alerts__pending_notices_impl(port, ptr, rust_vec_len, data_len),
+        99 => {
             wire__crate__api__restore__read_restore_feeder_impl(port, ptr, rust_vec_len, data_len)
         }
-        90 => wire__crate__api__alerts__save_instant_impl(port, ptr, rust_vec_len, data_len),
-        93 => wire__crate__api__alerts__set_mute_impl(port, ptr, rust_vec_len, data_len),
-        94 => wire__crate__api__feeder__settings_changes_default_impl(
+        100 => wire__crate__api__alerts__save_instant_impl(port, ptr, rust_vec_len, data_len),
+        103 => wire__crate__api__alerts__set_mute_impl(port, ptr, rust_vec_len, data_len),
+        104 => wire__crate__api__feeder__settings_changes_default_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        95 => wire__crate__api__setup__settle_setup_impl(port, ptr, rust_vec_len, data_len),
-        100 => wire__crate__api__store__swap_store_impl(port, ptr, rust_vec_len, data_len),
+        105 => wire__crate__api__setup__settle_setup_impl(port, ptr, rust_vec_len, data_len),
+        110 => wire__crate__api__store__swap_store_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -9687,81 +10355,100 @@ fn pde_ffi_dispatcher_sync_impl(
 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        1 => wire__crate__api__keys__ClientKey_generate_impl(ptr, rust_vec_len, data_len),
-        2 => wire__crate__api__keys__ClientKey_public_impl(ptr, rust_vec_len, data_len),
-        3 => wire__crate__api__keys__ClientKey_restore_impl(ptr, rust_vec_len, data_len),
-        4 => wire__crate__api__keys__ClientKey_secret_impl(ptr, rust_vec_len, data_len),
-        5 => wire__crate__api__discovery__FeederBrowse_new_impl(ptr, rust_vec_len, data_len),
-        7 => wire__crate__api__discovery__FeederBrowse_stop_impl(ptr, rust_vec_len, data_len),
-        8 => wire__crate__api__router__FeederRouter_acknowledge_impl(ptr, rust_vec_len, data_len),
-        10 => wire__crate__api__router__FeederRouter_attach_impl(ptr, rust_vec_len, data_len),
-        11 => {
+        4 => wire__crate__api__keys__ClientKey_generate_impl(ptr, rust_vec_len, data_len),
+        5 => wire__crate__api__keys__ClientKey_public_impl(ptr, rust_vec_len, data_len),
+        6 => wire__crate__api__keys__ClientKey_restore_impl(ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__keys__ClientKey_secret_impl(ptr, rust_vec_len, data_len),
+        8 => wire__crate__api__discovery__FeederBrowse_new_impl(ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__discovery__FeederBrowse_stop_impl(ptr, rust_vec_len, data_len),
+        11 => wire__crate__api__router__FeederRouter_acknowledge_impl(ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__router__FeederRouter_attach_impl(ptr, rust_vec_len, data_len),
+        14 => {
             wire__crate__api__router__FeederRouter_bowls_checked_impl(ptr, rust_vec_len, data_len)
         }
-        13 => wire__crate__api__router__FeederRouter_close_impl(ptr, rust_vec_len, data_len),
-        15 => wire__crate__api__router__FeederRouter_new_impl(ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__router__FeederRouter_pending_impl(ptr, rust_vec_len, data_len),
-        17 => wire__crate__api__router__FeederRouter_retry_impl(ptr, rust_vec_len, data_len),
-        18 => wire__crate__api__router__FeederRouter_set_aside_impl(ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__session__FeederSession_close_impl(ptr, rust_vec_len, data_len),
-        21 => wire__crate__api__session__FeederSession_new_impl(ptr, rust_vec_len, data_len),
-        22 => wire__crate__api__session__FeederSession_refresh_impl(ptr, rust_vec_len, data_len),
-        24 => wire__crate__api__update__FirmwareUpdate_answer_impl(ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__update__FirmwareUpdate_new_impl(ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__install__InstallListener_new_impl(ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__install__InstallListener_stop_impl(ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__install__InstallListener_wait_seconds_impl(
+        16 => wire__crate__api__router__FeederRouter_close_impl(ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__router__FeederRouter_new_impl(ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__router__FeederRouter_pending_impl(ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__router__FeederRouter_retry_impl(ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__router__FeederRouter_set_aside_impl(ptr, rust_vec_len, data_len),
+        23 => wire__crate__api__session__FeederSession_close_impl(ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__session__FeederSession_new_impl(ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__session__FeederSession_refresh_impl(ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__update__FirmwareUpdate_answer_impl(ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__update__FirmwareUpdate_new_impl(ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__install__InstallListener_new_impl(ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__install__InstallListener_stop_impl(ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__install__InstallListener_wait_seconds_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        31 => wire__crate__api__install__InstallRun_answer_impl(ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__install__InstallRun_link_lost_impl(ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__install__InstallRun_new_impl(ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__install__InstallRun_notified_impl(ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__install__InstallRun_stop_impl(ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__setup__Recovery_close_impl(ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__setup__Recovery_code_impl(ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__setup__Recovery_new_impl(ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__restore__RestoreRun_answer_impl(ptr, rust_vec_len, data_len),
-        42 => wire__crate__api__restore__RestoreRun_new_impl(ptr, rust_vec_len, data_len),
-        44 => wire__crate__api__restore__RestoreRun_stop_impl(ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__setup__SetupDriver_code_impl(ptr, rust_vec_len, data_len),
-        46 => wire__crate__api__setup__SetupDriver_new_impl(ptr, rust_vec_len, data_len),
-        47 => wire__crate__api__setup__SetupDriver_notified_impl(ptr, rust_vec_len, data_len),
-        48 => wire__crate__api__setup__SetupDriver_proven_impl(ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__setup__SetupDriver_start_impl(ptr, rust_vec_len, data_len),
-        56 => wire__crate__api__store__app_version_impl(ptr, rust_vec_len, data_len),
-        59 => wire__crate__api__restore__check_backup_impl(ptr, rust_vec_len, data_len),
-        60 => wire__crate__api__install__check_build_impl(ptr, rust_vec_len, data_len),
-        61 => wire__crate__api__install__check_image_impl(ptr, rust_vec_len, data_len),
-        64 => wire__crate__api__router__feed_due_seconds_impl(ptr, rust_vec_len, data_len),
-        65 => wire__crate__api__store__feeder_address_impl(ptr, rust_vec_len, data_len),
-        67 => wire__crate__api__install__feeder_answered_impl(ptr, rust_vec_len, data_len),
-        68 => wire__crate__api__store__fingerprint_impl(ptr, rust_vec_len, data_len),
-        70 => wire__crate__api__install__forget_install_impl(ptr, rust_vec_len, data_len),
-        71 => wire__crate__api__restore__forget_restore_key_impl(ptr, rust_vec_len, data_len),
-        72 => wire__crate__api__alerts__hold_alerts_impl(ptr, rust_vec_len, data_len),
-        73 => wire__crate__api__store__identity_bytes_impl(ptr, rust_vec_len, data_len),
-        74 => wire__crate__api__store__identity_hex_impl(ptr, rust_vec_len, data_len),
-        76 => wire__crate__api__install__install_request_open_impl(ptr, rust_vec_len, data_len),
-        77 => wire__crate__api__join__invite_feeder_impl(ptr, rust_vec_len, data_len),
-        79 => wire__crate__api__install__kept_backup_impl(ptr, rust_vec_len, data_len),
-        80 => wire__crate__api__install__kept_backups_impl(ptr, rust_vec_len, data_len),
-        87 => wire__crate__api__install__pending_install_impl(ptr, rust_vec_len, data_len),
-        91 => wire__crate__api__install__set_aside_backup_impl(ptr, rust_vec_len, data_len),
-        92 => wire__crate__api__install__set_aside_ledgers_impl(ptr, rust_vec_len, data_len),
-        96 => wire__crate__api__router__settled_feed_impl(ptr, rust_vec_len, data_len),
-        97 => wire__crate__api__setup__setup_control_impl(ptr, rust_vec_len, data_len),
-        98 => wire__crate__api__setup__setup_service_impl(ptr, rust_vec_len, data_len),
-        99 => wire__crate__api__store__store_notice_read_impl(ptr, rust_vec_len, data_len),
-        101 => wire__crate__api__update__unknown_end_impl(ptr, rust_vec_len, data_len),
-        102 => wire__crate__api__update__update_offer_impl(ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__install__InstallRun_answer_impl(ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__install__InstallRun_link_lost_impl(ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__install__InstallRun_new_impl(ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__install__InstallRun_notified_impl(ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__install__InstallRun_stop_impl(ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__bluetooth__PowerWatch_new_impl(ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__bluetooth__PowerWatch_stop_impl(ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__setup__Recovery_close_impl(ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__setup__Recovery_code_impl(ptr, rust_vec_len, data_len),
+        45 => wire__crate__api__setup__Recovery_new_impl(ptr, rust_vec_len, data_len),
+        47 => wire__crate__api__restore__RestoreRun_answer_impl(ptr, rust_vec_len, data_len),
+        48 => wire__crate__api__restore__RestoreRun_new_impl(ptr, rust_vec_len, data_len),
+        50 => wire__crate__api__restore__RestoreRun_stop_impl(ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__setup__SetupDriver_code_impl(ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__setup__SetupDriver_new_impl(ptr, rust_vec_len, data_len),
+        53 => wire__crate__api__setup__SetupDriver_notified_impl(ptr, rust_vec_len, data_len),
+        54 => wire__crate__api__setup__SetupDriver_proven_impl(ptr, rust_vec_len, data_len),
+        55 => wire__crate__api__setup__SetupDriver_start_impl(ptr, rust_vec_len, data_len),
+        56 => wire__crate__api__bluetooth__SetupScan_new_impl(ptr, rust_vec_len, data_len),
+        58 => wire__crate__api__bluetooth__SetupScan_stop_impl(ptr, rust_vec_len, data_len),
+        65 => wire__crate__api__store__app_version_impl(ptr, rust_vec_len, data_len),
+        68 => wire__crate__api__restore__check_backup_impl(ptr, rust_vec_len, data_len),
+        69 => wire__crate__api__install__check_build_impl(ptr, rust_vec_len, data_len),
+        70 => wire__crate__api__install__check_image_impl(ptr, rust_vec_len, data_len),
+        73 => wire__crate__api__router__feed_due_seconds_impl(ptr, rust_vec_len, data_len),
+        74 => wire__crate__api__store__feeder_address_impl(ptr, rust_vec_len, data_len),
+        76 => wire__crate__api__install__feeder_answered_impl(ptr, rust_vec_len, data_len),
+        77 => wire__crate__api__store__fingerprint_impl(ptr, rust_vec_len, data_len),
+        79 => wire__crate__api__install__forget_install_impl(ptr, rust_vec_len, data_len),
+        80 => wire__crate__api__restore__forget_restore_key_impl(ptr, rust_vec_len, data_len),
+        81 => wire__crate__api__alerts__hold_alerts_impl(ptr, rust_vec_len, data_len),
+        82 => wire__crate__api__store__identity_bytes_impl(ptr, rust_vec_len, data_len),
+        83 => wire__crate__api__store__identity_hex_impl(ptr, rust_vec_len, data_len),
+        85 => wire__crate__api__install__install_request_open_impl(ptr, rust_vec_len, data_len),
+        86 => wire__crate__api__join__invite_feeder_impl(ptr, rust_vec_len, data_len),
+        88 => wire__crate__api__install__kept_backup_impl(ptr, rust_vec_len, data_len),
+        89 => wire__crate__api__install__kept_backups_impl(ptr, rust_vec_len, data_len),
+        97 => wire__crate__api__install__pending_install_impl(ptr, rust_vec_len, data_len),
+        101 => wire__crate__api__install__set_aside_backup_impl(ptr, rust_vec_len, data_len),
+        102 => wire__crate__api__install__set_aside_ledgers_impl(ptr, rust_vec_len, data_len),
+        106 => wire__crate__api__router__settled_feed_impl(ptr, rust_vec_len, data_len),
+        107 => wire__crate__api__setup__setup_control_impl(ptr, rust_vec_len, data_len),
+        108 => wire__crate__api__setup__setup_service_impl(ptr, rust_vec_len, data_len),
+        109 => wire__crate__api__store__store_notice_read_impl(ptr, rust_vec_len, data_len),
+        111 => wire__crate__api__update__unknown_end_impl(ptr, rust_vec_len, data_len),
+        112 => wire__crate__api__update__update_offer_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
 
 // Section: rust2dart
+
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<BluetoothLink> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        flutter_rust_bridge::for_generated::rust_auto_opaque_encode::<_, MoiArc<_>>(self.0)
+            .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for FrbWrapper<BluetoothLink> {}
+
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<BluetoothLink>> for BluetoothLink {
+    fn into_into_dart(self) -> FrbWrapper<BluetoothLink> {
+        self.into()
+    }
+}
 
 // Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<ClientKey> {
@@ -9869,6 +10556,21 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<InstallRun>> for InstallRun {
 }
 
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<PowerWatch> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        flutter_rust_bridge::for_generated::rust_auto_opaque_encode::<_, MoiArc<_>>(self.0)
+            .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for FrbWrapper<PowerWatch> {}
+
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<PowerWatch>> for PowerWatch {
+    fn into_into_dart(self) -> FrbWrapper<PowerWatch> {
+        self.into()
+    }
+}
+
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<Recovery> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         flutter_rust_bridge::for_generated::rust_auto_opaque_encode::<_, MoiArc<_>>(self.0)
@@ -9913,6 +10615,42 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<SetupDriver>> for SetupDriver 
     }
 }
 
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<SetupScan> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        flutter_rust_bridge::for_generated::rust_auto_opaque_encode::<_, MoiArc<_>>(self.0)
+            .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for FrbWrapper<SetupScan> {}
+
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<SetupScan>> for SetupScan {
+    fn into_into_dart(self) -> FrbWrapper<SetupScan> {
+        self.into()
+    }
+}
+
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::bluetooth::AdapterPower {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::PoweredOn => 0.into_dart(),
+            Self::PoweredOff => 1.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::bluetooth::AdapterPower
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::bluetooth::AdapterPower>
+    for crate::api::bluetooth::AdapterPower
+{
+    fn into_into_dart(self) -> crate::api::bluetooth::AdapterPower {
+        self
+    }
+}
 // Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::alerts::AlertHold {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
@@ -10615,6 +11353,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::error::ErrorKind {
             Self::Invite => 15.into_dart(),
             Self::Interrupted => 16.into_dart(),
             Self::InUse => 17.into_dart(),
+            Self::Bluetooth => 18.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -11178,6 +11917,28 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::discovery::FoundFeeder>
     for crate::api::discovery::FoundFeeder
 {
     fn into_into_dart(self) -> crate::api::discovery::FoundFeeder {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::bluetooth::HeardFeeder {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.id.into_into_dart().into_dart(),
+            self.name.into_into_dart().into_dart(),
+            self.rssi.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::bluetooth::HeardFeeder
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::bluetooth::HeardFeeder>
+    for crate::api::bluetooth::HeardFeeder
+{
+    fn into_into_dart(self) -> crate::api::bluetooth::HeardFeeder {
         self
     }
 }
@@ -12993,6 +13754,33 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::router::RouterUpdate>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::bluetooth::ScanEvent {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::api::bluetooth::ScanEvent::Heard { feeder } => {
+                [0.into_dart(), feeder.into_into_dart().into_dart()].into_dart()
+            }
+            crate::api::bluetooth::ScanEvent::Failed { error } => {
+                [1.into_dart(), error.into_into_dart().into_dart()].into_dart()
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::bluetooth::ScanEvent
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::bluetooth::ScanEvent>
+    for crate::api::bluetooth::ScanEvent
+{
+    fn into_into_dart(self) -> crate::api::bluetooth::ScanEvent {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::session::SessionUpdate {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
@@ -14208,6 +14996,13 @@ impl SseEncode for flutter_rust_bridge::for_generated::anyhow::Error {
     }
 }
 
+impl SseEncode for BluetoothLink {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BluetoothLink>>>::sse_encode(flutter_rust_bridge::for_generated::rust_auto_opaque_encode::<_, MoiArc<_>>(self), serializer);
+    }
+}
+
 impl SseEncode for ClientKey {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -14257,6 +15052,13 @@ impl SseEncode for InstallRun {
     }
 }
 
+impl SseEncode for PowerWatch {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<PowerWatch>>>::sse_encode(flutter_rust_bridge::for_generated::rust_auto_opaque_encode::<_, MoiArc<_>>(self), serializer);
+    }
+}
+
 impl SseEncode for Recovery {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -14275,6 +15077,24 @@ impl SseEncode for SetupDriver {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SetupDriver>>>::sse_encode(flutter_rust_bridge::for_generated::rust_auto_opaque_encode::<_, MoiArc<_>>(self), serializer);
+    }
+}
+
+impl SseEncode for SetupScan {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SetupScan>>>::sse_encode(flutter_rust_bridge::for_generated::rust_auto_opaque_encode::<_, MoiArc<_>>(self), serializer);
+    }
+}
+
+impl SseEncode
+    for RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BluetoothLink>>
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        let (ptr, size) = self.sse_encode_raw();
+        <usize>::sse_encode(ptr, serializer);
+        <i32>::sse_encode(size, serializer);
     }
 }
 
@@ -14356,6 +15176,17 @@ impl SseEncode
 }
 
 impl SseEncode
+    for RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<PowerWatch>>
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        let (ptr, size) = self.sse_encode_raw();
+        <usize>::sse_encode(ptr, serializer);
+        <i32>::sse_encode(size, serializer);
+    }
+}
+
+impl SseEncode
     for RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Recovery>>
 {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -14389,6 +15220,29 @@ impl SseEncode
 }
 
 impl SseEncode
+    for RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SetupScan>>
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        let (ptr, size) = self.sse_encode_raw();
+        <usize>::sse_encode(ptr, serializer);
+        <i32>::sse_encode(size, serializer);
+    }
+}
+
+impl SseEncode
+    for StreamSink<
+        crate::api::bluetooth::AdapterPower,
+        flutter_rust_bridge::for_generated::SseCodec,
+    >
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        unimplemented!("")
+    }
+}
+
+impl SseEncode
     for StreamSink<crate::api::discovery::FoundFeeder, flutter_rust_bridge::for_generated::SseCodec>
 {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -14400,6 +15254,13 @@ impl SseEncode
 impl SseEncode
     for StreamSink<crate::api::install::InstallUpdate, flutter_rust_bridge::for_generated::SseCodec>
 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        unimplemented!("")
+    }
+}
+
+impl SseEncode for StreamSink<Vec<u8>, flutter_rust_bridge::for_generated::SseCodec> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         unimplemented!("")
@@ -14426,6 +15287,15 @@ impl SseEncode
 
 impl SseEncode
     for StreamSink<crate::api::router::RouterUpdate, flutter_rust_bridge::for_generated::SseCodec>
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        unimplemented!("")
+    }
+}
+
+impl SseEncode
+    for StreamSink<crate::api::bluetooth::ScanEvent, flutter_rust_bridge::for_generated::SseCodec>
 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -14464,6 +15334,22 @@ impl SseEncode for String {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <Vec<u8>>::sse_encode(self.into_bytes(), serializer);
+    }
+}
+
+impl SseEncode for crate::api::bluetooth::AdapterPower {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::bluetooth::AdapterPower::PoweredOn => 0,
+                crate::api::bluetooth::AdapterPower::PoweredOff => 1,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
     }
 }
 
@@ -14962,6 +15848,7 @@ impl SseEncode for crate::api::error::ErrorKind {
                 crate::api::error::ErrorKind::Invite => 15,
                 crate::api::error::ErrorKind::Interrupted => 16,
                 crate::api::error::ErrorKind::InUse => 17,
+                crate::api::error::ErrorKind::Bluetooth => 18,
                 _ => {
                     unimplemented!("");
                 }
@@ -15451,6 +16338,15 @@ impl SseEncode for crate::api::discovery::FoundFeeder {
     }
 }
 
+impl SseEncode for crate::api::bluetooth::HeardFeeder {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.id, serializer);
+        <String>::sse_encode(self.name, serializer);
+        <i16>::sse_encode(self.rssi, serializer);
+    }
+}
+
 impl SseEncode for crate::api::session::HistoryBody {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -15564,6 +16460,13 @@ impl SseEncode for crate::api::session::HistoryEntry {
         <u64>::sse_encode(self.seq, serializer);
         <Option<i64>>::sse_encode(self.at_ms, serializer);
         <crate::api::session::HistoryBody>::sse_encode(self.body, serializer);
+    }
+}
+
+impl SseEncode for i16 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        serializer.cursor.write_i16::<NativeEndian>(self).unwrap();
     }
 }
 
@@ -17472,6 +18375,25 @@ impl SseEncode for crate::api::router::RouterUpdate {
     }
 }
 
+impl SseEncode for crate::api::bluetooth::ScanEvent {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::api::bluetooth::ScanEvent::Heard { feeder } => {
+                <i32>::sse_encode(0, serializer);
+                <crate::api::bluetooth::HeardFeeder>::sse_encode(feeder, serializer);
+            }
+            crate::api::bluetooth::ScanEvent::Failed { error } => {
+                <i32>::sse_encode(1, serializer);
+                <crate::api::error::BridgeError>::sse_encode(error, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
 impl SseEncode for crate::api::session::SessionUpdate {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -18565,6 +19487,7 @@ mod io {
     // Section: imports
 
     use super::*;
+    use crate::api::bluetooth::*;
     use crate::api::discovery::*;
     use crate::api::install::*;
     use crate::api::keys::*;
@@ -18582,6 +19505,20 @@ mod io {
     // Section: boilerplate
 
     flutter_rust_bridge::frb_generated_boilerplate_io!();
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_wellfed_rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBluetoothLink(
+        ptr: *const std::ffi::c_void,
+    ) {
+        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BluetoothLink>>::increment_strong_count(ptr as _);
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_wellfed_rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBluetoothLink(
+        ptr: *const std::ffi::c_void,
+    ) {
+        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BluetoothLink>>::decrement_strong_count(ptr as _);
+    }
 
     #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_wellfed_rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientKey(
@@ -18682,6 +19619,20 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_wellfed_rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPowerWatch(
+        ptr: *const std::ffi::c_void,
+    ) {
+        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<PowerWatch>>::increment_strong_count(ptr as _);
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_wellfed_rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPowerWatch(
+        ptr: *const std::ffi::c_void,
+    ) {
+        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<PowerWatch>>::decrement_strong_count(ptr as _);
+    }
+
+    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_wellfed_rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRecovery(
         ptr: *const std::ffi::c_void,
     ) {
@@ -18721,6 +19672,20 @@ mod io {
         ptr: *const std::ffi::c_void,
     ) {
         MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SetupDriver>>::decrement_strong_count(ptr as _);
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_wellfed_rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSetupScan(
+        ptr: *const std::ffi::c_void,
+    ) {
+        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SetupScan>>::increment_strong_count(ptr as _);
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_wellfed_rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSetupScan(
+        ptr: *const std::ffi::c_void,
+    ) {
+        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SetupScan>>::decrement_strong_count(ptr as _);
     }
 }
 #[cfg(not(target_family = "wasm"))]

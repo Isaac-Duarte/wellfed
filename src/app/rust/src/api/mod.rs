@@ -2,6 +2,7 @@
 //! that cross are owned, so nothing borrows across the bridge.
 
 pub mod alerts;
+pub mod bluetooth;
 pub mod discovery;
 pub mod error;
 pub mod feeder;

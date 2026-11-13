@@ -262,7 +262,7 @@ class AppInstallPorts implements InstallPorts {
     required void Function() onLost,
   }) async {
     final DiscoveredDevice device = await SetupLink.scan().first.timeout(SetupLink.findTimeout);
-    final SetupLink link = await SetupLink.open(device);
+    final BleLink link = await SetupLink.open(device);
     return _Link(link, link.notifications.listen(onBytes, onError: (Object _) => onLost(), onDone: onLost));
   }
 

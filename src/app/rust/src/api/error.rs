@@ -45,6 +45,9 @@ pub enum ErrorKind {
     /// The pending writes' file is already open in another router: one
     /// router owns it.
     InUse,
+    /// A computer's Bluetooth failed: it has none, the app may not use it,
+    /// or the scan or the link to the feeder broke.
+    Bluetooth,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

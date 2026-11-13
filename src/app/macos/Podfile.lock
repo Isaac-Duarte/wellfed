@@ -15,7 +15,7 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   FlutterMacOS: c232990155153907050900a2e175c7773903ba4e
-  wellfed_app_bridge: a6f7beaeac6f4c10406fea4091c65fd6fe10d6f6
+  wellfed_app_bridge: 7d48fc6d9b554eeb461ef5cf552afd19c1d473ec
 
 PODFILE CHECKSUM: c9612ae2f009da3ec2525e73dc677c3f2e808a9a
 

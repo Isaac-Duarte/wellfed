@@ -14,6 +14,10 @@ Pod::Spec.new do |s|
   s.source_files     = 'Classes/**/*'
   s.dependency 'FlutterMacOS'
 
+  # btleplug, the desktops' Bluetooth, calls CoreBluetooth, which a static
+  # library cannot bring in by itself.
+  s.frameworks = 'CoreBluetooth'
+
   s.platform = :osx, '12.0'
   s.swift_version = '5.0'
 

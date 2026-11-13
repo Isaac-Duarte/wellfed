@@ -1,7 +1,9 @@
-//! The Android app's Rust half. Dart owns the screens, BLE, NSD and the
+//! The app's Rust half. Dart owns the screens, a phone's BLE, NSD and the
 //! secure storage; everything the feeder checks runs here, through the same
 //! crates the CLI uses: `wellfed_client::setup` for BLE setup and LAN
-//! recovery, and `wellfed_connect` for device API sessions over TCP.
+//! recovery, `wellfed_connect` for device API sessions over TCP, and on the
+//! desktops `wellfed_ble` for the Bluetooth radio, which Dart's plugin has
+//! no side for there.
 //!
 //! [`api`] is what flutter_rust_bridge exposes to Dart. The session's
 //! driver loop ([`session`]) and the install's thread and platform adapters
@@ -13,6 +15,7 @@ pub(crate) mod alerts;
 #[cfg(target_os = "android")]
 pub mod android;
 pub mod api;
+mod bluetooth;
 mod catch_up;
 // `allow`, not `expect`: `make check-rust`'s production pass fires lints
 // here that its first pass does not enable. Unformatted, so a regeneration
