@@ -118,6 +118,13 @@ impl Helper<'_> {
             helper.len() == HELPER_BYTES && sha256(helper) == HELPER_SHA256,
             || HelperError::UnpinnedHelper,
         )?;
+        Self::load(helper, snapshot, scope)
+    }
+
+    /// `helper` loaded where the loader puts it, unchecked against the pin:
+    /// [`Self::new`] checks it first. The unit tests load a stand-in here to
+    /// reach every modeled call's refusal without the private helper.
+    fn load(helper: &[u8], snapshot: &[u8], scope: Scope) -> Result<Self> {
         require(snapshot.len() == FLASH_BYTES, || {
             HelperError::SnapshotSize {
                 bytes: snapshot.len(),
@@ -392,4 +399,328 @@ fn within(pointer: u32, length: u32) -> bool {
 
 fn reg(uc: &Unicorn<State>, register: RegisterARM) -> Result<u32> {
     Ok(u32::try_from(uc.reg_read(register)?).map_err(|_| HelperError::RegisterRange)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Error;
+
+    /// A sector of bank 1 a test may erase and program, and one beside it.
+    const ALLOWED: u32 = 0x18_6000 + 4 * SECTOR;
+    const OTHER: u32 = ALLOWED + SECTOR;
+    /// Helper RAM a modeled call's buffer may use.
+    const BUFFER: u32 = 0x8_1000;
+
+    const ERASE: u64 = 0x2146;
+    const PROGRAM: u64 = 0x2048;
+    const TRANSMIT: u64 = 0x628C;
+    const STATUS: u64 = 0x1D1C;
+    const WRITABLE: u64 = 0x6238;
+    const MEMCPY: u64 = 0x6590;
+    const MEMSET: u64 = 0x66AC;
+
+    fn scope(status: Option<[u8; 3]>) -> Scope {
+        Scope {
+            bank: 1,
+            sectors: vec![ALLOWED],
+            status,
+        }
+    }
+
+    /// A stand-in for the pinned helper over erased flash: its code is
+    /// never run, only the modeled ROM calls it would make.
+    fn helper(status: Option<[u8; 3]>) -> Helper<'static> {
+        Helper::load(&[0; HELPER_BYTES], &vec![0xFF; FLASH_BYTES], scope(status)).unwrap()
+    }
+
+    impl Helper<'_> {
+        /// Branch to the modeled ROM routine at `pc` with `args` in r0-r2,
+        /// as the helper's code does, and return what it left in r0.
+        fn call_rom(&mut self, pc: u64, args: [u32; 3]) -> Result<u32> {
+            let registers = [RegisterARM::R0, RegisterARM::R1, RegisterARM::R2];
+            for (register, value) in registers.into_iter().zip(args) {
+                self.uc.reg_write(register, u64::from(value))?;
+            }
+            // The model returns to the caller's link register: back to the
+            // helper's entry, where the run stops.
+            self.uc.reg_write(RegisterARM::LR, CODE | 1)?;
+
+            let ran = self.uc.emu_start(pc | 1, CODE, 0, 100);
+            if let Some(error) = self.uc.get_data_mut().error.take() {
+                return Err(error);
+            }
+            ran?;
+            reg(&self.uc, RegisterARM::R0)
+        }
+
+        fn flash(&self, offset: u32, len: usize) -> Vec<u8> {
+            self.uc
+                .mem_read_as_vec(FLASH_BASE + u64::from(offset), len)
+                .unwrap()
+        }
+
+        fn ram(&mut self, at: u32, data: &[u8]) {
+            self.uc.mem_write(u64::from(at), data).unwrap();
+        }
+    }
+
+    fn refused(result: Result<u32>) -> HelperError {
+        match result {
+            Err(Error::Helper(error)) => error,
+            other => panic!("not refused: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn only_the_pinned_helper_runs() {
+        let snapshot = vec![0xFF; FLASH_BYTES];
+        for stand_in in [vec![0; HELPER_BYTES], vec![0; HELPER_BYTES - 1]] {
+            let error = Helper::new(&stand_in, &snapshot, scope(None)).err();
+            assert!(
+                matches!(error, Some(Error::Helper(HelperError::UnpinnedHelper))),
+                "{error:?}"
+            );
+        }
+    }
+
+    /// The session's scope is checked before anything runs: an 8 MiB
+    /// snapshot, a bank that exists, and sectors inside it on sector
+    /// boundaries.
+    #[test]
+    fn a_scope_outside_one_bank_is_refused() {
+        let load = |snapshot: &[u8], scope: Scope| {
+            Helper::load(&[0; HELPER_BYTES], snapshot, scope)
+                .err()
+                .map(|error| match error {
+                    Error::Helper(error) => error,
+                    other => panic!("{other:?}"),
+                })
+        };
+        let flash = vec![0xFF; FLASH_BYTES];
+
+        assert!(matches!(
+            load(&flash[..FLASH_BYTES - 1], scope(None)),
+            Some(HelperError::SnapshotSize { bytes }) if bytes == FLASH_BYTES - 1
+        ));
+        let bank = |bank, sectors| Scope {
+            bank,
+            sectors,
+            status: None,
+        };
+        assert!(matches!(
+            load(&flash, bank(2, vec![ALLOWED])),
+            Some(HelperError::ScopeBank { bank: 2 })
+        ));
+        for sectors in [
+            vec![],
+            vec![ALLOWED + 8],
+            vec![BANKS[0]],
+            vec![BANKS[1] + BANK_BYTES],
+        ] {
+            assert!(
+                matches!(
+                    load(&flash, bank(1, sectors.clone())),
+                    Some(HelperError::ScopeSectors)
+                ),
+                "{sectors:x?}"
+            );
+        }
+        assert!(load(&flash, bank(1, vec![BANKS[1]])).is_none());
+    }
+
+    #[test]
+    fn an_erase_runs_only_on_an_allowed_sector() {
+        let mut helper = helper(None);
+        helper.seed(ALLOWED, &[0; 64]).unwrap();
+
+        assert_eq!(helper.call_rom(ERASE, [2, ALLOWED, 0]).unwrap(), 0);
+        assert_eq!(helper.flash(ALLOWED, 64), [0xFF; 64]);
+        assert_eq!(helper.calls(), [Call::Erase { offset: ALLOWED }]);
+
+        assert!(matches!(
+            refused(helper.call_rom(ERASE, [2, OTHER, 0])),
+            HelperError::EraseEscapes { offset: OTHER }
+        ));
+        // Only the sector erase mode.
+        let mut helper = super::tests::helper(None);
+        assert!(matches!(
+            refused(helper.call_rom(ERASE, [1, ALLOWED, 0])),
+            HelperError::EraseEscapes { offset: ALLOWED }
+        ));
+        assert!(helper.calls().is_empty());
+    }
+
+    /// A program clears bits only, as NOR does, eight bytes at a time,
+    /// inside one allowed sector, from helper RAM.
+    #[test]
+    fn a_program_ands_eight_bytes_into_an_allowed_sector() {
+        let mut helper = helper(None);
+        helper.seed(ALLOWED + 8, &[0xF0; 8]).unwrap();
+        helper.ram(BUFFER, &[0x3C; 8]);
+
+        assert_eq!(
+            helper.call_rom(PROGRAM, [ALLOWED + 8, 8, BUFFER]).unwrap(),
+            0
+        );
+        assert_eq!(helper.flash(ALLOWED + 8, 8), [0x30; 8]);
+        assert_eq!(
+            helper.calls(),
+            [Call::Program {
+                offset: ALLOWED + 8,
+                bytes: 8
+            }]
+        );
+
+        for (offset, length) in [
+            (ALLOWED, 4),
+            (ALLOWED, 16),
+            (OTHER, 8),
+            // Across the end of the allowed sector into the next.
+            (ALLOWED + SECTOR - 4, 8),
+        ] {
+            let mut helper = super::tests::helper(None);
+            let error = refused(helper.call_rom(PROGRAM, [offset, length, BUFFER]));
+            assert!(
+                matches!(error, HelperError::ProgramEscapes { offset: o, length: l } if o == offset && l == length),
+                "{offset:#x}+{length}: {error:?}"
+            );
+            assert!(helper.calls().is_empty());
+        }
+
+        // The data from flash, not the helper's RAM.
+        let mut helper = super::tests::helper(None);
+        let flash = 0x0800_0000;
+        assert!(matches!(
+            refused(helper.call_rom(PROGRAM, [ALLOWED, 8, flash])),
+            HelperError::ProgramBuffer {
+                pointer: 0x0800_0000,
+                length: 8
+            }
+        ));
+        assert_eq!(helper.flash(ALLOWED, 8), [0xFF; 8]);
+    }
+
+    #[test]
+    fn a_transmit_sends_only_helper_ram() {
+        let mut helper = helper(None);
+        helper.ram(BUFFER, b"OK");
+        assert_eq!(helper.call_rom(TRANSMIT, [BUFFER, 2, 0]).unwrap(), 2);
+        assert_eq!(helper.in_waiting(), 2);
+
+        for (pointer, length) in [(0x0800_0000, 2), (BUFFER, 1033), (0x8_FFFF, 2)] {
+            let mut helper = super::tests::helper(None);
+            assert!(matches!(
+                refused(helper.call_rom(TRANSMIT, [pointer, length, 0])),
+                HelperError::TransmitEscapes { pointer: p, length: l } if p == pointer && l == length
+            ));
+        }
+    }
+
+    /// Status reads and writable polling run only when the session gives
+    /// status bytes, and only the three reviewed opcodes, one byte each.
+    #[test]
+    fn status_reads_need_a_status_and_a_reviewed_opcode() {
+        let mut helper = helper(None);
+        assert!(matches!(
+            refused(helper.call_rom(STATUS, [0x05, 1, BUFFER])),
+            HelperError::StatusRead {
+                opcode: 0x05,
+                length: 1
+            }
+        ));
+        let mut helper = super::tests::helper(None);
+        assert!(matches!(
+            refused(helper.call_rom(WRITABLE, [0, 0, 0])),
+            HelperError::WritablePolling
+        ));
+
+        let mut helper = super::tests::helper(Some([0x02, 0x40, 0x60]));
+        assert_eq!(helper.call_rom(STATUS, [0x35, 1, BUFFER]).unwrap(), 0);
+        assert_eq!(
+            helper.uc.mem_read_as_vec(u64::from(BUFFER), 1).unwrap(),
+            [0x40]
+        );
+        assert_eq!(helper.calls(), [Call::ReadStatus { opcode: 0x35 }]);
+        assert_eq!(helper.call_rom(WRITABLE, [0, 0, 0]).unwrap(), 1);
+        for (opcode, length, pointer) in [(0x9F, 1, BUFFER), (0x05, 2, BUFFER), (0x05, 1, 0)] {
+            assert!(matches!(
+                refused(helper.call_rom(STATUS, [opcode, length, pointer])),
+                HelperError::StatusRead { opcode: o, length: l } if o == opcode && l == length
+            ));
+        }
+    }
+
+    #[test]
+    fn copies_and_fills_stay_in_helper_ram() {
+        let mut helper = helper(None);
+        helper.ram(BUFFER, b"abcd");
+        assert_eq!(
+            helper.call_rom(MEMCPY, [BUFFER + 16, BUFFER, 4]).unwrap(),
+            BUFFER + 16
+        );
+        assert_eq!(
+            helper
+                .uc
+                .mem_read_as_vec(u64::from(BUFFER + 16), 4)
+                .unwrap(),
+            b"abcd"
+        );
+        assert_eq!(helper.call_rom(MEMSET, [BUFFER, 0x5A, 4]).unwrap(), BUFFER);
+        assert_eq!(
+            helper.uc.mem_read_as_vec(u64::from(BUFFER), 4).unwrap(),
+            b"ZZZZ"
+        );
+
+        for args in [
+            [0x0800_0000, BUFFER, 4],
+            [BUFFER, 0x0800_0000, 4],
+            [BUFFER, BUFFER, 4097],
+        ] {
+            assert!(matches!(
+                refused(helper.call_rom(MEMCPY, args)),
+                HelperError::MemcpyEscapes
+            ));
+        }
+        for args in [[0x0800_0000, 0, 4], [BUFFER, 0, 4097]] {
+            assert!(matches!(
+                refused(helper.call_rom(MEMSET, args)),
+                HelperError::MemsetEscapes
+            ));
+        }
+    }
+
+    /// The setup calls the helper makes once are modeled only with the
+    /// arguments the pinned helper passes; anything else, and any routine
+    /// no review covers, stops the session.
+    #[test]
+    fn unreviewed_setup_and_destinations_stop_the_session() {
+        let mut helper = helper(None);
+        assert!(matches!(
+            refused(helper.call_rom(0x61A0, [2, 0, 9_600])),
+            HelperError::UartInitialization
+        ));
+        assert!(matches!(
+            refused(helper.call_rom(0x3594, [1, 0, 0])),
+            HelperError::OtfSetup
+        ));
+        assert!(matches!(
+            refused(helper.call_rom(0x1434, [1, 0, 0])),
+            HelperError::BackupRegister
+        ));
+        assert!(matches!(
+            refused(helper.call_rom(0x6250, [0, 0, 0])),
+            HelperError::NoHostInput
+        ));
+        assert!(matches!(
+            refused(helper.call_rom(0x1234, [0, 0, 0])),
+            HelperError::UnreviewedDestination { pc: 0x1234 }
+        ));
+        assert!(helper.calls().is_empty());
+
+        let mut helper = super::tests::helper(None);
+        assert_eq!(helper.call_rom(0x61A0, [2, 0, 115_200]).unwrap(), 0);
+        helper.write(&[0x42]);
+        assert_eq!(helper.call_rom(0x6250, [0, 0, 0]).unwrap(), 0x42);
+    }
 }
