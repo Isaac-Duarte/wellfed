@@ -2430,4 +2430,71 @@ mod tests {
         assert_eq!(memo["x"].0, 35);
         assert!(!memo.contains_key("y"), "y's cut landed on x above it");
     }
+    /// The longest simple path from `name`, by enumerating every one: the
+    /// stack a walk must never report less than.
+    fn longest_simple_path(
+        functions: &HashMap<String, Function>,
+        name: &str,
+        visiting: &mut Vec<String>,
+    ) -> u64 {
+        if visiting.iter().any(|v| v == name) {
+            return 0;
+        }
+        let Some(f) = functions.get(name) else {
+            return 0;
+        };
+
+        visiting.push(name.to_string());
+        let deepest = f
+            .calls
+            .iter()
+            .map(|callee| longest_simple_path(functions, callee, visiting))
+            .max()
+            .unwrap_or(0);
+        visiting.pop();
+        f.frame + deepest
+    }
+
+    /// Small random call graphs, dense with cycles, walked from every
+    /// function: the walk's result is never below the longest simple path,
+    /// however the memo met the cycles (a result cut against an ancestor
+    /// once under-counted the audit's own graph by 44 bytes).
+    #[test]
+    fn the_walk_never_reports_less_than_the_longest_simple_path() {
+        const NODES: u64 = 7;
+        let mut state: u64 = 0x9e37_79b9_7f4a_7c15;
+        let mut random = move |below: u64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state % below
+        };
+
+        for _ in 0..2_000 {
+            let functions: HashMap<String, Function> = (0..NODES)
+                .map(|node| {
+                    let calls = (0..random(4))
+                        .map(|_| format!("n{}", random(NODES)))
+                        .collect();
+                    let function = Function {
+                        frame: 1 + random(200),
+                        calls,
+                        ..Function::default()
+                    };
+                    (format!("n{node}"), function)
+                })
+                .collect();
+            let graph = Graph::new(&functions, &[]);
+
+            for entry in functions.keys() {
+                let ((depth, _, _), _) = graph.worst(entry, Charges::default());
+                let truth = longest_simple_path(&functions, entry, &mut Vec::new());
+                assert!(
+                    depth >= truth,
+                    "{entry}: walked {depth}, longest {truth} in {functions:?}"
+                );
+            }
+            assert!(!graph.exhausted());
+        }
+    }
 }
