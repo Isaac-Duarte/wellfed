@@ -55,6 +55,12 @@
 //!   With no feed the beam is read on the firmware's own schedule
 //!   (`FoodReads`), on the adapter only, each reading taking no time here.
 //!
+//! - What the runtime says of the boot reaches the adapter as the
+//!   firmware's runtime says it ([`SimFeeds::gate`]): a trial build still
+//!   confirming, so readiness says `Starting` and feeds are refused so, and
+//!   a reset storm's hold, which keeps the owner closed and readiness at
+//!   `Fault` until it ends.
+//!
 //! What only the board has stays out: traces, the trial's proof, the
 //! recovery restart and the install lease.
 
@@ -113,6 +119,8 @@ impl SimFeeds {
             flash: Rc::clone(flash),
             owner: SimOwner::default(),
             opened: Cell::new(false),
+            confirming: Cell::new(false),
+            held: Cell::new(false),
         };
         Self {
             feeding: Feeding::new(runtime),
@@ -131,6 +139,14 @@ impl SimFeeds {
 
     fn owner(&self) -> &SimOwner {
         &self.feeding.runtime().owner
+    }
+
+    /// What the runtime says of this boot from now on: a trial build that
+    /// has not confirmed (`confirming`), and a reset storm's hold (`held`).
+    pub fn gate(&mut self, confirming: bool, held: bool) {
+        let runtime = self.feeding.runtime();
+        runtime.confirming.set(confirming);
+        runtime.held.set(held);
     }
 
     /// Judge the supply at `now_ms`, as the owner does on each poll: the
@@ -229,14 +245,19 @@ impl SimFeeds {
 pub struct WriteWaits;
 
 /// The adapter's runtime in the simulator: the owner below, the process's
-/// interlock, and nothing of the board's (no trial, no reset storm, no
-/// install lease, no traces).
+/// interlock, the boot's trial and storm hold as the simulated runtime
+/// gives them, and nothing else of the board's (no install lease, no
+/// traces).
 #[derive(Debug)]
 pub struct SimRuntime {
     flash: Rc<Flash>,
     owner: SimOwner,
     /// The owner has opened on a journal that opened.
     opened: Cell<bool>,
+    /// A trial build that has not confirmed yet.
+    confirming: Cell<bool>,
+    /// A reset storm holds the boot.
+    held: Cell<bool>,
 }
 
 impl Runtime for SimRuntime {
@@ -287,11 +308,11 @@ impl Runtime for SimRuntime {
     }
 
     fn held(&self) -> bool {
-        false
+        self.held.get()
     }
 
     fn confirming(&self) -> bool {
-        false
+        self.confirming.get()
     }
 
     fn storage_armed(&self) -> bool {

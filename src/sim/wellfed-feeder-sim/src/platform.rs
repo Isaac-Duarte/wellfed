@@ -24,7 +24,6 @@ use std::collections::VecDeque;
 use std::convert::Infallible;
 use std::net::Ipv4Addr;
 use std::rc::Rc;
-use std::time::{Duration, Instant};
 
 use tokio::net::{TcpStream, UdpSocket};
 use wellfed_board::storage;
@@ -54,7 +53,7 @@ use wellfed_feeder::feeder::platform::{
     BleStep, Boot, Check, DriverStep, EventSlot, Link, TaskCount, TaskStack,
 };
 use wellfed_feeder::feeder::supply::Radio;
-use wellfed_feeder::stats::{SAVE_MS, TOTAL_SECTORS, Totals, reset_cause};
+use wellfed_feeder::stats::{FEED_SAVE_MS, SAVE_MS, TOTAL_SECTORS, Totals, reset_cause};
 use wellfed_feeder::store::calibration::CalibrationStore;
 use wellfed_feeder::store::call::CallStore;
 use wellfed_feeder::store::plans::PlansStore;
@@ -139,14 +138,16 @@ pub struct SimPlatform {
     /// this boot's.
     erases_before: [u32; TOTAL_SECTORS],
     /// The lifetime statistics, as the writer keeps them: the stored
-    /// totals with this boot counted, this boot's counts as the loop last
-    /// handed them, and when the next save is due.
+    /// totals with this boot's reset counted (at the writer's first turn,
+    /// so a test's reset flags apply), this boot's counts as the loop last
+    /// handed them, and the save triggers on the loop's uptime.
     stats: StatsStore<Region>,
     stats_base: Totals,
+    boot_counted: bool,
     counts: Counts,
-    stats_due: Instant,
-    /// When this boot opened, for a restart's save kind.
-    booted: Instant,
+    stats_triggers: SaveTriggers,
+    /// The uptime the latest pass ran at.
+    uptime_ms: u32,
     calibration: CalibrationStore<Region>,
     calibration_pending: Option<Calibration>,
     plans: PlansStore<Region>,
@@ -180,6 +181,8 @@ pub struct SimPlatform {
     /// The ROM's reset flags this boot reports: none, a power-on, unless a
     /// test sets them before the first pass.
     reset_flags: u32,
+    /// A reset storm holds this boot, as the simulated runtime says.
+    held: bool,
     /// The radio the loop last asked for: while off, no connection is
     /// taken and those open are dropped, as the network leaves.
     radio: Radio,
@@ -233,9 +236,7 @@ impl SimPlatform {
         let ring_opened_at = device.last_event();
         let mut stats = StatsStore::default();
         stats.open(Region::new(flash, storage::STATS));
-        let mut stats_base = stats.totals;
-        // The simulator's boots carry no reset flags: each is a power-on.
-        stats_base.count_boot(reset_cause(0));
+        let stats_base = stats.totals;
         let mut calibration = CalibrationStore::default();
         calibration.open(Region::new(flash, storage::CALIBRATION));
         let mut plans = PlansStore::default();
@@ -252,8 +253,9 @@ impl SimPlatform {
             stats,
             stats_base,
             counts: Counts::default(),
-            stats_due: Instant::now() + Duration::from_millis(u64::from(SAVE_MS)),
-            booted: Instant::now(),
+            boot_counted: false,
+            stats_triggers: SaveTriggers::default(),
+            uptime_ms: 0,
             calibration,
             calibration_pending: None,
             plans,
@@ -276,6 +278,7 @@ impl SimPlatform {
             banks: None,
             supply: SimSupply::MAINS,
             reset_flags: 0,
+            held: false,
             radio: Radio::On,
             build_wifi: BuildWifi::Present,
             alerts: Alerts::new(),
@@ -306,6 +309,11 @@ impl SimPlatform {
     /// What the supply reads from now on.
     pub fn set_supply(&mut self, supply: SimSupply) {
         self.supply = supply;
+    }
+
+    /// A reset storm holds this boot (`true`), or its hold ended.
+    pub(crate) fn set_held(&mut self, held: bool) {
+        self.held = held;
     }
 
     /// Report `flags` as this boot's reset flags (bit 18 a brownout), from
@@ -390,27 +398,50 @@ impl SimPlatform {
         self.sockets.accept_failed();
     }
 
-    /// Save the lifetime totals as the writer does: a restart's save
-    /// (`restarting`; the simulator's restart has no watchdog to race), of
-    /// the kind its uptime gives, otherwise the timed save when due. A
-    /// failed save makes the store read-only for the boot, as on the
-    /// feeder.
-    pub(crate) fn save_stats(&mut self, restarting: bool) {
-        let now = Instant::now();
-        if restarting {
-            let uptime = now.duration_since(self.booted).as_millis();
-            self.save_now(SaveKind::restart(u32::try_from(uptime).unwrap_or(u32::MAX)));
-        } else if now >= self.stats_due {
-            self.save_now(SaveKind::Settled);
-            self.stats_due = now + Duration::from_millis(u64::from(SAVE_MS));
+    /// A pass begins at `now_ms` of uptime, the clock the writer's save
+    /// triggers run on.
+    pub(crate) fn begin_pass(&mut self, now_ms: u32) {
+        self.uptime_ms = now_ms;
+    }
+
+    /// An intentional restart's save of the lifetime totals, of the kind
+    /// the boot's uptime gives (the simulator's restart has no watchdog to
+    /// race).
+    pub(crate) fn save_restart_stats(&mut self) {
+        if self.boot_counted {
+            self.save_now(SaveKind::restart(self.uptime_ms));
         }
     }
 
-    /// One save of `kind`, if the store allows it, with this boot's counts
-    /// and erases, its own erase included.
-    fn save_now(&mut self, kind: SaveKind) {
-        if !self.stats.may_save(kind) {
+    /// The writer's save of the lifetime totals on its turn, if one is
+    /// wanted: the boot's own as it starts, the timed one every `SAVE_MS`,
+    /// or a finished feed's at most every `FEED_SAVE_MS`. A trigger the
+    /// store refuses (no early token left) is dropped for the boot, and a
+    /// failed save makes the store read-only and ends the timed saves, as
+    /// on the feeder.
+    fn save_stats(&mut self) {
+        // The writer's first turn opens the totals and counts this boot's
+        // reset, by the flags the boot reports.
+        if !self.boot_counted {
+            self.boot_counted = true;
+            self.stats_base.count_boot(reset_cause(self.reset_flags));
+        }
+        let now = self.uptime_ms;
+        let Some(trigger) = self.stats_triggers.wanted(now, self.counts.feeds) else {
             return;
+        };
+
+        let kind = trigger.kind();
+        let saved = self.stats.may_save(kind).then(|| self.save_now(kind));
+        self.stats_triggers
+            .done(trigger, now, self.counts.feeds, saved);
+    }
+
+    /// One save of `kind`, with this boot's counts and erases, its own
+    /// erase included; whether it saved.
+    fn save_now(&mut self, kind: SaveKind) -> bool {
+        if !self.stats.may_save(kind) {
+            return false;
         }
         let erases = self.flash.erases();
         let mut boot = [0; TOTAL_SECTORS];
@@ -422,7 +453,7 @@ impl SimPlatform {
             *count = count.saturating_add(1);
         }
         let totals = self.stats_base.plus(&self.counts, &boot, 0);
-        self.stats.save(&totals, kind);
+        self.stats.save(&totals, kind)
     }
 
     /// Whether the feeder asked for a restart, taken once.
@@ -482,8 +513,9 @@ impl SimPlatform {
     }
 
     /// The progress shows `candidate` for the update store's, or the
-    /// stage's own with `None`: the simulator's trials confirm at once, so
-    /// this is how a test sees one that takes its time.
+    /// stage's own with `None`: the simulator's trials confirm within
+    /// `CONFIRM_MS`, so this is how a test holds one in its window for as
+    /// long as it likes.
     pub fn hold_candidate(&mut self, candidate: Option<CandidateState>) {
         self.candidate_held = candidate;
     }
@@ -499,7 +531,7 @@ impl SimPlatform {
     /// it gives for the log.
     pub fn write(&mut self) -> Option<KeyResult> {
         self.device.apply_settings();
-        self.save_stats(false);
+        self.save_stats();
         if let Some(change) = self.calibration_pending.take() {
             self.calibration.save(&change);
         }
@@ -593,10 +625,8 @@ impl Platform for SimPlatform {
         self.build_wifi
     }
 
-    /// The simulator reports a storm (`Banks::boot`) but never holds its
-    /// feeding owner closed for one.
     fn held(&self) -> bool {
-        false
+        self.held
     }
 
     fn reset(&mut self) {
@@ -1062,8 +1092,10 @@ impl Platform for SimPlatform {
         traces::page(&self.traces(), units, feed, offset, out)
     }
 
+    /// None until the writer's first turn has counted this boot, as the
+    /// writer publishes none until it has opened the store.
     fn totals(&self) -> Option<Totals> {
-        self.stats.writable().then_some(self.stats_base)
+        (self.boot_counted && self.stats.writable()).then_some(self.stats_base)
     }
 
     fn hand_counts(&mut self, counts: Counts) {
@@ -1127,4 +1159,93 @@ impl Platform for SimPlatform {
     fn buzzer_enable(&mut self) {}
 
     fn buzzer(&mut self, _on: bool) {}
+}
+
+/// Why the writer saves the lifetime totals, as the firmware's writer
+/// names them; an intentional restart's save is the restart's own.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SaveTrigger {
+    /// The boot's own, as it starts, so its reset counts.
+    Boot,
+    /// The timed save, every `SAVE_MS` of uptime.
+    Due,
+    /// A feed ended since the last save, at most every `FEED_SAVE_MS`.
+    Feed,
+}
+
+impl SaveTrigger {
+    /// Only the timed save gives an early token back.
+    const fn kind(self) -> SaveKind {
+        match self {
+            Self::Boot => SaveKind::Early,
+            Self::Due => SaveKind::Settled,
+            Self::Feed => SaveKind::Feed,
+        }
+    }
+}
+
+/// When the writer saves the totals, on the loop's uptime
+/// (`wellfed_feeder_runtime::writer`'s triggers).
+#[derive(Clone, Copy, Debug)]
+struct SaveTriggers {
+    boot_saved: bool,
+    /// When the timed save is due; `None` once a save failed.
+    due: Option<u32>,
+    /// The feeds the last save counted.
+    feeds: u32,
+    /// When a feed's save last had its try.
+    feed_at: Option<u32>,
+}
+
+impl Default for SaveTriggers {
+    fn default() -> Self {
+        Self {
+            boot_saved: false,
+            due: Some(SAVE_MS),
+            feeds: 0,
+            feed_at: None,
+        }
+    }
+}
+
+impl SaveTriggers {
+    /// The save wanted at `now` with `feeds` counted this boot, if any.
+    fn wanted(&self, now: u32, feeds: u32) -> Option<SaveTrigger> {
+        if !self.boot_saved {
+            return Some(SaveTrigger::Boot);
+        }
+        if self
+            .due
+            .is_some_and(|due| wellfed_core::deadline_passed(now, due))
+        {
+            return Some(SaveTrigger::Due);
+        }
+        // A boot's first feed asks at once: the boot may not last long
+        // enough for anything later.
+        let feed_unsaved = self.due.is_some()
+            && self
+                .feed_at
+                .is_none_or(|at| now.wrapping_sub(at) >= FEED_SAVE_MS)
+            && feeds != self.feeds;
+        feed_unsaved.then_some(SaveTrigger::Feed)
+    }
+
+    /// `trigger` had its one try at `now`: `saved` is `None` when the store
+    /// refused it before writing.
+    fn done(&mut self, trigger: SaveTrigger, now: u32, feeds: u32, saved: Option<bool>) {
+        match trigger {
+            SaveTrigger::Boot => self.boot_saved = true,
+            SaveTrigger::Due => {}
+            SaveTrigger::Feed => self.feed_at = Some(now),
+        }
+        let Some(saved) = saved else {
+            return;
+        };
+        self.feeds = feeds;
+        if !saved {
+            self.due = None;
+        } else if trigger == SaveTrigger::Due {
+            self.due = Some(now.wrapping_add(SAVE_MS));
+        }
+    }
 }

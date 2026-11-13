@@ -5,10 +5,14 @@
 //!
 //! A boot first runs the loader's choice and KM0's trial, and the update
 //! stage takes its turn after each pass, as every device's do
-//! ([`Updates`]): a new build in trial confirms itself at once, unless the
-//! banks say it never will, in which case it resets after [`TRIAL_MS`] as
-//! the supervisor's deadline makes it. Button presses come from the caller ([`Sim::gesture`]) and wait
-//! for the next pass, as the button service's queued gestures do.
+//! ([`Updates`]): a new build in trial confirms itself after
+//! [`CONFIRM_MS`], unless the banks say it never will or its confirmation
+//! fails, in which case it resets after [`TRIAL_MS`] as the supervisor's
+//! deadline makes it. Until it confirms, readiness says `Starting` and every
+//! feed is refused so; while a reset storm holds the boot, readiness says
+//! `Fault` and the feeding owner stays closed, as the firmware's adapter
+//! reports them. Button presses come from the caller ([`Sim::gesture`]) and
+//! wait for the next pass, as the button service's queued gestures do.
 //!
 //! Nothing here reads a clock: every call takes the time, so tests can run
 //! virtual time and the driver can run real time through the same code.
@@ -25,8 +29,8 @@ use wellfed_core::tone::{PlayResult, Tune};
 use wellfed_core_feeder::feed::controller::FeedReason;
 use wellfed_device_api::FeederDevice;
 use wellfed_device_api::mailbox::{Asked, KeyResult, MealSkip, PlansResult, Table};
-pub use wellfed_device_sim::updates::TRIAL_MS;
 use wellfed_device_sim::updates::{Booted, Updates};
+pub use wellfed_device_sim::updates::{CONFIRM_MS, TRIAL_MS};
 use wellfed_feeder::feeder::{self, Feeder};
 use wellfed_feeder::panel;
 use wellfed_hal::ota::update::{self as update, Floor};
@@ -44,14 +48,16 @@ use crate::platform::{DeviceError, Random, SimPlatform};
 pub enum Record {
     /// The feeder's loop, as its firmware logs it.
     Feeder(feeder::Record<Infallible>),
-    /// The boot: the bank the loader chose, whether its build is in trial
-    /// and confirmed itself, and what a reset storm left it.
+    /// The boot: the bank the loader chose, whether its build is in trial,
+    /// and what a reset storm left it.
     Boot {
         bank: u8,
         trial: bool,
-        confirmed: Option<Floor>,
         storm: Storm,
     },
+    /// The trial build's confirmation: the floor it raised, or that it
+    /// failed and the build stays in trial.
+    Confirmed(Floor),
     /// The writer's turn applied a client store change.
     Keys(KeyResult),
     Update(update::Record),
@@ -74,17 +80,13 @@ impl fmt::Display for Record {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Feeder(record) => write!(f, "{} {record}", record.tag()),
-            Self::Boot {
-                bank,
-                trial,
-                confirmed,
-                storm,
-            } => write!(
+            Self::Boot { bank, trial, storm } => write!(
                 f,
-                "boot bank={bank} trial={} confirmed={confirmed:?} storm={}",
+                "boot bank={bank} trial={} storm={}",
                 u8::from(*trial),
                 storm.name()
             ),
+            Self::Confirmed(floor) => write!(f, "confirm floor={floor:?}"),
             Self::Keys(result) => write!(f, "keys result={result}"),
             Self::Update(record) => {
                 write!(f, "{} ", record.tag())?;
@@ -130,25 +132,44 @@ impl Sim {
         let Booted {
             bank,
             trial,
-            confirmed,
             storm,
             build,
         } = booted;
 
         let mut platform = SimPlatform::open(flash, random, boot_count, bank, build, mdns)?;
         platform.attach_banks(banks);
-        Ok(Self {
+        let mut sim = Self {
             feeder: Box::new(Feeder::new(platform)),
             feeds: SimFeeds::open(flash),
             booted: false,
             updates,
-            boot: Record::Boot {
-                bank,
-                trial,
-                confirmed,
-                storm,
-            },
-        })
+            boot: Record::Boot { bank, trial, storm },
+        };
+        sim.gate();
+        Ok(sim)
+    }
+
+    /// What the runtime tells the feeder's code this boot: a trial build
+    /// still confirming, and a storm's hold.
+    fn gate(&mut self) {
+        let (confirming, held) = (self.updates.confirming(), self.updates.held());
+        self.feeds.gate(confirming, held);
+        self.platform().set_held(held);
+    }
+
+    /// The boot is a trial build's that has not confirmed yet.
+    pub fn confirming(&self) -> bool {
+        self.updates.confirming()
+    }
+
+    /// A reset storm holds this boot.
+    pub fn held(&self) -> bool {
+        self.updates.held()
+    }
+
+    /// Whether a feed can start now, as the device API's status says.
+    pub fn readiness(&self) -> wellfed_proto::api::Readiness {
+        self.feeder.readiness(self.feeds.adapter())
     }
 
     /// The feeder's identity public key, as the client store holds it.
@@ -209,7 +230,7 @@ impl Sim {
         let reboot = self.platform().take_reboot();
         if reboot {
             self.updates.restarting();
-            self.platform().save_stats(true);
+            self.platform().save_restart_stats();
         }
         reboot
     }
@@ -300,6 +321,7 @@ impl Sim {
             self.booted = true;
             record(self.boot);
         }
+        self.platform().begin_pass(now_ms);
 
         let supply = self.feeder.platform().sim_supply();
         self.feeds.sense(now_ms, supply);
@@ -323,6 +345,10 @@ impl Sim {
     /// has work waiting.
     fn update(&mut self, now_ms: u32, record: &mut impl FnMut(Record)) -> bool {
         let turn = self.updates.turn(now_ms);
+        self.gate();
+        if let Some(floor) = turn.confirmed {
+            record(Record::Confirmed(floor));
+        }
         if let Some(event) = turn.record {
             record(Record::Update(event));
         }
