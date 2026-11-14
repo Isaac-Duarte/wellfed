@@ -70,7 +70,7 @@ pub fn owner_sync(sim: &mut Sim, now: u32, unix_ms: u64) {
         next_offset_s: 0,
     };
     sim.platform()
-        .time_sync(now, sync, Origin::Owner)
+        .time_sync(now, sync, Origin::Owner, [0x21; 4])
         .expect("a test's sync is a valid time");
 }
 

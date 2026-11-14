@@ -689,7 +689,7 @@ fn a_no_zone_feeder_synced_across_the_fall_change_feeds_the_repeated_minute_once
         feeder
             .sim
             .platform()
-            .time_sync(now, sync, Origin::Owner)
+            .time_sync(now, sync, Origin::Owner, [0x21; 4])
             .unwrap();
     };
     let (mdt, mst) = (-6 * 3600, -7 * 3600);

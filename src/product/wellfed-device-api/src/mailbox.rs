@@ -10,7 +10,7 @@
 //! ([`FeederSettings`]), since the request is the feeder module's.
 
 use wellfed_core::clock::wall::{Jump, Sync, SyncError};
-pub use wellfed_core::clock::wall::{Origin, State as ClockState};
+pub use wellfed_core::clock::wall::{Origin, State as ClockState, SyncKey};
 pub use wellfed_core::clock::zone::Zone;
 use wellfed_core::named_enum;
 

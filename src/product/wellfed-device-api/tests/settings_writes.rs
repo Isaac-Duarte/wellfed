@@ -123,6 +123,38 @@ fn an_owner_sync_held_behind_a_pending_write_only_narrows_the_clock() {
     assert_eq!(rig.clock_origin(), Some(Origin::Owner));
 }
 
+/// Each sync names its session's own key, which the clock learns its rate
+/// by: an owner's and a member's arrive as their keys' first bytes.
+#[test]
+fn a_sync_names_the_key_of_the_session_it_came_on() {
+    use wellfed_proto::api::TimeSync;
+    use wellfed_session::noise::Keypair;
+
+    let sync = Op::TimeSync(TimeSync {
+        unix_ms: 1_792_674_000_000,
+        offset_s: 0,
+        next_change_s: 0,
+        next_offset_s: 0,
+    });
+    let mut rig = Rig::new();
+    rig.enroll_member();
+    let (owner, mut owner_transport) = rig.open();
+    let (member, mut member_transport) = rig.open_as(support::MEMBER);
+    ask(&mut rig, owner, &mut owner_transport, [1; 16], sync);
+    assert!(answer(&mut rig, owner, &mut owner_transport, [1; 16]).starts_with("Done"));
+    ask(&mut rig, member, &mut member_transport, [2; 16], sync);
+    assert!(answer(&mut rig, member, &mut member_transport, [2; 16]).starts_with("Done"));
+
+    let first = |secret| {
+        let key = *Keypair::from_secret(secret).public();
+        [key[0], key[1], key[2], key[3]]
+    };
+    assert_eq!(
+        rig.sync_keys(),
+        [first(support::OWNER), first(support::MEMBER)]
+    );
+}
+
 /// A frame that won't read, arriving while a write is pending, ends the
 /// session only once the write's answer has gone out.
 #[test]

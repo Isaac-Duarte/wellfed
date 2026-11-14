@@ -496,6 +496,7 @@ fn the_lights_window_darkens_the_panel_outside_it() {
             next_offset_s: -6 * 3600,
         },
         Origin::Owner,
+        [1; 4],
     )
     .unwrap();
     passes(&mut feeder, 200, 200);

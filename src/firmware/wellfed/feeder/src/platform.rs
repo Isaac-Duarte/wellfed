@@ -11,7 +11,7 @@
 use core::fmt;
 
 use wellfed_core::buttons::Gesture;
-use wellfed_core::clock::wall::{Fix, Jump, Origin, State as ClockState, Sync, SyncError};
+use wellfed_core::clock::wall::{Fix, Jump, Origin, State as ClockState, Sync, SyncError, SyncKey};
 use wellfed_core::clock::zone::Rule;
 use wellfed_core::indicator::Light;
 use wellfed_core::log_tail::Batch as LogBatch;
@@ -426,8 +426,14 @@ impl Platform for Plaf103 {
         clock::state().reading.map(|reading| reading.unix_ms)
     }
 
-    fn time_sync(&mut self, _now_ms: u32, sync: Sync, origin: Origin) -> Result<Jump, SyncError> {
-        clock::sync(sync, origin)
+    fn time_sync(
+        &mut self,
+        _now_ms: u32,
+        sync: Sync,
+        origin: Origin,
+        key: SyncKey,
+    ) -> Result<Jump, SyncError> {
+        clock::sync(sync, origin, key)
     }
 
     /// `now_ms` is the clock's count the answer was read at.

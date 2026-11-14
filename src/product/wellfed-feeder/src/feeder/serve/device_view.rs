@@ -10,7 +10,8 @@ use wellfed_device::store::events::Read;
 use wellfed_device::update as wire;
 use wellfed_device_api::mailbox::{
     Asked, CalibrationResult, ClientChange, KeyResult, NtpResult, Origin, Requested, Stamp,
-    TimeFields, TimeResult, TimeSettings, TimeSettingsResult, TimeState, WifiResult, WifiSource,
+    SyncKey, TimeFields, TimeResult, TimeSettings, TimeSettingsResult, TimeState, WifiResult,
+    WifiSource,
 };
 use wellfed_device_api::wifi::Credentials;
 use wellfed_device_api::{
@@ -169,8 +170,11 @@ impl<P: Platform, F: Feeds> Device for DeviceView<'_, P, F> {
         }
     }
 
-    fn time_sync(&mut self, fields: TimeFields, origin: Origin) -> TimeResult {
-        TimeResult::from_sync(self.platform.time_sync(self.now_ms, fields.sync(), origin))
+    fn time_sync(&mut self, fields: TimeFields, origin: Origin, key: SyncKey) -> TimeResult {
+        TimeResult::from_sync(
+            self.platform
+                .time_sync(self.now_ms, fields.sync(), origin, key),
+        )
     }
 
     fn time_settings(&mut self, change: Option<TimeSettings>) -> TimeSettingsResult {

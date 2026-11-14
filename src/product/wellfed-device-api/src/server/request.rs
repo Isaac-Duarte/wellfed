@@ -78,7 +78,7 @@ impl Server {
                 Err(refusal) => Reply::Refused(refusal),
             },
             Action::TimeSync(fields) => {
-                match device.time_sync(fields, self.sync_origin(index, role)) {
+                match device.time_sync(fields, self.sync_origin(index, role), fingerprint(&key)) {
                     TimeResult::Synced { jump_ms } => {
                         let jump_ms = jump_ms.map(saturate);
                         device.record(now_ms, EventBody::ClockSync { by, jump_ms });

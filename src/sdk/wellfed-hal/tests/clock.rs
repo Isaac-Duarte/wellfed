@@ -69,7 +69,7 @@ fn the_clock_survives_a_warm_reset_but_not_a_power_on() {
     assert_eq!(record(), [0; CARRY_WORDS]);
 
     // A sync is stored at once, and the loop keeps it fresh.
-    clock::sync(owner, Origin::Owner).unwrap();
+    clock::sync(owner, Origin::Owner, [1; 4]).unwrap();
     assert_ne!(record(), [0; CARRY_WORDS]);
     at(80_000, 1_060);
     clock::keep();
@@ -168,7 +168,7 @@ fn a_download_that_stops_the_tick_keeps_the_clock_within_its_error() {
     };
     clock::reset();
     let mut board = Board::new(20_000);
-    clock::sync(owner, Origin::Owner).unwrap();
+    clock::sync(owner, Origin::Owner, [1; 4]).unwrap();
     assert_eq!(miss(&board), (0, 1_000));
 
     for _ in 0..249 {
@@ -203,7 +203,7 @@ fn a_count_that_lost_its_place_forgets_the_time() {
     };
     clock::reset();
     at(20_000, 20);
-    clock::sync(owner, Origin::Owner).unwrap();
+    clock::sync(owner, Origin::Owner, [1; 4]).unwrap();
     assert!(clock::state().reading.is_some());
 
     fake::with(|h| h.raw_ticks = h.raw_ticks.wrapping_add(1 << 31));

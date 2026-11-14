@@ -151,6 +151,11 @@ impl<D: Faked> Rig<D> {
     }
 
     /// Who the clock's last accepted fix came from.
+    /// The key each sync handed to the clock named.
+    pub fn sync_keys(&mut self) -> Vec<[u8; 4]> {
+        self.device.fake().sync_keys.clone()
+    }
+
     pub fn clock_origin(&mut self) -> Option<wellfed_core::clock::wall::Origin> {
         self.device
             .fake()

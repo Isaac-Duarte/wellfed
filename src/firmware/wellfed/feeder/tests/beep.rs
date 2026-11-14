@@ -176,6 +176,7 @@ fn a_press_outside_the_sound_window_is_silent() {
             next_offset_s: -6 * 3600,
         },
         Origin::Owner,
+        [1; 4],
     )
     .unwrap();
     let mut feeder = Box::new(Feeder::new(Plaf103::new()));

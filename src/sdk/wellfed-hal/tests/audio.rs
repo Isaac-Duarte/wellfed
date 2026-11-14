@@ -338,6 +338,7 @@ fn the_sound_window_mutes_outside_it_and_opens_without_a_clock() {
             next_offset_s: -6 * 3600,
         },
         Origin::Owner,
+        [1; 4],
     )
     .unwrap();
     assert_eq!(audio::request(Tune::Coin), PlayResult::Muted);

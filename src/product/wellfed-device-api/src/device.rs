@@ -13,8 +13,8 @@
 use crate::clients::{Label, Role};
 use crate::mailbox::{
     Asked, Calibration, CalibrationResult, CallChange, CallPlay, CallResult, LockResult, MealSkip,
-    Origin, PlansResult, PlayResult, SettingsFields, SettingsResult, Table, TimeFields, TimeResult,
-    TimeSettings, TimeSettingsResult, TimeState, WifiResult,
+    Origin, PlansResult, PlayResult, SettingsFields, SettingsResult, SyncKey, Table, TimeFields,
+    TimeResult, TimeSettings, TimeSettingsResult, TimeState, WifiResult,
 };
 use crate::wifi::Credentials;
 use wellfed_core::log_tail::Batch as LogBatch;
@@ -55,8 +55,9 @@ pub trait Device {
     /// The Wi-Fi store; with `Some`, one change (`None` credentials clear)
     /// queued, whose `Wifi` event the writer records as it saves it.
     fn wifi(&mut self, change: Option<Asked<Option<Credentials>>>) -> WifiResult;
-    /// A client's sync; `origin` says whether it may step the clock.
-    fn time_sync(&mut self, fields: TimeFields, origin: Origin) -> TimeResult;
+    /// A client's sync from the key `key`; `origin` says whether it may
+    /// step the clock.
+    fn time_sync(&mut self, fields: TimeFields, origin: Origin, key: SyncKey) -> TimeResult;
     /// Queue a client store change; its ticket, or `None` while the mailbox
     /// is busy.
     fn keys(&mut self, change: KeyChange) -> Option<u32>;
@@ -261,7 +262,7 @@ impl Device for NoFeeder {
     fn wifi(&mut self, _change: Option<Asked<Option<Credentials>>>) -> WifiResult {
         match *self {}
     }
-    fn time_sync(&mut self, _fields: TimeFields, _origin: Origin) -> TimeResult {
+    fn time_sync(&mut self, _fields: TimeFields, _origin: Origin, _key: SyncKey) -> TimeResult {
         match *self {}
     }
     fn keys(&mut self, _change: KeyChange) -> Option<u32> {

@@ -1,7 +1,7 @@
 use wellfed_core::clock::wall::{
     CARRY_MAX_S, CARRY_WORDS, DISJOINT_LIMIT, Fix, Jump, LEARNED_FLOOR_PPM, MAX_ERROR_MS,
     MIN_UNIX_MS, MISSED_GRACE_MS, NoResume, Occurrence, Origin, Reading, Restart, Resumed, STEP_MS,
-    SYNC_ERROR_MS, Sync, SyncError, UNLEARNED_PPM, WallClock, occurrence,
+    SYNC_ERROR_MS, Sync, SyncError, SyncKey, UNLEARNED_PPM, WallClock, occurrence,
 };
 use wellfed_core::clock::zone::Zone;
 
@@ -11,6 +11,8 @@ const MDT: i32 = -6 * 3600;
 const MST: i32 = -7 * 3600;
 const FALL_BACK_S: u64 = 1_793_520_000;
 const HOUR_MS: u32 = 3_600_000;
+/// The owner's key a test's syncs come from.
+const OWNER_KEY: SyncKey = [0x21; 4];
 
 fn sync(unix_ms: u64) -> Sync {
     Sync {
@@ -49,7 +51,7 @@ fn invalid_until_the_first_sync_then_carried_by_uptime() {
     assert_eq!(clock.read(5_000), None);
 
     assert_eq!(
-        clock.sync(5_000, sync(NOON), Origin::Owner),
+        clock.sync(5_000, sync(NOON), Origin::Owner, OWNER_KEY),
         Ok(Jump::First)
     );
     let reading = clock.read(65_000).unwrap();
@@ -68,7 +70,9 @@ fn invalid_until_the_first_sync_then_carried_by_uptime() {
 fn an_unlearned_clock_expires_when_its_bound_passes_two_minutes() {
     let mut clock = WallClock::default();
     let start = u32::MAX - 1_000;
-    clock.sync(start, sync(NOON), Origin::Owner).unwrap();
+    clock
+        .sync(start, sync(NOON), Origin::Owner, OWNER_KEY)
+        .unwrap();
     assert_eq!(clock.read(9_000).unwrap().unix_ms, NOON + 10_001);
 
     // 1 s plus 5000 ppm reaches 120 s after 23 800 s, about 6.6 h.
@@ -92,7 +96,9 @@ fn ntp_alone_sets_an_invalid_clock_without_an_offset() {
 fn the_offset_follows_the_announced_change_or_the_zone_rule() {
     let mut clock = WallClock::default();
     let before = FALL_BACK_S * 1000 - 1000;
-    clock.sync(0, sync(before), Origin::Owner).unwrap();
+    clock
+        .sync(0, sync(before), Origin::Owner, OWNER_KEY)
+        .unwrap();
     assert_eq!(clock.read(999).unwrap().offset_s, Some(MDT));
     assert_eq!(clock.read(1000).unwrap().offset_s, Some(MST));
 
@@ -108,17 +114,27 @@ fn the_offset_follows_the_announced_change_or_the_zone_rule() {
 #[test]
 fn owner_syncs_step_freely_and_are_classified() {
     let mut clock = WallClock::default();
-    clock.sync(0, sync(NOON), Origin::Owner).unwrap();
+    clock.sync(0, sync(NOON), Origin::Owner, OWNER_KEY).unwrap();
     assert_eq!(
-        clock.sync(10_000, sync(NOON + 10_000 + STEP_MS as u64), Origin::Owner),
+        clock.sync(
+            10_000,
+            sync(NOON + 10_000 + STEP_MS as u64),
+            Origin::Owner,
+            OWNER_KEY
+        ),
         Ok(Jump::Step(STEP_MS))
     );
     assert_eq!(
-        clock.sync(20_000, sync(NOON + 20_000 + 3_600_000), Origin::Owner),
+        clock.sync(
+            20_000,
+            sync(NOON + 20_000 + 3_600_000),
+            Origin::Owner,
+            OWNER_KEY
+        ),
         Ok(Jump::Jumped(3_600_000 - STEP_MS))
     );
     assert_eq!(
-        clock.sync(30_000, sync(NOON), Origin::Owner),
+        clock.sync(30_000, sync(NOON), Origin::Owner, OWNER_KEY),
         Ok(Jump::Jumped(-3_630_000))
     );
     assert_eq!(clock.read(30_000).unwrap().unix_ms, NOON);
@@ -127,7 +143,7 @@ fn owner_syncs_step_freely_and_are_classified() {
 #[test]
 fn other_sources_move_the_reading_only_within_the_trusted_interval() {
     let mut clock = WallClock::default();
-    clock.sync(0, sync(NOON), Origin::Owner).unwrap();
+    clock.sync(0, sync(NOON), Origin::Owner, OWNER_KEY).unwrap();
 
     // Ten minutes on, the trusted interval is NOON+600 000 ± 4 000 ms. NTP
     // 1.5 s ahead with 100 ms of error lies inside: the reading moves to
@@ -145,7 +161,12 @@ fn other_sources_move_the_reading_only_within_the_trusted_interval() {
         Err(SyncError::Bounded)
     );
     assert_eq!(
-        clock.sync(now, sync(NOON + 600_000 + 3_600_000), Origin::Client),
+        clock.sync(
+            now,
+            sync(NOON + 600_000 + 3_600_000),
+            Origin::Client,
+            OWNER_KEY
+        ),
         Err(SyncError::Bounded)
     );
     assert_eq!(clock.read(now).unwrap().unix_ms, NOON + 601_500);
@@ -155,7 +176,7 @@ fn other_sources_move_the_reading_only_within_the_trusted_interval() {
 #[test]
 fn a_member_cannot_walk_the_clock_with_many_syncs() {
     let mut clock = WallClock::default();
-    clock.sync(0, sync(NOON), Origin::Owner).unwrap();
+    clock.sync(0, sync(NOON), Origin::Owner, OWNER_KEY).unwrap();
 
     // Each sync claims a time just inside the clock's interval, ahead.
     let mut now = 0;
@@ -163,7 +184,7 @@ fn a_member_cannot_walk_the_clock_with_many_syncs() {
         now += 100;
         let reading = clock.read(now).unwrap();
         let claimed = reading.unix_ms + reading.error_ms + u64::from(SYNC_ERROR_MS);
-        let _ = clock.sync(now, sync(claimed), Origin::Client);
+        let _ = clock.sync(now, sync(claimed), Origin::Client, OWNER_KEY);
     }
     // 100 s passed; the clock may sit at most the trusted interval's error
     // (the owner's second plus drift) ahead of true time, and says so.
@@ -325,6 +346,85 @@ fn the_rate_is_learned_from_owner_syncs_and_the_clock_holds_for_six_days() {
     assert_eq!(clock.read(slow(truth)), None);
 }
 
+/// Two owners' phones 1.5 s apart, each well inside the other's interval:
+/// measured across them, 12 hours would teach 35 ppm of the phones'
+/// disagreement as the feeder's rate. The rate is measured between one
+/// key's syncs only: the second key's sync re-anchors the clock and teaches
+/// nothing, and the first key's next sync measures from its own baseline.
+#[test]
+fn the_rate_is_learned_from_one_owner_key_s_syncs_alone() {
+    const OTHER: SyncKey = [0x42; 4];
+    let mut clock = WallClock::default();
+    clock.sync(0, sync(NOON), Origin::Owner, OWNER_KEY).unwrap();
+
+    // The other phone, 1.5 s ahead, twelve hours on (the unlearned clock
+    // expired at 6.6): the clock takes it, but learns nothing from it.
+    let twelve = 12 * HOUR_MS;
+    let ahead = NOON + u64::from(twelve) + 1_500;
+    assert_eq!(
+        clock.sync(twelve, sync(ahead), Origin::Owner, OTHER),
+        Ok(Jump::First)
+    );
+    let state = clock.state(twelve);
+    assert!(!state.learned, "nothing measured across two keys");
+    assert_eq!(clock.read(twelve).unwrap().unix_ms, ahead, "re-anchored");
+
+    // The first phone thirteen hours on, on time: measured from its own
+    // baseline, the rate is the clock's true one, zero.
+    let thirteen = 13 * HOUR_MS;
+    clock
+        .sync(
+            thirteen,
+            sync(NOON + u64::from(thirteen)),
+            Origin::Owner,
+            OWNER_KEY,
+        )
+        .unwrap();
+    let state = clock.state(thirteen);
+    assert!(state.learned);
+    assert!(state.rate_ppb.abs() < 50_000, "{}", state.rate_ppb);
+}
+
+/// A key that never synced before teaches nothing until the rate is
+/// forgotten; then the next owner's sync, whoever's, is a new baseline.
+#[test]
+fn another_key_starts_a_baseline_only_once_the_rate_is_forgotten() {
+    const OTHER: SyncKey = [0x42; 4];
+    let mut clock = WallClock::default();
+    clock.sync(0, sync(NOON), Origin::Owner, OWNER_KEY).unwrap();
+    for hours in [12u32, 24] {
+        let now = hours * HOUR_MS;
+        clock
+            .sync(now, sync(NOON + u64::from(now)), Origin::Owner, OTHER)
+            .unwrap();
+        assert!(!clock.state(now).learned, "+{hours} h");
+    }
+
+    // An owner's sync far outside the interval: the rate and the baseline
+    // go, and the other key's later syncs build their own.
+    let off = 25 * HOUR_MS;
+    clock
+        .sync(
+            off,
+            sync(NOON + u64::from(off) + 3_600_000),
+            Origin::Owner,
+            OTHER,
+        )
+        .unwrap();
+    for hours in [26u32, 38] {
+        let now = hours * HOUR_MS;
+        clock
+            .sync(
+                now,
+                sync(NOON + u64::from(now) + 3_600_000),
+                Origin::Owner,
+                OTHER,
+            )
+            .unwrap();
+    }
+    assert!(clock.state(38 * HOUR_MS).learned);
+}
+
 /// The final review's scenario: after a cold boot an attacker's NTP answer
 /// sets the clock 100 s behind, and an owner's sync six hours later falls
 /// inside its interval. Measured from the attacker's fix that sync would
@@ -338,7 +438,7 @@ fn an_attackers_boot_fix_is_no_baseline_for_an_owners_rate() {
 
     let six = 6 * HOUR_MS;
     clock
-        .sync(six, sync(NOON + u64::from(six)), Origin::Owner)
+        .sync(six, sync(NOON + u64::from(six)), Origin::Owner, OWNER_KEY)
         .unwrap();
     assert!(!clock.state(six).learned);
 
@@ -539,7 +639,7 @@ fn an_expired_clock_is_re_set_by_ntp_only_inside_its_old_interval() {
 #[test]
 fn bad_syncs_are_refused_and_leave_the_clock() {
     let mut clock = WallClock::default();
-    clock.sync(0, sync(NOON), Origin::Owner).unwrap();
+    clock.sync(0, sync(NOON), Origin::Owner, OWNER_KEY).unwrap();
     let cases = [
         (
             Sync {
@@ -571,7 +671,7 @@ fn bad_syncs_are_refused_and_leave_the_clock() {
         ),
     ];
     for (bad, error) in cases {
-        assert_eq!(clock.sync(1_000, bad, Origin::Owner), Err(error));
+        assert_eq!(clock.sync(1_000, bad, Origin::Owner, OWNER_KEY), Err(error));
     }
     assert_eq!(
         clock.fix(1_000, ntp(MIN_UNIX_MS - 1, 1)),
@@ -589,7 +689,8 @@ fn bad_syncs_are_refused_and_leave_the_clock() {
                     next_change_s: 0,
                     ..sync(NOON + 2_000)
                 },
-                Origin::Owner
+                Origin::Owner,
+                OWNER_KEY,
             )
             .is_ok()
     );
@@ -598,7 +699,7 @@ fn bad_syncs_are_refused_and_leave_the_clock() {
 /// An owner's sync at uptime 0, saved a minute later at RTC second 1000.
 fn saved() -> [u32; CARRY_WORDS] {
     let mut clock = WallClock::default();
-    clock.sync(0, sync(NOON), Origin::Owner).unwrap();
+    clock.sync(0, sync(NOON), Origin::Owner, OWNER_KEY).unwrap();
     clock.carry(60_000, 1000).expect("valid a minute on")
 }
 
@@ -746,7 +847,7 @@ fn a_record_from_a_tick_counted_build_is_not_resumed() {
 #[test]
 fn a_forgotten_clock_needs_the_time_and_keeps_its_offsets() {
     let mut clock = WallClock::default();
-    clock.sync(0, sync(NOON), Origin::Owner).unwrap();
+    clock.sync(0, sync(NOON), Origin::Owner, OWNER_KEY).unwrap();
 
     clock.forget();
     assert_eq!(clock.read(1_000), None);
@@ -760,7 +861,7 @@ fn a_forgotten_clock_needs_the_time_and_keeps_its_offsets() {
 #[test]
 fn a_record_too_close_to_expiry_is_not_resumed() {
     let mut clock = WallClock::default();
-    clock.sync(0, sync(NOON), Origin::Owner).unwrap();
+    clock.sync(0, sync(NOON), Origin::Owner, OWNER_KEY).unwrap();
     // 118.5 s of error at 23 500 s; the gap's second and more pass 120 s.
     let record = clock.carry(23_500_000, 50_000).unwrap();
     assert!(clock.carry(23_900_000, 50_000).is_none(), "invalid by then");
@@ -1030,7 +1131,7 @@ fn a_late_owner_sync_teaches_no_rate() {
     let late = HOUR_MS;
     let stale = NOON + u64::from(late) - 30_000;
     assert!(matches!(
-        clock.sync(late, sync(stale), Origin::Owner),
+        clock.sync(late, sync(stale), Origin::Owner, OWNER_KEY),
         Ok(Jump::Jumped(_))
     ));
 

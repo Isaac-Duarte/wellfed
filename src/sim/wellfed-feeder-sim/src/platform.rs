@@ -28,7 +28,7 @@ use std::rc::Rc;
 use tokio::net::{TcpStream, UdpSocket};
 use wellfed_board::storage;
 use wellfed_core::buttons::Gesture;
-use wellfed_core::clock::wall::{Fix, Jump, Origin, State as ClockState, Sync, SyncError};
+use wellfed_core::clock::wall::{Fix, Jump, Origin, State as ClockState, Sync, SyncError, SyncKey};
 use wellfed_core::clock::zone::Rule;
 use wellfed_core::indicator::Light;
 use wellfed_core::log_tail::{Batch as LogBatch, LogTail};
@@ -949,8 +949,14 @@ impl Platform for SimPlatform {
             .map(|reading| reading.unix_ms)
     }
 
-    fn time_sync(&mut self, now_ms: u32, sync: Sync, origin: Origin) -> Result<Jump, SyncError> {
-        self.device.clock().sync(now_ms, sync, origin)
+    fn time_sync(
+        &mut self,
+        now_ms: u32,
+        sync: Sync,
+        origin: Origin,
+        key: SyncKey,
+    ) -> Result<Jump, SyncError> {
+        self.device.clock().sync(now_ms, sync, origin, key)
     }
 
     fn time_fix(&mut self, now_ms: u32, fix: Fix) -> Result<Jump, SyncError> {
