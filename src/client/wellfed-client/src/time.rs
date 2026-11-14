@@ -216,14 +216,21 @@ impl Boot {
     }
 
     /// Whether `later` was read in the same boot as `self`: the same count,
-    /// an uptime that did not go back, and no more wall time between the
-    /// reads than uptime, give or take [`BOOT_MARGIN_MS`]. A restart in
-    /// between, even one that cleared the count back to where it was, lost
-    /// the uptime the feeder ran before it and the time it was off.
+    /// and no more wall time between the reads than uptime, give or take
+    /// [`BOOT_MARGIN_MS`]. A restart in between, even one that cleared the
+    /// count back to where it was, lost the uptime the feeder ran before it
+    /// and the time it was off. The uptime is a `u32` of milliseconds, so it
+    /// wraps every 49.7 days: an uptime that went down is the same boot only
+    /// when the wrapped count ran about as long as the wall time, where a
+    /// restart's lower uptime reads as weeks.
     pub fn same_as(&self, later: &Self) -> bool {
-        let uptime = i64::from(later.uptime_ms) - i64::from(self.uptime_ms);
+        let ran = i64::from(later.uptime_ms.wrapping_sub(self.uptime_ms));
         let wall = later.read_ms.saturating_sub(self.read_ms);
-        self.count == later.count && uptime >= 0 && wall <= uptime + BOOT_MARGIN_MS
+        let wrapped = later.uptime_ms < self.uptime_ms;
+
+        self.count == later.count
+            && wall <= ran + BOOT_MARGIN_MS
+            && (!wrapped || ran <= wall + BOOT_MARGIN_MS)
     }
 }
 
@@ -1112,6 +1119,35 @@ mod tests {
             memo.read(&invalid, boot_at(then), role, then, spacing),
             ClockCheck::Sync
         );
+    }
+
+    /// The uptime is a `u32` of milliseconds and wraps after 49.7 days, so
+    /// a lower one is the same boot when the wrapped count ran as long as
+    /// the wall time, and a restart when it would have run for weeks.
+    #[test]
+    fn an_uptime_that_wraps_is_the_same_boot() {
+        let before = Boot {
+            count: BOOT,
+            uptime_ms: u32::MAX - 10_000,
+            read_ms: 0,
+        };
+        let wrapped = Boot {
+            uptime_ms: 50_000,
+            read_ms: 60_000,
+            ..before
+        };
+        let running = Boot {
+            uptime_ms: UPTIME_MS,
+            ..before
+        };
+        let restarted = Boot {
+            uptime_ms: 50_000,
+            read_ms: 60_000,
+            ..before
+        };
+
+        assert!(before.same_as(&wrapped));
+        assert!(!running.same_as(&restarted));
     }
 
     /// A time server that answers outside the interval the clock trusted

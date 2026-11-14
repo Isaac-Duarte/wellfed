@@ -407,7 +407,7 @@
     },
     "time_server_disagrees": {
       "title": "Feeder {feeder}'s time server disagrees with its clock",
-      "description": "Feeder {feeder} lost its clock, and its time server answers with a time far from the one it last trusted. One of them is wrong, so neither Home Assistant nor any phone sets the clock by itself, and scheduled meals wait. Left alone, the feeder can take hours or days to accept the server, the longer the further apart they are. Ask an owner to open Clock in the Wellfed app and check the time source under Get the time from, or choose another, or to set the time from their phone if its time is right. This clears once the clock is set."
+      "description": "Feeder {feeder} lost its clock, and its time server answers with a time far from the one it last trusted. One of them is wrong, so neither Home Assistant nor any phone sets the clock by itself, and scheduled meals wait. Left alone, the feeder can take hours or days to accept the server, the longer the further apart they are. Ask an owner to open Clock in the Wellfed app. If the server is wrong, they choose another under Get the time from, since a time set from a phone lasts only about an hour against it. If the feeder's clock was set wrong, they set it from a phone whose time is right. This clears once the clock is set."
     },
     "legacy_feeder": {
       "title": "Feeder {feeder} needs a firmware update",

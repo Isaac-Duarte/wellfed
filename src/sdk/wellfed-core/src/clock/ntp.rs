@@ -201,8 +201,9 @@ pub fn serve(
 enum Phase {
     /// The next request goes at `next`.
     Idle { next: u32 },
-    /// The server sent a kiss-o'-death: nothing goes before `until`,
-    /// however much the clock needs the time (RFC 4330).
+    /// Nothing goes before `until`, however much the clock needs the time:
+    /// the server sent a kiss-o'-death (RFC 4330), or the caller refused its
+    /// last fix and [`Exchange::hold`] keeps it from asking again at once.
     Held { until: u32 },
     /// A request with `nonce` went at `sent`.
     Waiting { nonce: u64, sent: u32 },
@@ -248,8 +249,8 @@ impl Exchange {
     }
 
     /// The clock needs the time: ask within [`RETRY_MAX_MS`] rather than
-    /// wait out a poll interval. Lost answers still back off, and a
-    /// kiss-o'-death's hold is never shortened.
+    /// wait out a poll interval. Lost answers still back off, and a hold,
+    /// a kiss-o'-death's or [`Exchange::hold`]'s, is never shortened.
     pub fn soon(&mut self, now: u32) {
         if let Phase::Idle { next } = self.phase
             && next.wrapping_sub(now) > RETRY_MAX_MS

@@ -103,7 +103,9 @@ pub struct Time<S> {
     retry_at: u32,
     exchange: Exchange,
     last: Option<NtpResult>,
-    /// How long the next refused fix holds the exchange.
+    /// How long the next refused fix holds the exchange. Only a fix the
+    /// clock uses, or another server, starts it over: a phone's sync leaves
+    /// it, since a server that still disagrees after one is no more right.
     refused_hold_ms: u32,
     packet: [u8; PACKET],
 }

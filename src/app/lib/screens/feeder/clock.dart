@@ -256,8 +256,9 @@ class _ServerDisagrees extends StatelessWidget {
         text: owner
             ? 'One of them is wrong, so no $deviceName sets the clock by itself, and meals wait. Left alone, the '
                   'feeder can take hours or days to accept the server, the longer the further apart they are. '
-                  'Check the time source under Get the time from, below, or choose another. If this '
-                  "$deviceName's time is right, you can set the feeder's from it."
+                  'If the server is wrong, choose another under Get the time from, below: a time set from a '
+                  "$deviceName lasts only about an hour against it. If the feeder's clock was set wrong, set it "
+                  "from this $deviceName once you've checked its time."
             : 'One of them is wrong, so no $deviceName sets the clock by itself, and meals wait. Left alone, the '
                   'feeder can take hours or days to accept the server. Ask an owner to check its time source or '
                   'set the time.',
