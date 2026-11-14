@@ -89,6 +89,10 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
+            // CompanyName and ProductName name the folder that holds the
+            // client secret (%APPDATA%\<CompanyName>\<ProductName>), so
+            // renaming either strands every key: the bridge's
+            // tests/windows_store.rs holds them fixed.
             VALUE "CompanyName", "Wellfed contributors" "\0"
             VALUE "FileDescription", "Wellfed" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"

@@ -44,3 +44,6 @@ skills-lock.json
 /src/hardware/bench/kicad/*.dsn
 /src/hardware/bench/kicad/*.ses
 /src/hardware/bench/enclosure/*.stl
+
+# Desktop installers and their staging, from cargo xtask package-desktop
+/dist/

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.isaacduarte.wellfed</id>
+  <name>Wellfed</name>
+  <summary>Feed, schedule and look after your Wellfed feeders</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="dev.well-fed">
+    <name>Wellfed contributors</name>
+  </developer>
+  <description>
+    <p>
+      Wellfed is open firmware for a pet feeder, and this is its app. It talks
+      to each feeder directly on your home network, with no cloud and no
+      account: feeds, meal plans, history, settings and alerts while it is open.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.isaacduarte.wellfed.desktop</launchable>
+  <url type="homepage">https://well-fed.dev</url>
+  <url type="vcs-browser">https://github.com/Isaac-Duarte/wellfed</url>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="@VERSION@" date="@DATE@"/>
+  </releases>
+</component>

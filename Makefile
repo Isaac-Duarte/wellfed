@@ -1,4 +1,4 @@
-.PHONY: help check check-rust check-deps check-fuzz check-cross check-bench-board check-virtual-feeder check-docs check-fixtures check-web check-app check-homeassistant homeassistant-wheels app-release-apk app-goldens guide-screenshots app-installer-input
+.PHONY: help check check-rust check-deps check-fuzz check-cross check-bench-board check-virtual-feeder check-docs check-fixtures check-web check-app check-homeassistant homeassistant-wheels app-release-apk app-goldens guide-screenshots app-installer-input appimage-tools desktop-packages
 
 help:
 	@echo "check: formatting, Clippy, Rust tests, cross-builds, simulator, repository checks"
@@ -13,6 +13,8 @@ help:
 	@echo "guide-screenshots: redraw the owner guide's app screenshots in docs/guide/ from the app's test fixtures"
 	@echo "app-installer-input: copy a review and its signed manifest in as the image the APK installs, and print its pin"
 	@echo "app-release-apk: the release APK, signed with the owner's keystore named by WELLFED_ANDROID_KEY_PROPERTIES (never in the repository)"
+	@echo "appimage-tools: download the pinned appimagetool and AppImage runtime into APPIMAGE_TOOLS and check their SHA-256"
+	@echo "desktop-packages: this host's unsigned desktop installers in dist/desktop/<version>/, checked, with SHA256SUMS (Linux: AppImage and .deb; macOS: disk image)"
 	@echo "Checks do not open serial ports, change routing, or send device commands."
 
 check: check-rust check-deps check-fuzz check-cross check-docs
@@ -236,6 +238,35 @@ app-installer-input:
 	cp $(REVIEW)/review.json $(REVIEW)/build-manifest.json $(REVIEW)/image.bin $(APP_INSTALLER)/
 	cp $(MANIFEST) $(APP_INSTALLER)/update.manifest
 	@echo "WELLFED_INSTALLER_PIN=$$(sha256sum $(APP_INSTALLER)/review.json | cut -d' ' -f1):$$(sha256sum $(APP_INSTALLER)/update.manifest | cut -d' ' -f1):<the manifest's version>"
+
+# The desktop app's unsigned installers for this host, from a release build
+# (src/app/packaging/README.md): an AppImage and a .deb on Linux, a disk
+# image on a Mac. Flutter builds a desktop only on its own system, so each
+# host runs this (Windows runs `cargo xtask package-desktop` directly), and
+# `cargo xtask desktop-sums` lists every artifact gathered in one folder.
+# appimagetool and its runtime are pinned in the packager, which checks each
+# hash before it runs the tool or embeds the runtime; appimage-tools reads
+# the same URLs and hashes from there, so the two can't disagree.
+APPIMAGE_TOOLS ?= $(HOME)/.cache/wellfed/appimage
+APPIMAGE_PINS = src/tools/xtask/src/desktop/linux.rs
+appimage_pin = $(shell sed -n '/^const $(1): Pin/,/^};/s/^ *$(2): "\(.*\)",$$/\1/p' $(APPIMAGE_PINS))
+appimage-tools:
+	@test -n "$(call appimage_pin,APPIMAGETOOL,sha256)" -a -n "$(call appimage_pin,APPIMAGE_RUNTIME,sha256)" || \
+		{ echo "no AppImage pins found in $(APPIMAGE_PINS)"; exit 1; }
+	mkdir -p $(APPIMAGE_TOOLS)
+	curl -fL --proto '=https' -o $(APPIMAGE_TOOLS)/appimagetool-x86_64.AppImage $(call appimage_pin,APPIMAGETOOL,url)
+	curl -fL --proto '=https' -o $(APPIMAGE_TOOLS)/runtime-x86_64 $(call appimage_pin,APPIMAGE_RUNTIME,url)
+	printf '%s  %s\n%s  %s\n' \
+		$(call appimage_pin,APPIMAGETOOL,sha256) $(APPIMAGE_TOOLS)/appimagetool-x86_64.AppImage \
+		$(call appimage_pin,APPIMAGE_RUNTIME,sha256) $(APPIMAGE_TOOLS)/runtime-x86_64 | sha256sum -c --quiet
+	chmod +x $(APPIMAGE_TOOLS)/appimagetool-x86_64.AppImage
+desktop-packages:
+ifeq ($(shell uname),Linux)
+	cargo run --quiet --locked -p xtask -- package-desktop \
+		--appimagetool $(APPIMAGE_TOOLS)/appimagetool-x86_64.AppImage --appimage-runtime $(APPIMAGE_TOOLS)/runtime-x86_64
+else
+	cargo run --quiet --locked -p xtask -- package-desktop
+endif
 
 # The Home Assistant integration (src/integrations/homeassistant/). Its Rust
 # bridge's own tests run in `check-rust`, without the PyO3 module; this lints

@@ -73,6 +73,15 @@ The host checks do not prove the app works on a phone. Run these by hand on a re
 12. On each desktop, start the built app (`flutter run -d linux`, `-d macos` or `-d windows`) with no feeders and check it reaches its first screen; a notification plugin that fails must never stop it. Open it a second time on Linux and Windows: the first window should come forward and no second one start.
 13. On each desktop (macOS, Linux on GNOME and on a desktop with no notification server, Windows), with the app open on the feeder's network: force an alert and check one notification appears in the same words as on the phone, then comes off when the feeder clears it. Click it with the window minimized or behind another: the window should come forward on that feeder's alerts. On a Mac, check the app asks to post when it first has a feeder; with no notification server, check the alert settings say so.
 
+Then build the desktop installers from the release commit ([desktop packages](../../src/app/packaging/README.md)):
+
+1. On Linux, run `make desktop-packages`. You should see the AppImage and the `.deb` built and checked.
+2. On a Mac, run `make desktop-packages`. You should see the disk image built and checked.
+3. On Windows, run `cargo xtask package-desktop`, then `cargo xtask check-windows-installer` on the installer it built, on a computer without Wellfed installed.
+4. Copy the three hosts' artifacts into one `dist/desktop/<version>/` and run `cargo xtask desktop-sums`. Publish the four files with `SHA256SUMS`.
+5. Open each download as an owner would, from a browser so it carries the system's download mark: on a Mac through **Open Anyway**, on a Windows PC through SmartScreen's **Run anyway**, and on a Linux desktop from the `.deb` and the AppImage. Each should reach the first screen, and the steps should match the [owner guide](../guide/before-you-start.md#get-the-app-on-a-computer).
+6. Uninstall each and check the app's data is still where the guide says.
+
 The integration suite no longer makes the trip through stock, so make it on the bench with the same build. It needs the owner at the panel, and no host test stands in for it:
 
 1. **Back to stock.** With TCP 1883 and 8088 from the hotspot admitted ([the bench host's firewall](stock-server.md#the-bench-hosts-firewall)), run the `restore-stock` job ([bench](../devices/plaf103/bench.md#stock-and-back)). The job runs no broker, so to watch stock report, run `wellfed-stock serve --device plaf103 --config private/installer.json` and then `wellfed-stock status --device plaf103 --config private/installer.json`. You should see it online with `softwareVersion` 1.1.15; `status` stops with an error until stock enrolls. A finished install removes `private/installer.json`, so if it is gone, write it again with `wellfed-stock init-installer --device plaf103 --mqtt-listen 10.42.103.1:1883 --output private/installer.json` and add `--enroll-minutes 15` to `serve`. Stock reports here only if its last setup frame named this host, which after an install from a phone or a vendor setup it did not: read its `app_main:version:` banner on the UART instead. Stop `serve` before the next step.

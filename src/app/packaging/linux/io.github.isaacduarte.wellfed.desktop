@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Wellfed
+GenericName=Pet feeder
+Comment=Feed, schedule and look after your Wellfed feeders
+Exec=@EXEC@
+Icon=io.github.isaacduarte.wellfed
+Terminal=false
+Categories=Utility;
+Keywords=feeder;pet;cat;dog;
+StartupNotify=true
+StartupWMClass=io.github.isaacduarte.wellfed
