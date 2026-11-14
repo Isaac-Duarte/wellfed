@@ -59,9 +59,9 @@ Copy the Mac's and Windows's artifacts into one `dist/desktop/<version>/`, then 
 | Package | Checked |
 | --- | --- |
 | Release build, every system | The runner, the Rust bridge, Dart's compiled code and the engine are there before anything is staged |
-| Linux bundle | No binary in it needs a glibc symbol newer than the floor in `linux.rs` (2.39), by what `objdump -T` lists, checked in both staged trees before packing. The `.deb`'s `libc6 (>= …)` comes from the same constant |
+| Linux bundle | No binary in it needs a symbol version newer than the floors in `linux.rs` (`GLIBC_2.39`, `GLIBCXX_3.4.33`, `CXXABI_1.3.15`), by what `objdump -T` lists, checked in both staged trees before packing. The `.deb`'s `libc6 (>= 2.39)` and `libstdc++6 (>= 14)` sit beside them |
 | AppImage | Its squashfs, listed with `unsquashfs` from where the runtime ends, holds `AppRun`, the desktop entry, the icon, the runner, `libwellfed_app_bridge.so` and `libapp.so` |
-| `.deb` | Its three members are in dpkg's order, its control names the package, its architecture, its dependencies and the glibc floor, its `md5sums` lists the bridge, and its data holds the runner, the bridge, `libapp.so`, the desktop entry, the icon and the copyright file |
+| `.deb` | Its three members are in dpkg's order, its control names the package, its architecture, its dependencies and the glibc and libstdc++ floors, its `md5sums` lists the bridge, and its data holds the runner, the bridge, `libapp.so`, the desktop entry, the icon and the copyright file |
 | Disk image | `hdiutil verify` passes. Mounted read-only, it holds the runner, the bridge's framework, `App.framework`, `AppIcon.icns` and the Applications link. `codesign --verify --deep --strict` passes on the app, and the runner and the bridge each hold both arm64 and x86_64 |
 | Windows installer | Inno Setup names the runner, the bridge, the engine, the C++ runtime and Dart's code one by one, so its build fails if one is missing. `check-windows-installer` then installs and uninstalls it |
 
@@ -73,7 +73,7 @@ The Linux packages carry the release bundle and nothing else, and use the system
 
 | Needs | For |
 | --- | --- |
-| glibc 2.39 or later | The build host's glibc sets it: the Rust bridge needs 2.39 when built on the Arch builder (the runner 2.34, the secure storage plugin 2.38). A build that needs more fails rather than raise the floor silently |
+| glibc 2.39 or later | The build host's glibc sets it: the Rust bridge needs 2.39 when built on the Arch builder (the runner 2.34, the secure storage plugin 2.38). A build that needs more fails rather than raise the floor silently. GCC 14's libstdc++ (`GLIBCXX_3.4.33`) is the floor for the C++ runner and plugins, as all three named distributions ship it |
 | GTK 3, GLib, fontconfig, libepoxy, EGL and GLES | Flutter's Linux embedding |
 | libsecret, and a running Secret Service (GNOME Keyring, KWallet or KeePassXC) | The client secret. With none, the app stops at start and says so. The `.deb` recommends `gnome-keyring \| kwallet6 \| libkf5wallet-bin \| keepassxc`: any one installed satisfies it, so a KDE desktop with KWallet pulls in nothing, and only a system with none gets GNOME Keyring |
 | libdbus | The bridge's Bluetooth, through BlueZ |

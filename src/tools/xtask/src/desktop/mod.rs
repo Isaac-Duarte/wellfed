@@ -109,12 +109,17 @@ pub(crate) enum Error {
     },
     #[error("{binary} holds {archs}, not both arm64 and x86_64")]
     NotUniversal { binary: PathBuf, archs: String },
-    #[error("{binary} needs glibc {needs}, newer than the packages' floor of {floor}")]
-    GlibcTooNew {
+    #[error("{binary} needs {family}_{needs}, newer than the packages' floor of {family}_{floor}")]
+    SymbolTooNew {
         binary: PathBuf,
-        needs: String,
-        floor: String,
+        family: &'static str,
+        needs: Dotted,
+        floor: Dotted,
     },
+    #[error("{package}'s control lacks {field:?}")]
+    MissingControlField { package: PathBuf, field: String },
+    #[error("{0}'s md5sums does not list the bridge")]
+    BridgeNotSummed(PathBuf),
     #[error("{path} has SHA-256 {found}, not the pinned {expected}: download it again from {url}")]
     PinMismatch {
         path: PathBuf,
@@ -400,6 +405,22 @@ fn source_date_epoch(root: &Path) -> Result<u64, Error> {
     )?;
     let text = String::from_utf8_lossy(&out.stdout).trim().to_owned();
     text.parse().map_err(|_| Error::NoCommitTime(text))
+}
+
+/// A version as dotted numbers, `3.4.33`.
+#[derive(Debug)]
+pub(crate) struct Dotted(pub(crate) Vec<u32>);
+
+impl std::fmt::Display for Dotted {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, part) in self.0.iter().enumerate() {
+            if index > 0 {
+                f.write_str(".")?;
+            }
+            write!(f, "{part}")?;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]

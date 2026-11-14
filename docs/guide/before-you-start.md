@@ -50,7 +50,7 @@ It needs 64-bit Windows 10 (version 1809) or Windows 11.
 1. Open `Wellfed-<version>-windows-setup.exe`.
 2. If Windows says it protected your PC, choose **More info**, then **Run anyway**.
 
-   On Windows 11 with Smart App Control on, Windows blocks an unsigned installer outright, with no Run anyway. **Windows Security › App & browser control › Smart App Control settings** shows whether it's on. The only way past it is to turn it off, and that can't be undone without resetting Windows, so weigh that first.
+   On Windows 11 with Smart App Control on, Windows blocks an unsigned installer outright, with no Run anyway. **Windows Security › App & browser control › Smart App Control settings** shows whether it's on. The only way past it is to turn it off. Since Windows 11's April 2026 update you can turn it back on there, but on older builds that takes resetting Windows, and after the October 2026 update the switch can stay greyed out, so weigh that first.
 3. Follow the installer. It installs for your account only and asks for no administrator password.
 
 Wellfed is then in the Start menu. To remove it, use **Settings › Apps › Installed apps**, or **Settings › Apps › Apps & features** on Windows 10.

@@ -53,12 +53,35 @@ const APPIMAGE_RUNTIME: Pin = Pin {
     sha256: "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d",
 };
 
-/// The newest glibc symbol version any packed binary may need, and the
-/// `.deb`'s `libc6 (>= …)`. The build host's glibc sets what the Rust bridge
-/// links against (2.39 on the Arch builder in November 2026), so a build on
-/// a newer host fails here instead of shipping a package that won't load on
-/// the distributions the owner guide names.
-const GLIBC_FLOOR: (u32, u32) = (2, 39);
+/// The newest symbol version of each family any packed binary may need, and
+/// the `.deb` dependency that brings it. The build host's libraries set what
+/// the bundle links against (glibc 2.39 for the Rust bridge on the Arch
+/// builder in November 2026, and a newer GCC's libstdc++ could add newer
+/// `GLIBCXX` versions to the runner), so a build on a newer host fails here
+/// instead of shipping a package that won't load on the distributions the
+/// owner guide names. Ubuntu 24.04, Debian 13 and Fedora 40 all ship glibc
+/// 2.39 or later and GCC 14's libstdc++ (`GLIBCXX_3.4.33`, `CXXABI_1.3.15`).
+const FLOORS: [Floor; 3] = [
+    Floor {
+        family: "GLIBC",
+        version: &[2, 39],
+    },
+    Floor {
+        family: "GLIBCXX",
+        version: &[3, 4, 33],
+    },
+    Floor {
+        family: "CXXABI",
+        version: &[1, 3, 15],
+    },
+];
+
+/// The `.deb`'s `libc6 (>= …)`: glibc's floor.
+const LIBC6: &str = "2.39";
+
+/// The `.deb`'s `libstdc++6 (>= …)`: the GCC whose libstdc++ carries the
+/// `GLIBCXX` and `CXXABI` floors.
+const LIBSTDCXX6: &str = "14";
 
 /// Builds, packs and checks the AppImage and the `.deb`.
 pub(super) fn package(
@@ -86,7 +109,7 @@ pub(super) fn package(
     let appimage = out.join(format!("Wellfed-{}-x86_64.AppImage", version.name));
     let appdir = stage.join("Wellfed.AppDir");
     stage_appdir(root, version, &bundle, &appdir, epoch)?;
-    check_glibc(&appdir.join(INSTALL))?;
+    check_symbol_versions(&appdir.join(INSTALL))?;
     require_pinned(&appimagetool, APPIMAGETOOL)?;
     require_pinned(&runtime, APPIMAGE_RUNTIME)?;
     pack_appimage(&appimagetool, &runtime, &appdir, &appimage, epoch)?;
@@ -95,7 +118,7 @@ pub(super) fn package(
     let deb = out.join(format!("wellfed_{}_amd64.deb", version.debian()));
     let deb_stage = stage.join("deb");
     stage_deb(root, version, &bundle, &deb_stage, epoch)?;
-    check_glibc(&deb_stage.join("root").join(INSTALL))?;
+    check_symbol_versions(&deb_stage.join("root").join(INSTALL))?;
     pack_deb(&deb_stage, &deb, epoch)?;
     check_deb(&deb)?;
 
@@ -301,7 +324,8 @@ fn stage_deb(
         &[
             ("VERSION", &version.debian()),
             ("SIZE", &kib.to_string()),
-            ("GLIBC", &glibc_floor()),
+            ("LIBC6", LIBC6),
+            ("LIBSTDCXX6", LIBSTDCXX6),
         ],
     )?;
     write(&stage.join("control/control"), control.as_bytes())?;
@@ -371,16 +395,18 @@ fn check_deb(deb: &Path) -> Result<(), Error> {
         Command::new("tar").args(["-xJOf", "-", "./control"]),
     )?;
     let control = String::from_utf8_lossy(&control).into_owned();
-    let libc = format!("libc6 (>= {})", glibc_floor());
+    let libc6 = format!("libc6 (>= {LIBC6})");
+    let libstdcxx6 = format!("libstdc++6 (>= {LIBSTDCXX6})");
     for field in [
         "Package: wellfed\n",
         "Architecture: amd64\n",
         "Depends: ",
-        &libc,
+        &libc6,
+        &libstdcxx6,
     ] {
-        require(control.contains(field), || Error::MissingEntry {
+        require(control.contains(field), || Error::MissingControlField {
             package: deb.to_path_buf(),
-            entry: format!("the control field {:?}", field.trim()),
+            field: field.trim().to_owned(),
         })?;
     }
     let sums = piped(
@@ -390,10 +416,7 @@ fn check_deb(deb: &Path) -> Result<(), Error> {
     require(
         String::from_utf8_lossy(&sums)
             .contains(&format!("  {INSTALL}/lib/libwellfed_app_bridge.so\n")),
-        || Error::MissingEntry {
-            package: deb.to_path_buf(),
-            entry: "the bridge in md5sums".to_owned(),
-        },
+        || Error::BridgeNotSummed(deb.to_path_buf()),
     )?;
 
     let data_xz = output(Command::new("ar").arg("p").arg(deb).arg("data.tar.xz"))?;
@@ -500,14 +523,17 @@ struct Pin {
     sha256: &'static str,
 }
 
-/// `2.39`, as the `.deb` writes it.
-fn glibc_floor() -> String {
-    format!("{}.{}", GLIBC_FLOOR.0, GLIBC_FLOOR.1)
+/// A family of versioned symbols (`GLIBC_2.39`) and the newest version of it
+/// a packed binary may need.
+#[derive(Clone, Copy, Debug)]
+struct Floor {
+    family: &'static str,
+    version: &'static [u32],
 }
 
-/// Fails if the runner or any library in a staged bundle needs a glibc
-/// symbol newer than the floor, by the versions `objdump -T` lists.
-fn check_glibc(install: &Path) -> Result<(), Error> {
+/// Fails if the runner or any library in a staged bundle needs a symbol
+/// version newer than its family's floor, by the versions `objdump -T` lists.
+fn check_symbol_versions(install: &Path) -> Result<(), Error> {
     let mut binaries = vec![install.join("wellfed")];
     let lib = install.join("lib");
     for entry in fs::read_dir(&lib).map_err(at(&lib))? {
@@ -529,26 +555,35 @@ fn check_glibc(install: &Path) -> Result<(), Error> {
                     other => other,
                 },
             )?;
-        let needs = newest_glibc(&String::from_utf8_lossy(&symbols.stdout));
-        if let Some(needs) = needs.filter(|needs| *needs > GLIBC_FLOOR) {
-            return Err(Error::GlibcTooNew {
-                binary,
-                needs: format!("{}.{}", needs.0, needs.1),
-                floor: glibc_floor(),
-            });
+        let listing = String::from_utf8_lossy(&symbols.stdout);
+        for floor in FLOORS {
+            if let Some(needs) =
+                newest(&listing, floor.family).filter(|needs| needs.as_slice() > floor.version)
+            {
+                return Err(Error::SymbolTooNew {
+                    binary,
+                    family: floor.family,
+                    needs: Dotted(needs),
+                    floor: Dotted(floor.version.to_vec()),
+                });
+            }
         }
     }
     Ok(())
 }
 
-/// The newest `GLIBC_x.y[.z]` version in an `objdump -T` listing, as x.y.
-fn newest_glibc(listing: &str) -> Option<(u32, u32)> {
+/// The newest `{family}_x.y[.z]` version in an `objdump -T` listing. Names
+/// with no number after the family (`GLIBC_PRIVATE`) are not versions.
+fn newest(listing: &str, family: &str) -> Option<Vec<u32>> {
+    let prefix = format!("{family}_");
     listing
         .split(|c: char| c.is_whitespace() || c == '(' || c == ')')
-        .filter_map(|word| word.strip_prefix("GLIBC_"))
+        .filter_map(|word| word.strip_prefix(prefix.as_str()))
         .filter_map(|version| {
-            let mut parts = version.split('.');
-            Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
+            version
+                .split('.')
+                .map(|part| part.parse().ok())
+                .collect::<Option<Vec<u32>>>()
         })
         .max()
 }
@@ -641,9 +676,24 @@ mod tests {
         let listing = "0000000000000000      DF *UND*\t0000000000000000 (GLIBC_2.2.5) memcpy\n\
                        0000000000000000      DF *UND*\t0000000000000000 (GLIBC_2.39) pidfd_spawnp\n\
                        0000000000000000      DF *UND*\t0000000000000000  GLIBC_2.4   __stack_chk_fail\n";
-        assert_eq!(newest_glibc(listing), Some((2, 39)));
-        assert_eq!(newest_glibc("no versions here"), None);
-        assert!(newest_glibc(listing) <= Some(GLIBC_FLOOR));
+        assert_eq!(newest(listing, "GLIBC"), Some(vec![2, 39]));
+        assert_eq!(newest("no versions here", "GLIBC"), None);
+        assert!(newest(listing, "GLIBC").unwrap().as_slice() <= FLOORS[0].version);
+    }
+
+    /// libstdc++'s families are read apart from glibc's, so a runner a newer
+    /// GCC linked is caught even when its glibc needs are old.
+    #[test]
+    fn libstdcxx_versions_are_their_own_family() {
+        let listing = "0000000000000000      DF *UND*\t0000000000000000 (GLIBC_2.34) __libc_start_main\n\
+                       0000000000000000      DF *UND*\t0000000000000000 (GLIBCXX_3.4.34) _ZNSt6chrono\n\
+                       0000000000000000      DF *UND*\t0000000000000000 (GLIBCXX_3.4.9) _ZSt4cout\n\
+                       0000000000000000      DF *UND*\t0000000000000000 (CXXABI_1.3) __cxa_throw\n\
+                       0000000000000000      DF *UND*\t0000000000000000 (GLIBC_PRIVATE) _dl_x\n";
+        assert_eq!(newest(listing, "GLIBC"), Some(vec![2, 34]));
+        assert_eq!(newest(listing, "GLIBCXX"), Some(vec![3, 4, 34]));
+        assert_eq!(newest(listing, "CXXABI"), Some(vec![1, 3]));
+        assert!(newest(listing, "GLIBCXX").unwrap().as_slice() > FLOORS[1].version);
     }
 
     #[test]
