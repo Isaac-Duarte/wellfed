@@ -12,7 +12,27 @@ pub use crate::api::model::{
     FeedReason, FoodLevel, MealReminder, NtpResult, Phase, Stats, StatsSection, TimeSource,
     TraceEntry, TraceSummary, Tune, UpdatePhase, UpdateRefusal, Weekday, Window,
 };
+use flutter_rust_bridge::frb;
+
 use crate::api::router::NotSentReason;
+
+/// Name the app's data directory, where the phone keeps what it knows of
+/// each feeder, once a process: its sessions keep their memo of the clock
+/// syncs there, beside the catch-ups'. Before this they keep it in memory.
+#[frb(sync)]
+pub fn use_data_directory(dir: String) {
+    crate::clock::use_dir(std::path::PathBuf::from(dir));
+}
+
+/// The time zones an owner picks from for the feeder, as IANA names, sorted.
+/// Choosing one sends [`ZoneChange::Named`], whose rule is checked then.
+#[frb(sync)]
+pub fn time_zones() -> Vec<String> {
+    wellfed_client::time::zones()
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
+}
 
 /// What the owner asks of a feeder.
 pub enum FeederRequest {
@@ -249,6 +269,14 @@ pub struct TimeInfo {
     /// When it was last set, by this phone's clock.
     pub last_at_ms: Option<i64>,
     pub ntp_last: Option<NtpResult>,
+    /// How far this phone's clock was ahead of the feeder's when it was
+    /// read, when that is more than the feeder's error allows: one of the
+    /// two is wrong, and nothing sets the clock by itself.
+    pub phone_ahead_ms: Option<i64>,
+    /// The clock reads invalid while its time server answers outside the
+    /// time it last trusted: the server or the time it was last set to is
+    /// wrong, and nothing sets the clock by itself.
+    pub server_disagrees: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

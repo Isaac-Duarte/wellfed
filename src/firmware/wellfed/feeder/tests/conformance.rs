@@ -288,6 +288,81 @@ fn a_denying_server_is_left_alone_while_the_clock_needs_the_time() {
     assert_eq!(asked, 0, "asked a denying server {asked} times");
 }
 
+/// A clock anchored by an owner's phone 30 s off the truth, against a
+/// gateway that answers on the truth: the answers miss the interval, and
+/// after three the clock is contested and needs the time. Each answer it
+/// refuses then holds the next request, doubling from 8 s to the poll
+/// interval, so the contest asks the gateway a dozen or so times rather than
+/// on every pass, and the server's answer still re-sets the clock once the
+/// interval grows to reach it.
+#[test]
+fn a_contested_clock_does_not_hammer_its_time_server() {
+    use wellfed_core::clock::ntp;
+    use wellfed_core::clock::wall::{Origin, Sync};
+    use wellfed_feeder::feeder::NoFeeds;
+
+    let mut rig = FirmwareRig::start();
+    let gateway = u32::from_be_bytes([10, 42, 103, 1]);
+    let at = |now: u32| {
+        fake::with(|h| {
+            h.uptime_ms = now;
+            h.raw_ticks = u32::try_from(u64::from(now) * 32_768 / 1000).unwrap();
+        });
+    };
+    // 2026-10-22T13:00:00Z at uptime 0.
+    let truth = |now: u32| 1_792_674_000_000 + u64::from(now);
+    fake::with(|h| {
+        h.ipv4 = u32::from_be_bytes([10, 42, 103, 172]);
+        h.gateway = gateway;
+    });
+    at(10_000);
+    let anchor = Sync {
+        unix_ms: truth(10_000) + 30_000,
+        offset_s: 0,
+        next_change_s: 0,
+        next_offset_s: 0,
+    };
+    clock::sync(anchor, Origin::Owner, [1; 4]).unwrap();
+
+    // A pass a second for 3 hours; the gateway answers each request
+    // before the next pass reads.
+    let mut contested_at = None;
+    let mut asked_in_contest = 0;
+    let mut now = 10_000u32;
+    while now < 3 * 3_600_000 {
+        at(now);
+        rig.feeder.pass(now, &mut NoFeeds, |_| {});
+        let sent = fake::with(|h| core::mem::take(&mut h.udp_tx));
+        let invalid = clock::state().reading.is_none();
+        if invalid && contested_at.is_none() {
+            contested_at = Some(now);
+        }
+        for (request, _, _) in sent {
+            if contested_at.is_some() {
+                asked_in_contest += 1;
+            }
+            let answer = ntp::serve(&request, truth(now), truth(now), 2, 5).unwrap();
+            fake::with(|h| h.udp_rx.push_back((answer.to_vec(), gateway, 123)));
+        }
+        now += 1_000;
+    }
+
+    let contested_at = contested_at.expect("three misses contest the clock");
+    assert!(contested_at < 3_600_000, "contested at {contested_at} ms");
+    assert!(
+        (1..=20).contains(&asked_in_contest),
+        "asked the gateway {asked_in_contest} times while contested"
+    );
+    let reading = clock::state()
+        .reading
+        .expect("the server's answer re-set it");
+    assert!(
+        reading.unix_ms.abs_diff(truth(now)) < 5_000,
+        "{reading:?} against {}",
+        truth(now)
+    );
+}
+
 /// A feed's trace on the board's platform: recorded from the owner's
 /// observations and sealed with its result, answered from RAM at once,
 /// held back while a feed claims the outputs, appended to the storage

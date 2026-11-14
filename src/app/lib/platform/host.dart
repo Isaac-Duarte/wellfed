@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
+import 'package:wellfed/src/rust/api/feeder.dart' show useDataDirectory;
 
 /// Whether this process runs on a desktop operating system, for choosing
 /// which plugin or bridge call does a job.
@@ -13,6 +14,11 @@ bool get onDesktopHost => Platform.isLinux || Platform.isMacOS || Platform.isWin
 /// Whether `mobile_scanner` can read a code with this host's camera. It has
 /// an Android and a macOS side, and none for Linux or Windows.
 bool get hostCanScan => !onDesktopHost || Platform.isMacOS;
+
+/// Tell the bridge where the app's stores are, so its sessions keep their
+/// memo of the clock syncs beside the catch-ups'. Once a process, after
+/// `RustLib.init`.
+Future<void> nameDataDirectory() async => useDataDirectory(dir: (await appDataDirectory()).path);
 
 /// The folder the app keeps its stores in: client keys, feeders, the
 /// written-before-sent record and alerts.

@@ -15,15 +15,18 @@ import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/replies.dart';
 
-/// Choose a role (11.2), create one invite, and show it. An unanswered create
-/// is not sent again: at worst an unseen invite runs out by itself.
+/// Choose a role (11.2), create one invite, and show it. Only the roles this
+/// phone's own may grant are offered: a member invites members. An unanswered
+/// create is not sent again: at worst an unseen invite runs out by itself.
 Future<void> inviteSomeone(BuildContext context, FeederController feeder) async {
+  final List<ClientRole> roles = feeder.state.invitable;
+  if (roles.isEmpty) return;
   final ClientRole? role = await showPanel<ClientRole>(
     context: context,
     scrollControlled: true,
     // The role sheet pads its own top.
     dialogTop: Space.s1,
-    builder: (_) => _RoleSheet(name: feeder.state.known.name),
+    builder: (_) => _RoleSheet(name: feeder.state.known.name, roles: roles),
   );
   if (role == null || !context.mounted) return;
 
@@ -40,16 +43,19 @@ Future<void> inviteSomeone(BuildContext context, FeederController feeder) async 
 }
 
 class _RoleSheet extends StatefulWidget {
-  const _RoleSheet({required this.name});
+  const _RoleSheet({required this.name, required this.roles});
 
   final String name;
+
+  /// The roles offered, the first chosen at the start.
+  final List<ClientRole> roles;
 
   @override
   State<_RoleSheet> createState() => _RoleSheetState();
 }
 
 class _RoleSheetState extends State<_RoleSheet> {
-  ClientRole _role = ClientRole.member;
+  late ClientRole _role = widget.roles.first;
 
   @override
   Widget build(BuildContext context) {
@@ -66,29 +72,27 @@ class _RoleSheetState extends State<_RoleSheet> {
               style: TextStyle(fontSize: 22, fontWeight: Fonts.semibold, color: c.text),
             ),
             const SizedBox(height: Space.s3),
-            RadioGroup<ClientRole>(
-              groupValue: _role,
-              onChanged: (role) => setState(() => _role = role ?? ClientRole.member),
-              child: const Column(
-                children: [
-                  RadioListTile<ClientRole>(
-                    value: ClientRole.member,
-                    contentPadding: EdgeInsets.zero,
-                    title: Text('Member'),
-                    subtitle: Text('Feeds, edits meals and settings, locks the buttons.'),
-                  ),
-                  RadioListTile<ClientRole>(
-                    value: ClientRole.owner,
-                    contentPadding: EdgeInsets.zero,
-                    title: Text('Owner'),
-                    subtitle: Text(
-                      'Everything, including Wi-Fi, updates and removing '
-                      'people.',
-                    ),
-                  ),
-                ],
+            if (widget.roles.length == 1)
+              Text(
+                "They'll join as a ${_roleWords(_role).$1.toLowerCase()}. ${_roleWords(_role).$2}",
+                style: TextStyle(fontSize: Sizes.base, height: 1.5, color: c.text),
+              )
+            else
+              RadioGroup<ClientRole>(
+                groupValue: _role,
+                onChanged: (role) => setState(() => _role = role ?? widget.roles.first),
+                child: Column(
+                  children: [
+                    for (final ClientRole role in widget.roles)
+                      RadioListTile<ClientRole>(
+                        value: role,
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(_roleWords(role).$1),
+                        subtitle: Text(_roleWords(role).$2),
+                      ),
+                  ],
+                ),
               ),
-            ),
             const SizedBox(height: Space.s2),
             Text(
               "They'll need to be on the same Wi-Fi as ${widget.name} to join.",
@@ -102,6 +106,12 @@ class _RoleSheetState extends State<_RoleSheet> {
     );
   }
 }
+
+/// A role an invite grants, and what it lets them do.
+(String, String) _roleWords(ClientRole role) => switch (role) {
+  ClientRole.owner => ('Owner', 'Everything, including Wi-Fi, updates and removing people.'),
+  _ => ('Member', 'Feeds, edits meals and settings, locks the buttons and invites members.'),
+};
 
 /// One invite, shown once (11.3). It holds a secret, so it leaves this screen
 /// only when the owner shares it, and it is never kept.

@@ -251,6 +251,24 @@ final class FeederState {
       } &&
       (card?.ready ?? false);
 
+  /// Whether this phone's role may send [ask], by the feeder's own matrix.
+  /// Nothing before a session has named the role.
+  bool may(Ask ask) => switch (role) {
+    final ClientRole role => mayAsk(role, ask),
+    null => false,
+  };
+
+  /// The roles this phone may invite someone as, by the feeder's own rules:
+  /// an owner members and owners, a member members. None before a session
+  /// has named the role.
+  List<ClientRole> get invitable => switch (role) {
+    final ClientRole role => List.unmodifiable([
+      for (final ClientRole granted in const [ClientRole.member, ClientRole.owner])
+        if (mayInvite(role, granted)) granted,
+    ]),
+    null => const [],
+  };
+
   /// This state with the named parts changed. A nullable part takes a function,
   /// so that null can be set.
   FeederState copyWith({

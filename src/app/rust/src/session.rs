@@ -19,10 +19,23 @@
 //! screen that the feed it is following may have stopped. That only ends the
 //! session. The reads are reads, and the feed itself is not sent again.
 //!
-//! After pairing, or whenever the feeder's clock is not set, the session
-//! gives the feeder this phone's clock and zone, as `wellfed time` does.
-//! That sync carries the zone's next change too, so a feeder with no zone
-//! setting keeps local time across it.
+//! After pairing an owner's session stores this phone's zone on a feeder
+//! that keeps none. It sends no sync for pairing itself: a sync before the
+//! time is read would re-anchor a clock NTP set at this phone's time, and a
+//! phone some seconds off would then have NTP's answers miss and contest
+//! the clock. Every sync goes as [`wellfed_client::time::check`] says, on
+//! each read of the time, which the session asks for as it opens: a clock
+//! that is not set (at once with no time server, else once it has read
+//! invalid for two minutes, NTP's turn first, and never while the server
+//! answers outside the clock's interval), and, for an owner, a clock with
+//! no time server whose error has grown halfway to expiry, so it stays set
+//! and learns its rate. Never while this phone and the feeder disagree by
+//! more than the feeder's error: the Clock screen says so instead. A
+//! feeder with no zone and no offset gets one from a sync too, but an
+//! owner's only with no time server, since it re-anchors the clock. A sync
+//! is not a feed, but it goes once all the same, and the phone's memo of
+//! its syncs ([`crate::clock`]) spaces them [`crate::clock::SYNC_AGAIN`]
+//! apart and holds back one the feeder refused until its clock moves on.
 //!
 //! A session reads the history from the oldest event the feeder keeps, which
 //! is what "last fed" and today's meals need. It holds nothing across
@@ -39,9 +52,11 @@ use jiff::tz::TimeZone;
 use tokio::sync::{mpsc, oneshot};
 use wellfed_client::history::{Backlog, Entry, Feed};
 use wellfed_client::plans::Edit;
+use wellfed_client::time::{AutoSync, Boot, ClockCheck};
 use wellfed_connect::{AskError, Connection, Received};
 use wellfed_model::{
-    Answer, CoreEvent, EventBody, FeederEvent, Generation, Op, PLANS, Plan, Pushed, Settings, Skew,
+    Answer, ClientRole, CoreEvent, EventBody, FeederEvent, Generation, NtpServer, Op, PLANS, Plan,
+    Pushed, Refusal, Settings, Skew,
 };
 use wellfed_session::noise::Keypair;
 
@@ -160,7 +175,11 @@ enum Asked {
         reply: Option<Reply>,
     },
     Cancel,
-    Clock,
+    /// A sync of the clock: `on`, the time view an automatic one was
+    /// decided on.
+    Clock {
+        on: Option<Box<wellfed_model::TimeView>>,
+    },
     /// This phone's zone, stored on a feeder just paired.
     Zone,
     Ask(Reply),
@@ -314,6 +333,16 @@ struct Serving<'a, U> {
     /// This session gave the feeder its offset, once: a feeder that refuses
     /// the sync is not asked again on every read of the time.
     offset_given: bool,
+    /// The role this session's key holds, which decides the syncs it sends.
+    role: ClientRole,
+    /// The feeder's identity, lowercase hex, as the phone's files name it.
+    identity: String,
+    /// The phone's memo of its automatic syncs of this feeder.
+    clock: AutoSync,
+    /// When the status in `facts` was read, by this phone's clock.
+    status_at: Timestamp,
+    /// The memo changed since the loop last kept it.
+    clock_changed: bool,
     /// A feeder just paired with no zone gets this phone's, once. Only then:
     /// later, no zone is the owner's choice (the clock screen clears it).
     zone_due: bool,
@@ -362,6 +391,9 @@ async fn serve(
     if let Some(link) = link {
         link.event_at(status.last_event);
     }
+    let connection_role = connection.role();
+    let identity = wellfed_session::hex::Lower(&feeder).to_string();
+    let clock = crate::clock::load(crate::clock::dir(), &identity).await;
     let mut serving = Serving {
         link,
         connection,
@@ -374,12 +406,13 @@ async fn serve(
         running: None,
         asked_at: None,
         offset_given: false,
+        role: connection_role,
+        identity,
+        clock,
+        status_at: Timestamp::now(),
+        clock_changed: false,
         zone_due: sync_clock,
     };
-    if sync_clock || status.clock.is_none() {
-        let sync = wellfed_client::time::sync(Timestamp::now(), &TimeZone::system());
-        serving.request(&Op::TimeSync(sync), Asked::Clock)?;
-    }
     serving.request(&Op::GetSettings, Asked::Settings)?;
     serving.request(&Op::GetPlans, Asked::Plans)?;
     serving.request(&Op::GetTime, Asked::Time)?;
@@ -413,6 +446,9 @@ async fn serve(
                     return Ok(());
                 }
             }
+        }
+        if std::mem::take(&mut serving.clock_changed) {
+            crate::clock::store(crate::clock::dir(), &serving.identity, &serving.clock).await;
         }
     }
 }
@@ -658,6 +694,30 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
         }
     }
 
+    /// The feeder's boot, by the status last read and when.
+    fn boot(&self) -> Option<Boot> {
+        let status = self.facts.status.as_ref()?;
+        Some(Boot::read(status, self.status_at))
+    }
+
+    /// Give the feeder this phone's clock and zone.
+    /// `on`: the time view an automatic sync was decided on, which the
+    /// memo notes; `None` for an offset.
+    fn sync(&mut self, on: Option<wellfed_model::TimeView>) -> Result<(), BridgeError> {
+        let now = Timestamp::now();
+        if on.is_some() {
+            self.clock.sent(now);
+            self.clock_changed = true;
+        }
+        let sync = wellfed_client::time::sync(now, &TimeZone::system());
+        self.request(
+            &Op::TimeSync(sync),
+            Asked::Clock {
+                on: on.map(Box::new),
+            },
+        )
+    }
+
     /// Read the status again, unless a read is already on its way.
     fn refresh(&mut self) -> Result<(), BridgeError> {
         if !self
@@ -745,6 +805,7 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
                     link.event_at(status.last_event);
                 }
                 self.facts.status = Some(status);
+                self.status_at = Timestamp::now();
                 Ok(self.card())
             }
             (Asked::Settings, Some(Answer::Settings(Settings::Feeder(settings)))) => {
@@ -756,17 +817,36 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
                 Ok(self.card())
             }
             (Asked::Time, Some(Answer::Time(time))) => {
-                let give = !self.offset_given && needs_offset(&time);
+                let now = Timestamp::now();
+                let boot = self.boot();
+                let before = self.clock.clone();
+                let check = boot.map_or(ClockCheck::Leave, |boot| {
+                    self.clock
+                        .read(&time, boot, self.role, now, crate::clock::SYNC_AGAIN)
+                });
+                self.clock_changed |= self.clock != before;
+                // An offset goes with a sync, which re-anchors an owner's: only
+                // from a phone that agrees with the feeder's clock, and an
+                // owner's only with no time server, whose answers would miss
+                // an anchor at this phone's time. With one, Today's notice
+                // offers the owner the zone instead.
+                let anchors = self.role == ClientRole::Owner && time.ntp != NtpServer::Off;
+                let give = !self.offset_given
+                    && !anchors
+                    && needs_offset(&time)
+                    && wellfed_client::time::clock_disagreement(&time, now).is_none();
                 let zone = self.zone_due.then(|| zone_for(&time)).flatten();
                 self.zone_due = false;
+                let on = (check == ClockCheck::Sync).then(|| time.clone());
                 self.facts.time = Some(TimeRead::just_read(time));
                 if let Some(op) = zone {
                     self.request(&op, Asked::Zone)?;
                 }
                 if give {
                     self.offset_given = true;
-                    let sync = wellfed_client::time::sync(Timestamp::now(), &TimeZone::system());
-                    self.request(&Op::TimeSync(sync), Asked::Clock)?;
+                }
+                if on.is_some() || give {
+                    self.sync(on)?;
                 }
                 Ok(self.card())
             }
@@ -791,11 +871,20 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
             (Asked::Write { write, replies }, answer) => {
                 self.wrote(&write, replies, answer.as_ref())
             }
-            (Asked::Clock, Some(Answer::Done { .. })) => {
+            (Asked::Clock { .. }, Some(Answer::Done { .. })) => {
                 self.request(&Op::GetTime, Asked::Time)?;
                 Ok((self.update)(SessionUpdate::ClockSynced))
             }
-            (Asked::Clock, _) => Ok((self.update)(SessionUpdate::ClockNotSynced)),
+            (Asked::Clock { on }, answer) => {
+                let boot = self.boot();
+                if let (Some(on), Some(boot), Some(Answer::Refused(Refusal::Time))) =
+                    (on, boot, answer)
+                {
+                    self.clock.refused(&on, boot);
+                    self.clock_changed = true;
+                }
+                Ok((self.update)(SessionUpdate::ClockNotSynced))
+            }
             (Asked::Zone, Some(Answer::Done { .. })) => {
                 self.request(&Op::GetTime, Asked::Time)?;
                 Ok(true)

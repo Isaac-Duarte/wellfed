@@ -61,6 +61,8 @@ class _Make:
         self.handed: list[tuple[list[str], list[int]]] = []
         # Whether each session was handed an unread store.
         self.unread: list[bool] = []
+        # The time zone each session was handed.
+        self.zones: list[str | None] = []
 
     def __call__(
         self,
@@ -70,8 +72,10 @@ class _Make:
         pending: list[bridge.Pending],
         answered: list[int],
         unread: bool = False,
+        zone: str | None = None,
     ) -> fake.FakeFeeder:
         self.unread.append(unread)
+        self.zones.append(zone)
         self.handed.append(([p.id for p in pending], answered))
         return self.scripted
 
@@ -212,6 +216,7 @@ async def test_a_lost_feed_is_kept_across_a_reload_and_settled_by_the_next_sessi
     # The fixture put its maker in the bridge's place.
     made = cast(_Make, bridge.Feeder)
     assert made.handed[-1] == ([lost.id], [41, 9])
+    assert made.zones[-1] == hass.config.time_zone, "Home Assistant's zone, for its clock syncs"
     # The bridge announces again a lost feed that still holds feeds back.
     feeder.push(fake.update(bridge.UpdateKind.Pending, pending=lost))
     await _until(hass, lambda: _issue(hass, "uncertain_feed") is not None)
@@ -687,6 +692,27 @@ async def test_a_feeder_of_another_revision_is_served_and_names_the_side_to_upda
     feeder.push(fake.connected())
     await _until(hass, lambda: _issue(hass, "update_integration") is None)
     assert _issue(hass, "update_feeder") is None
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_a_time_server_the_clock_disagrees_with_raises_a_repair_until_it_is_set(
+    hass: HomeAssistant, feeder: fake.FakeFeeder
+) -> None:
+    feeder.push(
+        fake.connected(),
+        fake.update(bridge.UpdateKind.State, state=fake.state(time_server_disagrees=True)),
+    )
+    entry = _entry(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    issue = _issue(hass, "time_server_disagrees")
+    assert issue is not None
+    assert issue.translation_key == "time_server_disagrees"
+    assert issue.severity is ir.IssueSeverity.WARNING
+
+    # Set by an owner, or once the clock accepts its server: the repair goes.
+    feeder.push(fake.update(bridge.UpdateKind.State, state=fake.state()))
+    await _until(hass, lambda: _issue(hass, "time_server_disagrees") is None)
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 

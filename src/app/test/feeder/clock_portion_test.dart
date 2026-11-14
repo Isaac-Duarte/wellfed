@@ -29,6 +29,7 @@ bool? _chosen(WidgetTester tester, String name) => tester
 
 void main() {
   const time = TimeInfo(
+    serverDisagrees: false,
     generation: 8,
     writable: true,
     ntp: NtpView.gateway(port: 123),
@@ -66,6 +67,7 @@ void main() {
       session.status(
         fakeCard(
           time: const TimeInfo(
+            serverDisagrees: false,
             generation: 8,
             writable: true,
             zone: 'EST5EDT,M3.2.0,M11.1.0',
@@ -92,6 +94,7 @@ void main() {
       session.status(
         fakeCard(
           time: const TimeInfo(
+            serverDisagrees: false,
             generation: 8,
             writable: true,
             zone: 'MST7MDT,M3.2.0,M11.1.0',
@@ -108,6 +111,184 @@ void main() {
       expect(find.text('Denver · MST'), findsOneWidget);
       expect(find.text('Same as this phone · follows daylight saving'), findsOneWidget);
       expect(find.textContaining("Use this phone's zone"), findsNothing);
+    });
+
+    testWidgets('any zone can be chosen by searching for it', (tester) async {
+      final FakeSession session = await show(tester);
+
+      await tapIn(tester, find.text('Choose a zone…'));
+      expect(find.text('Berlin'), findsOneWidget);
+      await tester.enterText(find.byType(TextField), 'new york');
+      await tester.pump();
+      expect(find.text('Berlin'), findsNothing);
+      await tapIn(tester, find.text('New York'));
+
+      final put = session.requests.first as FeederRequest_PutTime;
+      expect(put.base, 8);
+      expect(put.zone, const ZoneChange.named(name: 'America/New_York'));
+      expect(put.ntp, isNull);
+      expect(session.requests.last, const FeederRequest.getTime());
+    });
+
+    testWidgets('a search that matches nothing says so, and backing out sends nothing', (tester) async {
+      final FakeSession session = await show(tester);
+
+      await tapIn(tester, find.text('Choose a zone…'));
+      await tester.enterText(find.byType(TextField), 'atlantis');
+      await tester.pump();
+      expect(find.text('No time zone matches. Try the nearest large city.'), findsOneWidget);
+      await tapIn(tester, find.byTooltip('Back'));
+
+      expect(session.requests.whereType<FeederRequest_PutTime>(), isEmpty);
+    });
+
+    testWidgets('a zone the feeder keeps can be cleared', (tester) async {
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
+      session.status(
+        fakeCard(
+          time: const TimeInfo(
+            serverDisagrees: false,
+            generation: 8,
+            writable: true,
+            zone: 'MST7MDT,M3.2.0,M11.1.0',
+            zoneNow: ZoneView(abbreviation: 'MST', offsetS: -7 * 3600, seasonal: true),
+            phoneZone: 'America/Denver',
+            sameAsPhone: true,
+            ntp: NtpView.gateway(port: 123),
+            syncs: 1,
+          ),
+        ),
+      );
+      await showTab(tester, ClockScreen(feeder: feeder));
+      session.requests.clear();
+
+      await tapIn(tester, find.text('Clear the zone'));
+      final put = session.requests.first as FeederRequest_PutTime;
+      expect(put.zone, const ZoneChange.clear());
+    });
+
+    testWidgets('a feeder that keeps no zone offers no clear', (tester) async {
+      await show(tester);
+
+      expect(find.text('None kept'), findsOneWidget);
+      expect(find.text('Choose a zone…'), findsOneWidget);
+      expect(find.text('Clear the zone'), findsNothing);
+    });
+
+    testWidgets('a zone the feeder cannot follow says so', (tester) async {
+      final FakeSession session = await show(tester);
+      session.replies.add(const FeederReply.notAsked(reason: NotAsked.badZone));
+
+      await tapIn(tester, find.text('Choose a zone…'));
+      await tapIn(tester, find.text('Kolkata'));
+
+      expect(find.text("The feeder can't follow that time zone."), findsOneWidget);
+    });
+
+    testWidgets('a phone that agrees with the feeder says nothing about it', (tester) async {
+      await show(tester);
+
+      expect(find.textContaining('disagree about the time'), findsNothing);
+      expect(find.text('Set the time from this phone'), findsNothing);
+    });
+
+    testWidgets("an owner's phone that disagrees says so and sets the time only when asked", (tester) async {
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
+      session.status(
+        fakeCard(
+          time: const TimeInfo(
+            serverDisagrees: false,
+            generation: 8,
+            writable: true,
+            ntp: NtpView.off(),
+            clockMs: 1000,
+            errorMs: 400,
+            syncs: 1,
+            last: TimeSource.owner,
+            phoneAheadMs: 5 * 60000,
+          ),
+        ),
+      );
+      await showTab(tester, ClockScreen(feeder: feeder));
+      session.requests.clear();
+
+      expect(find.textContaining('This phone and the feeder disagree about the time.'), findsOneWidget);
+      expect(find.textContaining('This phone is 5 min ahead of the feeder'), findsOneWidget);
+      expect(session.requests, isEmpty);
+
+      await tapIn(tester, find.text('Set the time from this phone'));
+      expect(session.requests, [const FeederRequest.syncClock(), const FeederRequest.getTime()]);
+    });
+
+    testWidgets('a member whose phone disagrees is told an owner can set it', (tester) async {
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
+      session.status(
+        fakeCard(
+          time: const TimeInfo(
+            serverDisagrees: false,
+            generation: 8,
+            writable: false,
+            ntp: NtpView.gateway(port: 123),
+            clockMs: 1000,
+            errorMs: 400,
+            syncs: 1,
+            last: TimeSource.ntp,
+            phoneAheadMs: -3 * 3600000,
+          ),
+        ),
+      );
+      await showTab(tester, ClockScreen(feeder: feeder));
+
+      expect(find.textContaining('This phone is 3 h behind the feeder'), findsOneWidget);
+      expect(find.textContaining('An owner can set it'), findsOneWidget);
+      expect(find.text('Set the time from this phone'), findsNothing);
+    });
+
+    testWidgets('a time server that disagrees with the clock is shown, and an owner may set it', (tester) async {
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
+      session.status(
+        fakeCard(
+          clockSet: false,
+          time: const TimeInfo(
+            serverDisagrees: true,
+            generation: 8,
+            writable: true,
+            ntp: NtpView.gateway(port: 123),
+            syncs: 4,
+            last: TimeSource.owner,
+          ),
+        ),
+      );
+      await showTab(tester, ClockScreen(feeder: feeder));
+      session.requests.clear();
+
+      expect(find.textContaining("The feeder's time server disagrees with its clock."), findsOneWidget);
+      expect(find.textContaining('If the server is wrong, choose another under Get the time from'), findsOneWidget);
+      expect(session.requests, isEmpty);
+      await tapIn(tester, find.text('Set the time from this phone'));
+      expect(session.requests, [const FeederRequest.syncClock(), const FeederRequest.getTime()]);
+    });
+
+    testWidgets('a member whose feeder disagrees with its time server is told to ask an owner', (tester) async {
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
+      session.status(
+        fakeCard(
+          clockSet: false,
+          time: const TimeInfo(
+            serverDisagrees: true,
+            generation: 8,
+            writable: false,
+            ntp: NtpView.gateway(port: 123),
+            syncs: 4,
+            last: TimeSource.owner,
+          ),
+        ),
+      );
+      await showTab(tester, ClockScreen(feeder: feeder));
+
+      expect(find.textContaining('Ask an owner to check its time source'), findsOneWidget);
+      expect(find.textContaining('hours or days'), findsOneWidget);
+      expect(find.text('Set the time from this phone'), findsNothing);
     });
 
     testWidgets('coming to the screen reads the time again', (tester) async {
@@ -157,7 +338,11 @@ void main() {
       expect(session.requests.last, const FeederRequest.getTime());
 
       // What the session then says of that read.
-      session.status(fakeCard(time: const TimeInfo(generation: 9, writable: true, ntp: NtpView.off(), syncs: 1)));
+      session.status(
+        fakeCard(
+          time: const TimeInfo(serverDisagrees: false, generation: 9, writable: true, ntp: NtpView.off(), syncs: 1),
+        ),
+      );
       await settle(tester);
       session.requests.clear();
 
@@ -184,7 +369,11 @@ void main() {
       expect(session.requests.whereType<FeederRequest_PutTime>(), hasLength(1), reason: 'the read is still out');
 
       read.complete();
-      session.status(fakeCard(time: const TimeInfo(generation: 9, writable: true, ntp: NtpView.off(), syncs: 1)));
+      session.status(
+        fakeCard(
+          time: const TimeInfo(serverDisagrees: false, generation: 9, writable: true, ntp: NtpView.off(), syncs: 1),
+        ),
+      );
       await settle(tester);
       await tapIn(tester, find.text('Your router'));
       expect(session.requests.whereType<FeederRequest_PutTime>().last.base, 9);

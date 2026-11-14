@@ -20,8 +20,9 @@ import '../support/harness.dart';
 ClientView _client(int id, String label, ClientRole role, {bool you = false}) =>
     ClientView(key: Uint8List.fromList([id]), fingerprint: '0$id', label: label, role: role, you: you);
 
-Future<(FeederController, FakeSession)> _people(WidgetTester tester) async {
+Future<(FeederController, FakeSession)> _people(WidgetTester tester, {ClientRole role = ClientRole.owner}) async {
   final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
+  if (role != ClientRole.owner) session.opened(role: role);
   session.status(fakeCard());
   session.replies.add(
     FeederReply.clients(
@@ -114,6 +115,38 @@ void main() {
       // Whoever used it joined meanwhile, so closing it reads the list again.
       await tapIn(tester, find.byTooltip('Close'));
       expect(session.requests.last, const FeederRequest.listClients());
+    });
+
+    testWidgets('a member reads the list, removes no one, and invites members only', (tester) async {
+      final (_, FakeSession session) = await _people(tester, role: ClientRole.member);
+      session.replies.add(
+        const FeederReply.invite(
+          invite: InviteView(text: 'wellfed-invite:1:x', seconds: 600, role: ClientRole.member),
+        ),
+      );
+
+      expect(find.text("Ana's phone"), findsOneWidget);
+      expect(find.byTooltip("Remove Ana's phone"), findsNothing);
+      expect(find.text('You can invite members. Only an owner can remove someone or invite an owner.'), findsOneWidget);
+
+      await tapIn(tester, find.text('Invite someone'));
+      expect(find.byType(RadioListTile<ClientRole>), findsNothing, reason: 'nothing to choose');
+      expect(find.textContaining("They'll join as a member."), findsOneWidget);
+      await tester.tap(find.text('Create invite'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(session.requests.first, const FeederRequest.createInvite(role: ClientRole.member));
+      expect(find.text('Member invite'), findsOneWidget);
+    });
+
+    testWidgets('an owner chooses between a member and an owner invite', (tester) async {
+      await _people(tester);
+
+      await tapIn(tester, find.text('Invite someone'));
+      expect(find.byType(RadioListTile<ClientRole>), findsNWidgets(2));
+      expect(find.text('Member'), findsWidgets);
     });
 
     testWidgets('a create refused or unanswered shows no invite', (tester) async {

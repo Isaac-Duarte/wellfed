@@ -83,7 +83,7 @@ class SettingsTab extends StatelessWidget {
                     TextSpan(
                       text:
                           ' of ${feeder.state.known.name}. You can change lights, '
-                          'sounds and reminders.',
+                          'sounds and reminders, and invite members.',
                     ),
                   ],
                 ),
@@ -130,7 +130,12 @@ class SettingsTab extends StatelessWidget {
                 ],
               ),
             ),
-            if (owner) SettingsOwnerSection(feeder: feeder) else const SettingsOwnerOnly(),
+            if (owner)
+              SettingsOwnerSection(feeder: feeder)
+            else ...[
+              if (feeder.state.may(Ask.listClients)) SettingsPeopleSection(feeder: feeder),
+              const SettingsOwnerOnly(),
+            ],
           ],
           // What this phone keeps about the feeder: it works offline too.
           SettingsSection(

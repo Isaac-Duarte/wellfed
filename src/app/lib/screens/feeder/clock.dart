@@ -5,6 +5,7 @@ import 'package:flutter/material.dart' hide Card;
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:wellfed/screens/feeder/ask_ntp.dart';
 import 'package:wellfed/screens/feeder/today.dart' show clockWords;
+import 'package:wellfed/screens/feeder/zone_picker.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/clock/clock.dart';
@@ -13,6 +14,7 @@ import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
 import 'package:wellfed/widgets/replies.dart';
 import 'package:wellfed/widgets/settings_list.dart';
 import 'package:wellfed/widgets/when.dart';
@@ -20,8 +22,10 @@ import 'package:wellfed/widgets/when.dart';
 /// The feeder's clock (13.4): what it reads and how it was set, its zone, and
 /// where it asks for the time.
 ///
-/// There is no way to clear the zone here: the session gives a feeder that
-/// keeps none this phone's zone as soon as it connects.
+/// The zone is this phone's, any IANA zone the owner picks, or none. With
+/// none the feeder keeps the offset a phone's sync last gave it; the session
+/// gives a feeder this phone's zone only just after pairing, so a zone
+/// cleared here stays cleared.
 class ClockScreen extends StatefulWidget {
   const ClockScreen({super.key, required this.feeder});
 
@@ -59,6 +63,29 @@ class _ClockScreenState extends State<ClockScreen> {
     if (mounted) setState(() => _asking = false);
   }
 
+  /// The owner's call when this phone and the feeder disagree: nothing sends
+  /// this phone's time by itself then, as either could be the one that's wrong.
+  Future<void> _sync() async {
+    setState(() => _asking = true);
+    final FeederReply reply = await widget.feeder.ask(const FeederRequest.syncClock());
+    if (!mounted) return;
+    showProblem(context, reply);
+
+    await widget.feeder.ask(const FeederRequest.getTime());
+    if (mounted) setState(() => _asking = false);
+  }
+
+  Future<void> _pickZone() async {
+    final String? zone = await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(
+        builder: (_) => FormWidth(
+          child: ZonePickerScreen(zones: widget.feeder.timeZones(), current: widget.feeder.state.card?.time?.phoneZone),
+        ),
+      ),
+    );
+    if (zone != null && mounted) await _time(zone: ZoneChange.named(name: zone));
+  }
+
   Future<void> _address() async {
     final String? address = await askNtpServer(context);
     if (address != null && mounted) await _time(ntp: NtpChoice.address(address: address));
@@ -92,6 +119,19 @@ class _ClockScreenState extends State<ClockScreen> {
           padding: EdgeInsets.fromLTRB(Space.s4, Space.s3, Space.s4, Space.s4 + MediaQuery.paddingOf(context).bottom),
           children: [
             _Readout(feeder: widget.feeder),
+            if (time?.phoneAheadMs case final int ahead? when widget.feeder.state.cardIsCurrent) ...[
+              const SizedBox(height: Space.s3),
+              _Disagreement(
+                aheadMs: ahead,
+                owner: time?.writable ?? false,
+                onSync: can ? () => unawaited(_sync()) : null,
+              ),
+            ],
+            if (time?.serverDisagrees ?? false)
+              if (widget.feeder.state.cardIsCurrent) ...[
+                const SizedBox(height: Space.s3),
+                _ServerDisagrees(owner: time?.writable ?? false, onSync: can ? () => unawaited(_sync()) : null),
+              ],
             const SizedBox(height: Space.s5),
             SettingsSection(
               'Time zone',
@@ -102,19 +142,15 @@ class _ClockScreenState extends State<ClockScreen> {
                     child: Row(children: [Expanded(child: _ZoneWords(time))]),
                   ),
                   if (time case TimeInfo(:final String phoneZone, sameAsPhone: false))
-                    SettingsTile(
-                      first: false,
+                    _Action(
+                      "Use this $deviceName's zone · ${placeName(phoneZone)}",
                       onTap: can ? () => unawaited(_time(zone: const ZoneChange.phone())) : null,
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              "Use this $deviceName's zone · ${placeName(phoneZone)}",
-                              style: TextStyle(fontSize: 15, fontWeight: Fonts.semibold, color: c.accent),
-                            ),
-                          ),
-                        ],
-                      ),
+                    ),
+                  _Action('Choose a zone…', onTap: can ? () => unawaited(_pickZone()) : null),
+                  if (time?.zone != null)
+                    _Action(
+                      'Clear the zone',
+                      onTap: can ? () => unawaited(_time(zone: const ZoneChange.clear())) : null,
                     ),
                 ],
               ),
@@ -141,7 +177,7 @@ class _ClockScreenState extends State<ClockScreen> {
                   ),
                   _Source(
                     'Phones only',
-                    'Set each time a phone connects',
+                    "Set by an owner's app when it checks in",
                     chosen: time?.ntp is NtpView_Off,
                     onTap: can ? () => unawaited(_time(ntp: const NtpChoice.off())) : null,
                   ),
@@ -153,6 +189,85 @@ class _ClockScreenState extends State<ClockScreen> {
         ),
       );
     },
+  );
+}
+
+/// This phone's clock and the feeder's are further apart than the feeder's
+/// error allows, so one of them is wrong. The app leaves the feeder's alone
+/// until an owner, who can check this phone's time, sets it with [onSync];
+/// anyone else is told to ask one.
+class _Disagreement extends StatelessWidget {
+  const _Disagreement({required this.aheadMs, required this.owner, required this.onSync});
+
+  final int aheadMs;
+  final bool owner;
+  final VoidCallback? onSync;
+
+  @override
+  Widget build(BuildContext context) {
+    final String by = _gapText(aheadMs.abs());
+    final String side = aheadMs > 0 ? 'ahead of' : 'behind';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Notice(
+          tone: Tone.warning,
+          lead: 'This $deviceName and the feeder disagree about the time.',
+          text: !owner
+              ? "This $deviceName is $by $side the feeder, so it won't set the feeder's clock. An owner can set it from their phone."
+              : "This $deviceName is $by $side the feeder, so it won't set the feeder's clock by itself. Check this "
+                    "$deviceName's time first: if it's right, set the feeder's from it.",
+        ),
+        if (owner) ...[
+          const SizedBox(height: Space.s2),
+          OutlinedButton(onPressed: onSync, child: Text('Set the time from this $deviceName')),
+        ],
+      ],
+    );
+  }
+
+  static String _gapText(int ms) => ms < 120000
+      ? '${ms ~/ 1000} s'
+      : ms < 7200000
+      ? '${ms ~/ 60000} min'
+      : '${ms ~/ 3600000} h';
+}
+
+/// The clock reads invalid while the feeder's time server answers outside
+/// the time the clock last trusted: the server or that time is wrong, so
+/// no phone sets it by itself. The feeder takes the server's answer only
+/// once its bound has grown to reach it, which takes hours for a server
+/// minutes off and days for one an hour off. So the notice gives an owner
+/// the real remedies: the time source, in "Get the time from" below, or
+/// [onSync] from a phone they checked. Anyone else is told to ask an owner.
+class _ServerDisagrees extends StatelessWidget {
+  const _ServerDisagrees({required this.owner, required this.onSync});
+
+  final bool owner;
+  final VoidCallback? onSync;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Notice(
+        tone: Tone.warning,
+        lead: "The feeder's time server disagrees with its clock.",
+        text: owner
+            ? 'One of them is wrong, so no $deviceName sets the clock by itself, and meals wait. Left alone, the '
+                  'feeder can take hours or days to accept the server, the longer the further apart they are. '
+                  'If the server is wrong, choose another under Get the time from, below: a time set from a '
+                  "$deviceName lasts only about an hour against it. If the feeder's clock was set wrong, set it "
+                  "from this $deviceName once you've checked its time."
+            : 'One of them is wrong, so no $deviceName sets the clock by itself, and meals wait. Left alone, the '
+                  'feeder can take hours or days to accept the server. Ask an owner to check its time source or '
+                  'set the time.',
+      ),
+      if (owner) ...[
+        const SizedBox(height: Space.s2),
+        OutlinedButton(onPressed: onSync, child: Text('Set the time from this $deviceName')),
+      ],
+    ],
   );
 }
 
@@ -313,6 +428,30 @@ class _ZoneWords extends StatelessWidget {
       ].join(' · '),
     );
   }
+}
+
+/// A change to the zone, as a row that says what it does.
+class _Action extends StatelessWidget {
+  const _Action(this.words, {required this.onTap});
+
+  final String words;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => SettingsTile(
+    first: false,
+    onTap: onTap,
+    child: Row(
+      children: [
+        Expanded(
+          child: Text(
+            words,
+            style: TextStyle(fontSize: 15, fontWeight: Fonts.semibold, color: context.colors.accent),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 /// One place the feeder can get the time from; the chosen one is ticked.

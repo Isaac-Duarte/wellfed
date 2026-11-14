@@ -366,7 +366,9 @@ pub fn a_client_write_records_its_event_unread(rig: &mut impl Rig) {
         next_change_s: 0,
         next_offset_s: 0,
     };
-    device(rig, 0, |device| device.time_sync(sync, Origin::Owner));
+    device(rig, 0, |device| {
+        device.time_sync(sync, Origin::Owner, [0x21; 4])
+    });
     rig.write();
     let before = device(rig, 0, |device| device.status(0)).last_event;
 
@@ -491,7 +493,11 @@ pub fn a_time_sync_sets_the_clock(rig: &mut impl Rig) {
         next_offset_s: 0,
     };
     assert_eq!(
-        device(rig, 0, |device| device.time_sync(bad, Origin::Owner)),
+        device(rig, 0, |device| device.time_sync(
+            bad,
+            Origin::Owner,
+            [0x21; 4]
+        )),
         TimeResult::Refused("offset")
     );
     let sync = TimeFields {
@@ -500,7 +506,11 @@ pub fn a_time_sync_sets_the_clock(rig: &mut impl Rig) {
         ..bad
     };
     assert_eq!(
-        device(rig, 0, |device| device.time_sync(sync, Origin::Owner)),
+        device(rig, 0, |device| device.time_sync(
+            sync,
+            Origin::Owner,
+            [0x21; 4]
+        )),
         TimeResult::Synced { jump_ms: None }
     );
 
@@ -514,11 +524,19 @@ pub fn a_time_sync_sets_the_clock(rig: &mut impl Rig) {
         ..sync
     };
     assert_eq!(
-        device(rig, 0, |device| device.time_sync(hour_on, Origin::Client)),
+        device(rig, 0, |device| device.time_sync(
+            hour_on,
+            Origin::Client,
+            [0x21; 4]
+        )),
         TimeResult::Refused("bounded")
     );
     assert!(matches!(
-        device(rig, 0, |device| device.time_sync(hour_on, Origin::Owner)),
+        device(rig, 0, |device| device.time_sync(
+            hour_on,
+            Origin::Owner,
+            [0x21; 4]
+        )),
         TimeResult::Synced { jump_ms: Some(_) }
     ));
 }
@@ -567,7 +585,9 @@ pub fn time_settings_land_and_set_the_zone(rig: &mut impl Rig) {
         next_change_s: 0,
         next_offset_s: 0,
     };
-    device(rig, 0, |device| device.time_sync(sync, Origin::Owner));
+    device(rig, 0, |device| {
+        device.time_sync(sync, Origin::Owner, [0x21; 4])
+    });
     let state = device(rig, 0, |device| device.time_state(0)).expect("the clock's state");
     let reading = state.clock.reading.expect("a valid clock");
     assert_eq!(reading.offset_s, Some(5 * 3600 + 1800));
@@ -655,7 +675,9 @@ pub fn the_desiccant_count_follows_the_clock_and_its_reset(rig: &mut impl Rig) {
         next_change_s: 0,
         next_offset_s: 0,
     };
-    device(rig, 0, |device| device.time_sync(sync, Origin::Owner));
+    device(rig, 0, |device| {
+        device.time_sync(sync, Origin::Owner, [0x21; 4])
+    });
     let today = device(rig, 0, |device| device.today(0));
     assert_eq!(today, Some(20_754));
 
@@ -704,7 +726,9 @@ pub fn a_plans_table_lands_and_starts_from_its_save(rig: &mut impl Rig) {
         next_change_s: 0,
         next_offset_s: 0,
     };
-    device(rig, 0, |device| device.time_sync(sync, Origin::Owner));
+    device(rig, 0, |device| {
+        device.time_sync(sync, Origin::Owner, [0x21; 4])
+    });
     let mut table = [None; PLANS];
     table[4] = Some(Plan {
         minute: 7 * 60 + 30,

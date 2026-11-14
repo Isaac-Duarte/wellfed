@@ -25,7 +25,7 @@ use wellfed_device::update as wire;
 use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
 use wellfed_device_api::mailbox::{
     Asked, LockResult, Origin, PlayResult, Saved, SettingsFields, SettingsResult, SettingsView,
-    TimeFields, TimeResult, WifiResult, WifiSource, WifiView,
+    SyncKey, TimeFields, TimeResult, WifiResult, WifiSource, WifiView,
 };
 use wellfed_device_api::pairing::{Config, Pairing};
 use wellfed_device_api::wifi::Credentials;
@@ -427,7 +427,7 @@ impl Device for Feeder {
         }
     }
 
-    fn time_sync(&mut self, _fields: TimeFields, _origin: Origin) -> TimeResult {
+    fn time_sync(&mut self, _fields: TimeFields, _origin: Origin, _key: SyncKey) -> TimeResult {
         TimeResult::Synced { jump_ms: None }
     }
 

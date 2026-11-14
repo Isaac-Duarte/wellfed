@@ -47,8 +47,10 @@ class _NoTimeNoticeState extends State<NoTimeNotice> {
 
 /// Whether the feeder holds its meals for want of a local offset: the clock
 /// is right, but no zone is set, and the offset a phone gave it went with a
-/// power cut. A session gives it this phone's as soon as it reads the time,
-/// so this shows only until then, or when that sync was refused.
+/// power cut. A member's session gives it this phone's offset as soon as it
+/// reads the time, and so does an owner's when the feeder gets its time from
+/// phones only. An owner's sync re-anchors the clock, which would fight a
+/// time server, so with one this stays until the owner stores a zone here.
 bool holdsForNoZone(api.Card card) {
   final TimeInfo? time = card.time;
   return card.clockSet && time != null && time.offsetS == null && (time.zone ?? '').isEmpty;

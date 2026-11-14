@@ -83,7 +83,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 1006531256;
+  int get rustContentHash => 963778175;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -480,6 +480,8 @@ abstract class RustLibApi extends BaseApi {
     required AppStore store,
   });
 
+  List<String> crateApiFeederTimeZones();
+
   UnknownEnd crateApiUpdateUnknownEnd({
     String? served,
     required int version,
@@ -495,6 +497,8 @@ abstract class RustLibApi extends BaseApi {
     required Skew skew,
     UpdateInfo? update,
   });
+
+  void crateApiFeederUseDataDirectory({required String dir});
 
   RustArcIncrementStrongCountFnType
   get rust_arc_increment_strong_count_BluetoothLink;
@@ -4073,6 +4077,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
+  List<String> crateApiFeederTimeZones() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 113,
+          )!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiFeederTimeZonesConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiFeederTimeZonesConstMeta =>
+      const TaskConstMeta(debugName: "time_zones", argNames: []);
+
+  @override
   UnknownEnd crateApiUpdateUnknownEnd({
     String? served,
     required int version,
@@ -4092,7 +4122,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 113,
+            funcId: 114,
           )!;
         },
         codec: SseCodec(
@@ -4131,7 +4161,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 114,
+            funcId: 115,
           )!;
         },
         codec: SseCodec(
@@ -4149,6 +4179,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     debugName: "update_offer",
     argNames: ["build", "version", "running", "skew", "update"],
   );
+
+  @override
+  void crateApiFeederUseDataDirectory({required String dir}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dir, serializer);
+          return pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 116,
+          )!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiFeederUseDataDirectoryConstMeta,
+        argValues: [dir],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiFeederUseDataDirectoryConstMeta =>
+      const TaskConstMeta(debugName: "use_data_directory", argNames: ["dir"]);
 
   RustArcIncrementStrongCountFnType
   get rust_arc_increment_strong_count_BluetoothLink => wire
@@ -7680,8 +7737,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TimeInfo dco_decode_time_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 14)
-      throw Exception('unexpected arr length: expect 14 but see ${arr.length}');
+    if (arr.length != 16)
+      throw Exception('unexpected arr length: expect 16 but see ${arr.length}');
     return TimeInfo(
       generation: dco_decode_u_32(arr[0]),
       writable: dco_decode_bool(arr[1]),
@@ -7697,6 +7754,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       last: dco_decode_opt_box_autoadd_time_source(arr[11]),
       lastAtMs: dco_decode_opt_box_autoadd_i_64(arr[12]),
       ntpLast: dco_decode_opt_box_autoadd_ntp_result(arr[13]),
+      phoneAheadMs: dco_decode_opt_box_autoadd_i_64(arr[14]),
+      serverDisagrees: dco_decode_bool(arr[15]),
     );
   }
 
@@ -12360,6 +12419,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_last = sse_decode_opt_box_autoadd_time_source(deserializer);
     var var_lastAtMs = sse_decode_opt_box_autoadd_i_64(deserializer);
     var var_ntpLast = sse_decode_opt_box_autoadd_ntp_result(deserializer);
+    var var_phoneAheadMs = sse_decode_opt_box_autoadd_i_64(deserializer);
+    var var_serverDisagrees = sse_decode_bool(deserializer);
     return TimeInfo(
       generation: var_generation,
       writable: var_writable,
@@ -12375,6 +12436,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       last: var_last,
       lastAtMs: var_lastAtMs,
       ntpLast: var_ntpLast,
+      phoneAheadMs: var_phoneAheadMs,
+      serverDisagrees: var_serverDisagrees,
     );
   }
 
@@ -16900,6 +16963,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_time_source(self.last, serializer);
     sse_encode_opt_box_autoadd_i_64(self.lastAtMs, serializer);
     sse_encode_opt_box_autoadd_ntp_result(self.ntpLast, serializer);
+    sse_encode_opt_box_autoadd_i_64(self.phoneAheadMs, serializer);
+    sse_encode_bool(self.serverDisagrees, serializer);
   }
 
   @protected

@@ -69,6 +69,9 @@ UPDATE_FEEDER_ISSUE = "update_feeder"
 UPDATE_INTEGRATION_ISSUE = "update_integration"
 # A feeder from before API revisions: it takes nothing but an update, from the app.
 LEGACY_FEEDER_ISSUE = "legacy_feeder"
+# The feeder's clock is lost and its time server answers outside the time it last
+# trusted: nothing sets it by itself, and meals wait until an owner acts.
+TIME_SERVER_ISSUE = "time_server_disagrees"
 
 
 class WriteNotDone(HomeAssistantError):
@@ -115,10 +118,15 @@ def event_data(identity: bytes, event: bridge.Event) -> dict[str, object]:
 
 
 def open_feeder(
-    data: Mapping[str, Any], pending: list[bridge.Pending], answered: list[int], unread: bool
+    data: Mapping[str, Any],
+    pending: list[bridge.Pending],
+    answered: list[int],
+    unread: bool,
+    zone: str,
 ) -> bridge.Feeder:
     """The bridge's session for an entry's data, handed the feeds the last run
-    left unsettled, and whether the store did not read."""
+    left unsettled, whether the store did not read, and Home Assistant's time
+    zone, which a clock sync gives the feeder and local times are read in."""
     return bridge.Feeder(
         bytes.fromhex(data[CONF_SECRET]),
         bytes.fromhex(data[CONF_IDENTITY]),
@@ -126,6 +134,7 @@ def open_feeder(
         pending,
         answered,
         unread,
+        zone,
     )
 
 
@@ -396,6 +405,8 @@ class FeederSession:
         elif kind == bridge.UpdateKind.State:
             self.state = update.state
             self._ready.set()
+            if update.state is not None:
+                self._time_server_issue(update.state.time_server_disagrees)
         elif kind == bridge.UpdateKind.Event and update.event is not None:
             # A replayed event is history the state already holds, not news.
             event = update.event
@@ -566,6 +577,16 @@ class FeederSession:
             self._issue(UNCERTAIN_ISSUE, ir.IssueSeverity.WARNING, {})
         else:
             ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(UNCERTAIN_ISSUE))
+
+    @callback
+    def _time_server_issue(self, disagrees: bool) -> None:
+        """The repair while the feeder's clock is lost and its time server answers
+        outside the time it last trusted. Home Assistant, a member, can't settle
+        which is wrong: an owner checks the time source or sets the time in the app."""
+        if disagrees:
+            self._issue(TIME_SERVER_ISSUE, ir.IssueSeverity.WARNING, {})
+        else:
+            ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(TIME_SERVER_ISSUE))
 
     @callback
     def _skewed(self, skew: bridge.Skew | None, build: str | None) -> None:

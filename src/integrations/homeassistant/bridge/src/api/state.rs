@@ -153,6 +153,12 @@ pub struct State {
     /// The weight of one portion, milligrams; `None` until measured, or
     /// for a client that does not read the calibration.
     pub portion_mg: Option<u32>,
+    /// The clock reads invalid while its time server answers outside the
+    /// time it last trusted ([`wellfed_client::time::server_disagrees`]): no
+    /// client sets it by itself, and meals wait until an owner changes the
+    /// time source or sets the time, or the clock comes to accept the
+    /// server, which can take days.
+    pub time_server_disagrees: bool,
 }
 
 impl State {
@@ -165,7 +171,18 @@ impl State {
         fallback: &TimeZone,
     ) -> Option<Self> {
         // A device this integration cannot read has no state to show.
-        let status = Status::of(facts.status.as_ref()?)?;
+        let read = facts.status.as_ref()?;
+        let status = Status::of(read)?;
+        // The status says whether the clock is set now; the time view, read
+        // again whenever it says not, what the server last answered.
+        let time_server_disagrees = facts.time.as_ref().is_some_and(|time| {
+            wellfed_client::time::server_disagrees(&model::TimeView {
+                clock_ms: read
+                    .clock
+                    .and_then(|at| u64::try_from(at.as_millisecond()).ok()),
+                ..time.clone()
+            })
+        });
         let today = facts.today(fallback.clone());
         let plans = facts.plans.as_ref().map(|plans| {
             plans
@@ -200,6 +217,7 @@ impl State {
                 .portions_today(fallback.clone())
                 .map(PortionsToday::from),
             portion_mg: calibration.and_then(|view| view.calibration.portion_mg),
+            time_server_disagrees,
         })
     }
 }

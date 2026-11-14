@@ -540,6 +540,8 @@ impl TimeRead {
                 .last_age_s
                 .map(|age| read_ms.saturating_sub(i64::from(age).saturating_mul(1000))),
             ntp_last: view.ntp_last,
+            phone_ahead_ms: wellfed_client::time::clock_disagreement(view, self.read_at),
+            server_disagrees: wellfed_client::time::server_disagrees(view),
         }
     }
 }
@@ -784,6 +786,19 @@ mod tests {
         assert_eq!(later.last_at_ms, first.last_at_ms);
         assert_eq!(later.clock_ms, Some(1_000_000 + 480_000));
         assert_eq!(later.error_ms, Some(50 + 48));
+        // The phone read the feeder's clock at 1,000 s while its own said
+        // 2,000,000 s: far past the 50 ms the feeder allows.
+        assert_eq!(first.phone_ahead_ms, Some(2_000_000_000 - 1_000_000));
+    }
+
+    /// A phone within the feeder's error and the margin agrees with it.
+    #[test]
+    fn a_phone_that_agrees_with_the_feeder_says_nothing() {
+        let read = Instant::now();
+        let time = read_at(at_ms(1_000_000 + 2_050), read);
+        assert_eq!(time.info(read).phone_ahead_ms, None);
+        let time = read_at(at_ms(1_000_000 + 2_051), read);
+        assert_eq!(time.info(read).phone_ahead_ms, Some(2_051));
     }
 
     /// A second of 16-bit mono WAV at 8 kHz, loud enough to keep.

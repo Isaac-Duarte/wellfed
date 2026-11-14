@@ -12,6 +12,7 @@ import 'package:wellfed/state/fleet/app_state.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await RustLib.init();
+  await nameDataDirectory();
   if (Platform.isAndroid) await startAlerts();
   if (onDesktopHost) await startComputerAlerts();
   runApp(switch (await AppState.start()) {

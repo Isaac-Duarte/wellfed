@@ -10,7 +10,7 @@
 use core::fmt;
 
 use wellfed_core::buttons::Gesture;
-use wellfed_core::clock::wall::{Fix, Jump, Origin, State as ClockState, Sync, SyncError};
+use wellfed_core::clock::wall::{Fix, Jump, Origin, State as ClockState, Sync, SyncError, SyncKey};
 use wellfed_core::clock::zone::Rule;
 use wellfed_core::indicator::Light;
 use wellfed_core::log_tail::Batch as LogBatch;
@@ -328,9 +328,15 @@ pub trait Platform {
     fn clock_ms(&mut self, now_ms: u32) -> u32;
     /// Unix milliseconds now, while the clock is valid.
     fn wall_ms(&mut self, now_ms: u32) -> Option<u64>;
-    /// Check and adopt a sync from a client; `origin` says whether it may
-    /// step the clock.
-    fn time_sync(&mut self, now_ms: u32, sync: Sync, origin: Origin) -> Result<Jump, SyncError>;
+    /// Check and adopt a sync from a client's key `key`; `origin` says
+    /// whether it may step the clock.
+    fn time_sync(
+        &mut self,
+        now_ms: u32,
+        sync: Sync,
+        origin: Origin,
+        key: SyncKey,
+    ) -> Result<Jump, SyncError>;
     /// Adopt an NTP fix measured at `now_ms` on the clock's count
     /// ([`Self::clock_ms`]).
     fn time_fix(&mut self, now_ms: u32, fix: Fix) -> Result<Jump, SyncError>;

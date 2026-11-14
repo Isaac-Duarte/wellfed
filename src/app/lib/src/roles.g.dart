@@ -58,6 +58,12 @@ enum Ask {
 /// role a newer build added may send nothing.
 bool mayAsk(ClientRole role, Ask ask) => _senders(ask).contains(role);
 
+/// Whether a client holding [by] may create an invite granting [role]:
+/// the matrix, then pairing's rule of whom each role may invite.
+bool mayInvite(ClientRole by, ClientRole role) => _inviters(role).contains(by);
+
+const Set<ClientRole> _nobody = {};
+
 const Set<ClientRole> _owner = {ClientRole.owner};
 
 const Set<ClientRole> _ownerMember = {ClientRole.owner, ClientRole.member};
@@ -111,4 +117,12 @@ Set<ClientRole> _senders(Ask ask) => switch (ask) {
   Ask.statsFood => _ownerMemberServer,
   Ask.statsFeeds => _ownerMemberServer,
   Ask.statsPortions => _ownerMemberServer,
+};
+
+Set<ClientRole> _inviters(ClientRole role) => switch (role) {
+  ClientRole.owner => _owner,
+  ClientRole.member => _ownerMember,
+  ClientRole.server => _owner,
+  ClientRole.updateSigner => _nobody,
+  ClientRole.unknown => _nobody,
 };

@@ -697,14 +697,53 @@ fn a_feed_whose_answer_never_comes_is_reported_once_and_not_resent() {
     });
 }
 
-/// After pairing the session gives the feeder this phone's clock, as
-/// `wellfed time` does; the feeder's own event records it, and the next
-/// card shows the clock set.
+/// The simulated feeder's time view, read by its owner, after setting its
+/// time source to `ntp` when one is given.
+async fn owner_time(
+    sim: &Running,
+    ntp: Option<wellfed_model::NtpServer>,
+) -> wellfed_model::TimeView {
+    use wellfed_model::{Answer, Op, TimeChanges};
+
+    let mut owner = Connection::open(
+        &Keypair::from_secret(OWNER),
+        sim.identity,
+        sim.address,
+        [0xb1; 32],
+    )
+    .await
+    .unwrap();
+    let Answer::Time(time) = owner.ask([1; 16], &Op::GetTime).await.unwrap() else {
+        panic!("no time view");
+    };
+    let Some(ntp) = ntp else {
+        return time;
+    };
+    let changes = TimeChanges {
+        zone: None,
+        ntp: Some(ntp),
+    };
+    let put = Op::PutTime {
+        base: time.generation,
+        changes,
+    };
+    let answer = owner.ask([2; 16], &put).await.unwrap();
+    assert!(matches!(answer, Answer::Done { .. }), "{answer:?}");
+    let Answer::Time(time) = owner.ask([3; 16], &Op::GetTime).await.unwrap() else {
+        panic!("no time view");
+    };
+    time
+}
+
+/// A feeder that gets its time from phones only is synced on the session's
+/// first read of the time after pairing: its own event records it, and the
+/// next card shows the clock set.
 #[test]
-fn a_session_after_pairing_syncs_the_feeders_clock() {
+fn a_session_after_pairing_syncs_a_clock_only_phones_set() {
     local(async {
         let owner = *Keypair::from_secret(OWNER).public();
         let sim = Running::start(&Flash::memory(), Some(owner)).await;
+        owner_time(&sim, Some(wellfed_model::NtpServer::Off)).await;
         let (commands, mut heard) = start_session(sim.identity, sim.address, true);
 
         next(&mut heard, |update| match update {
@@ -719,6 +758,42 @@ fn a_session_after_pairing_syncs_the_feeders_clock() {
         })
         .await;
         assert!(card.clock_set);
+
+        commands.send(Command::Close).unwrap();
+        sim.stop().await;
+    });
+}
+
+/// A feeder that asks its router sends no sync for pairing: a sync before
+/// the time is read would re-anchor a clock NTP set at this phone's time.
+/// The clock is left to the router for its two minutes, and the owner's
+/// session stores this phone's zone meanwhile.
+#[test]
+fn a_session_after_pairing_leaves_the_clock_to_the_time_server() {
+    local(async {
+        let owner = *Keypair::from_secret(OWNER).public();
+        let sim = Running::start(&Flash::memory(), Some(owner)).await;
+        let (commands, mut heard) = start_session(sim.identity, sim.address, true);
+
+        let first = next(&mut heard, |update| match update {
+            SessionUpdate::Status { card } => Some(card),
+            _ => None,
+        })
+        .await;
+        assert!(!first.clock_set);
+        let synced = tokio::time::timeout(Duration::from_secs(3), async {
+            next_forever(&mut heard, |update| match update {
+                SessionUpdate::ClockSynced | SessionUpdate::ClockNotSynced => Some(()),
+                _ => None,
+            })
+            .await;
+        })
+        .await;
+        assert!(synced.is_err(), "no sync for pairing");
+
+        let time = owner_time(&sim, None).await;
+        assert_eq!((time.clock_ms, time.syncs), (None, 0), "{time:?}");
+        assert!(time.zone.is_some(), "the phone's zone, stored");
 
         commands.send(Command::Close).unwrap();
         sim.stop().await;

@@ -9,6 +9,7 @@ import 'package:wellfed/platform/join_ports.dart';
 import 'package:wellfed/platform/recorder.dart';
 import 'package:wellfed/platform/restore_ports.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
+import 'package:wellfed/src/rust/api/feeder.dart' as zones_api show timeZones;
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/join.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
@@ -152,6 +153,9 @@ class _Ports implements FeederPorts {
   Future<NetworkScan> scanNetworks() async => const NetworksUnread(ScanProblem.unavailable);
 
   @override
+  List<String> timeZones() => zones_api.timeZones();
+
+  @override
   Future<ImageCheck> updateImage() => throw UnimplementedError();
 
   @override
@@ -237,6 +241,12 @@ void main() {
     final router = FeederRouter(pinsPath: '${pins.path}/pending.json');
     feeder = FeederController(FakeBook()..feeders = [known], _Ports(owner, router), known);
     await _until(feeder, (state) => state.cardIsCurrent);
+    // The simulator asks a router that never answers, and a session sends
+    // no sync before NTP has had its two minutes: the owner sets the time
+    // by hand, as from the Clock screen, so meals can be skipped.
+    final FeederReply synced = await feeder.ask(const FeederRequest.syncClock());
+    expect(synced, isA<FeederReply_Done>());
+    await _until(feeder, (state) => state.card?.clockSet ?? false);
   });
 
   tearDownAll(() async {
@@ -376,6 +386,32 @@ void main() {
     expect(end, isA<FeedEnded>());
     if (end is FeedEnded) expect(end.result.requested, 1);
     feeder.dismissFeed();
+  });
+
+  test('a zone chosen from the list is kept, and cleared', skip: absent, () async {
+    final List<String> zones = feeder.timeZones();
+    expect(zones, containsAll(FakeFeederPorts().timeZones()), reason: 'the fakes name real zones');
+
+    Future<TimeInfo> time() async {
+      final FeederReply read = await feeder.ask(const FeederRequest.getTime());
+      if (read is! FeederReply_Time) fail('no time: $read');
+      return read.time;
+    }
+
+    final FeederReply chosen = await feeder.ask(
+      FeederRequest.putTime(
+        base: (await time()).generation,
+        zone: const ZoneChange.named(name: 'Asia/Kolkata'),
+      ),
+    );
+    expect(chosen, isA<FeederReply_Done>());
+    expect((await time()).zone, 'IST-5:30');
+
+    final FeederReply cleared = await feeder.ask(
+      FeederRequest.putTime(base: (await time()).generation, zone: const ZoneChange.clear()),
+    );
+    expect(cleared, isA<FeederReply_Done>());
+    expect((await time()).zone, isNull);
   });
 
   test('an invite made here lets a second phone join', skip: absent, () async {

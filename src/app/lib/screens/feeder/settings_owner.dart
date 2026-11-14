@@ -10,7 +10,9 @@ import 'package:wellfed/screens/feeder/today.dart' show clockWords;
 import 'package:wellfed/screens/feeder/updates.dart';
 import 'package:wellfed/screens/feeder/wifi.dart';
 import 'package:wellfed/src/limits.g.dart';
-import 'package:wellfed/src/rust/api/feeder.dart' show CalibrationInfo, CallInfo, FeederReply, FeederRequest;
+import 'package:wellfed/src/roles.g.dart';
+import 'package:wellfed/src/rust/api/feeder.dart'
+    show CalibrationInfo, CallInfo, FeederRefusal_Busy, FeederReply, FeederReply_Refused, FeederRequest;
 import 'package:wellfed/src/rust/api/model.dart' show CallClip_None, CallClip_Receiving, CallClip_Stored;
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
@@ -105,10 +107,48 @@ class _OwnerSectionState extends State<SettingsOwnerSection> {
             DiagnosticsScreen(feeder: feeder),
             open: (screen) => _open(context, screen),
           ),
+          SettingsTile(
+            first: false,
+            onTap: feeder.state.connection == Connection.online && feeder.state.may(Ask.reboot)
+                ? () => unawaited(confirmRestart(context, feeder))
+                : null,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Restart the feeder',
+                style: TextStyle(fontSize: 15, fontWeight: Fonts.medium, color: context.colors.accent),
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
+}
+
+/// People for a member, whom the feeder lets read its list and invite
+/// members.
+class SettingsPeopleSection extends StatelessWidget {
+  const SettingsPeopleSection({super.key, required this.feeder});
+
+  final FeederController feeder;
+
+  @override
+  Widget build(BuildContext context) => SettingsSection(
+    'People',
+    SettingsLink(
+      'People',
+      'See who uses it, and invite members',
+      first: true,
+      onTap: () => unawaited(
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => FormWidth(child: PeopleScreen(feeder: feeder)),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 class SettingsOwnerOnly extends StatelessWidget {
@@ -128,6 +168,7 @@ class SettingsOwnerOnly extends StatelessWidget {
             'Meal call',
             'Firmware updates',
             'Remove people',
+            'Restart the feeder',
           ].indexed)
             SettingsTile(
               first: i == 0,
@@ -161,24 +202,34 @@ class _Link extends StatelessWidget {
   Widget build(BuildContext context) => SettingsLink(name, note, first: first, onTap: () => open(screen));
 }
 
-/// Ask, then restart. The feeder refuses a restart while a feed runs; one
-/// that goes unanswered may have gone through, and is not sent again.
+/// Ask, then restart. The feeder refuses a restart (`Busy`) while a feed is
+/// queued or runs, or while a meal's claim is being written, so no feed is cut
+/// short; once it agrees it refuses feeds until it is back. It starts again
+/// without Bluetooth, which ends a setup it was running. One that goes
+/// unanswered may have gone through, and is not sent again.
 Future<void> confirmRestart(BuildContext context, FeederController feeder) async {
   final bool? sure = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
       title: Text('Restart ${feeder.state.known.name}?'),
-      content: const Text("It's back in about a minute. It can't feed during the restart."),
+      content: const Text(
+        "It's back in about a minute and can't feed until then. A restart ends Bluetooth setup. "
+        "It won't restart in the middle of a feed.",
+      ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
         FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Restart')),
       ],
     ),
   );
-  if (sure != true) return;
+  if (sure != true || !context.mounted) return;
 
   final FeederReply reply = await feeder.ask(const FeederRequest.reboot());
-  if (context.mounted && showProblem(context, reply)) {
+  if (!context.mounted) return;
+  if (reply case FeederReply_Refused(refusal: FeederRefusal_Busy())) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text("It's feeding or about to. Restart it once the feed ends.")));
+  } else if (showProblem(context, reply)) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${feeder.state.known.name} is restarting.')));
   }
 }

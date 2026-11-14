@@ -12,7 +12,9 @@
 //! - a write while the feeder is gone is refused unsent, never held, and a
 //!   revoked key stops the session;
 //! - a write refused before it went leaves the session, and a feed still
-//!   out on it, as they were.
+//!   out on it, as they were;
+//! - a clock the feeder does not have is set by the member's sync, once,
+//!   with Home Assistant's zone, and a set one is left alone.
 
 mod support;
 
@@ -125,6 +127,7 @@ fn session(
     let target = Target {
         identity: sim.identity,
         address: Some(address.to_string()),
+        zone: jiff::tz::TimeZone::UTC,
     };
     Saving::new(Feeder::start(key, target, clocks, Carried::default()).unwrap())
 }
@@ -201,6 +204,61 @@ const BREAKFAST: Plan = Plan {
     enabled: true,
     call: 0,
 };
+
+/// The feeder's time view, read by its owner.
+fn time(sim: &Threaded) -> wellfed_model::TimeView {
+    let Answer::Time(time) = owner(sim, &Op::GetTime) else {
+        panic!("no time view");
+    };
+    time
+}
+
+/// The owner sets where the feeder asks for the time.
+fn ntp(sim: &Threaded, server: wellfed_model::NtpServer) {
+    let changes = wellfed_model::TimeChanges {
+        zone: None,
+        ntp: Some(server),
+    };
+    let base = time(sim).generation;
+    let answer = owner(sim, &Op::PutTime { base, changes });
+    assert!(matches!(answer, Answer::Done { .. }), "{answer:?}");
+}
+
+#[test]
+fn a_clock_the_feeder_lacks_is_set_once_and_a_set_one_left_alone() {
+    let (sim, key) = joined();
+    // With no time server, nothing else will set it: the sync goes at once.
+    ntp(&sim, wellfed_model::NtpServer::Off);
+    assert_eq!(time(&sim).clock_ms, None, "a fresh feeder needs the time");
+
+    // Home Assistant's zone, not the host's, gives the feeder its offset.
+    let target = Target {
+        identity: sim.identity,
+        address: Some(sim.address.to_string()),
+        zone: jiff::tz::TimeZone::get("Asia/Kolkata").unwrap(),
+    };
+    let feeder =
+        Saving::new(Feeder::start(key, target, Clocks::DEFAULT, Carried::default()).unwrap());
+    let deadline = Instant::now() + WAIT;
+    let set = loop {
+        let time = time(&sim);
+        if time.clock_ms.is_some() {
+            break time;
+        }
+        assert!(Instant::now() < deadline, "the clock set within {WAIT:?}");
+        std::thread::sleep(Duration::from_millis(200));
+    };
+    assert_eq!(set.last, Some(wellfed_model::TimeSource::Client));
+    assert_eq!(set.syncs, 1);
+    assert_eq!(set.offset_s, Some(5 * 3600 + 30 * 60), "India's offset");
+
+    // Each status read finds the clock set, and sends nothing more.
+    for _ in 0..3 {
+        feeder.refresh();
+        state_where(&feeder, |state| state.status.clock_ms.is_some());
+    }
+    assert_eq!(time(&sim).syncs, 1, "a set clock is left alone");
+}
 
 #[test]
 fn the_session_feeds_to_its_fed_event_and_sets_the_lock() {
@@ -737,6 +795,7 @@ fn a_feed_sending_when_home_assistant_stops_is_never_taken_for_an_older_one() {
     let target = Target {
         identity: sim.identity,
         address: Some(sim.address.to_string()),
+        zone: jiff::tz::TimeZone::UTC,
     };
     let f = sending.id.clone();
     let carried = Carried {
@@ -782,6 +841,7 @@ fn a_lost_feed_a_week_old_is_forgotten() {
     let target = Target {
         identity: sim.identity,
         address: Some(sim.address.to_string()),
+        zone: jiff::tz::TimeZone::UTC,
     };
     let week = 7 * 24 * 3_600_000;
     let now_ms = std::time::SystemTime::now()
@@ -829,6 +889,7 @@ fn a_lost_feed_carried_across_a_restart_settles_in_the_next_session() {
     let target = Target {
         identity: sim.identity,
         address: Some(sim.address.to_string()),
+        zone: jiff::tz::TimeZone::UTC,
     };
     let carried = Carried {
         pending: vec![pending.clone()],
@@ -877,6 +938,7 @@ fn an_answered_feeds_fed_does_not_settle_a_lost_one_after_a_restart() {
     let target = Target {
         identity: sim.identity,
         address: Some(sim.address.to_string()),
+        zone: jiff::tz::TimeZone::UTC,
     };
     let carried = Carried {
         pending: vec![pending.clone()],
@@ -973,6 +1035,7 @@ fn a_settled_feed_s_number_is_carried_so_its_replay_settles_nothing() {
     let target = Target {
         identity: sim.identity,
         address: Some(sim.address.to_string()),
+        zone: jiff::tz::TimeZone::UTC,
     };
     let carried = Carried {
         pending: vec![pending.clone()],
@@ -1047,6 +1110,7 @@ fn a_lost_feed_holds_feeds_past_the_report_window_until_released() {
     let target = Target {
         identity: sim.identity,
         address: Some(sim.address.to_string()),
+        zone: jiff::tz::TimeZone::UTC,
     };
     let now_ms = i64::try_from(
         std::time::SystemTime::now()

@@ -18,7 +18,9 @@
 //! [`RETRY_MAX_MS`]; after a good one the next goes [`POLL_MS`] later,
 //! unless the clock needs the time before then ([`Exchange::soon`]). A
 //! kiss-o'-death `RATE` waits [`RATE_MS`], and `DENY` or `RSTR` stops asking
-//! that server for [`DENIED_MS`].
+//! that server for [`DENIED_MS`]. A caller whose clock refused the fix can
+//! hold the next request ([`Exchange::hold`]), which `soon` does not
+//! shorten either.
 
 use super::wall::{Fix, MAX_UNIX_MS, MIN_UNIX_MS, Origin};
 
@@ -199,8 +201,9 @@ pub fn serve(
 enum Phase {
     /// The next request goes at `next`.
     Idle { next: u32 },
-    /// The server sent a kiss-o'-death: nothing goes before `until`,
-    /// however much the clock needs the time (RFC 4330).
+    /// Nothing goes before `until`, however much the clock needs the time:
+    /// the server sent a kiss-o'-death (RFC 4330), or the caller refused its
+    /// last fix and [`Exchange::hold`] keeps it from asking again at once.
     Held { until: u32 },
     /// A request with `nonce` went at `sent`.
     Waiting { nonce: u64, sent: u32 },
@@ -246,8 +249,8 @@ impl Exchange {
     }
 
     /// The clock needs the time: ask within [`RETRY_MAX_MS`] rather than
-    /// wait out a poll interval. Lost answers still back off, and a
-    /// kiss-o'-death's hold is never shortened.
+    /// wait out a poll interval. Lost answers still back off, and a hold,
+    /// a kiss-o'-death's or [`Exchange::hold`]'s, is never shortened.
     pub fn soon(&mut self, now: u32) {
         if let Phase::Idle { next } = self.phase
             && next.wrapping_sub(now) > RETRY_MAX_MS
@@ -255,6 +258,15 @@ impl Exchange {
         {
             self.phase = Phase::Idle { next: now };
         }
+    }
+
+    /// Hold the next request `ms` from `now`, whatever the clock needs: a
+    /// caller whose clock refused a fix it could not take backs off with
+    /// it, rather than ask again on every pass.
+    pub fn hold(&mut self, now: u32, ms: u32) {
+        self.phase = Phase::Held {
+            until: now.wrapping_add(ms),
+        };
     }
 
     /// Whether a request is due now, so a caller draws a nonce only then.

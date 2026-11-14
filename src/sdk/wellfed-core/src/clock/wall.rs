@@ -121,6 +121,14 @@ pub const MISSED_GRACE_MS: u64 = 15 * 60 * 1000;
 /// the KM4 has no 128-bit divide.
 const PPB: i64 = 1_000_000_000;
 
+/// Which key an owner's sync came from: its first 4 bytes, as events name a
+/// client. The rate is measured only between syncs of one key, since two
+/// owners' phones may disagree by far more than a sync's allowance, and a
+/// rate measured across them would carry that disagreement with the learned
+/// bound's confidence. A tag shared by two keys only lets them teach
+/// together, as every owner's sync did before.
+pub type SyncKey = [u8; 4];
+
 /// One sync as a client sends it: the time and the zone's offsets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Sync {
@@ -302,9 +310,10 @@ pub struct WallClock {
     /// Where the clock reads: the trusted fix, or an untrusted fix's
     /// overlap with the trusted interval. Its own error is never reported.
     centre: Option<Anchor>,
-    /// The first owner's fix since the rate was last forgotten: the rate
-    /// is measured across it.
-    base: Option<Anchor>,
+    /// The first owner's fix since the rate was last forgotten, and the key
+    /// it came from: the rate is measured across it, from later syncs of
+    /// that key alone.
+    base: Option<(Anchor, Option<SyncKey>)>,
     rate_ppb: i32,
     rate_bound_ppb: u32,
     learned: bool,
@@ -361,18 +370,25 @@ impl WallClock {
     }
 
     /// Adopt a client's sync received at uptime `now`, as `origin` (an
-    /// owner's session or another). A refused sync leaves the clock as it
-    /// was; an accepted one also leaves its offsets for local time while
-    /// no zone is set.
-    pub fn sync(&mut self, now: u32, sync: Sync, origin: Origin) -> Result<Jump, SyncError> {
+    /// owner's session or another), from the key `key`. A refused sync
+    /// leaves the clock as it was; an accepted one also leaves its offsets
+    /// for local time while no zone is set.
+    pub fn sync(
+        &mut self,
+        now: u32,
+        sync: Sync,
+        origin: Origin,
+        key: SyncKey,
+    ) -> Result<Jump, SyncError> {
         sync.validate()?;
-        let jump = self.fix(
+        let jump = self.adopt(
             now,
             Fix {
                 unix_ms: sync.unix_ms,
                 error_ms: SYNC_ERROR_MS,
                 origin,
             },
+            Some(key),
         )?;
         self.hint = Some(Hint {
             offset_s: sync.offset_s,
@@ -382,8 +398,14 @@ impl WallClock {
         Ok(jump)
     }
 
-    /// Adopt `fix`, measured at uptime `now`.
+    /// Adopt `fix`, measured at uptime `now`. An owner's fix given here
+    /// names no key: such fixes teach the rate among themselves only.
     pub fn fix(&mut self, now: u32, fix: Fix) -> Result<Jump, SyncError> {
+        self.adopt(now, fix, None)
+    }
+
+    /// Adopt `fix`, measured at uptime `now`, from `key` for a sync.
+    fn adopt(&mut self, now: u32, fix: Fix, key: Option<SyncKey>) -> Result<Jump, SyncError> {
         if !(MIN_UNIX_MS..MAX_UNIX_MS).contains(&fix.unix_ms) {
             return Err(SyncError::Time);
         }
@@ -419,7 +441,7 @@ impl WallClock {
             (None, origin) => {
                 self.trusted(point);
                 if origin == Origin::Owner {
-                    self.learn(point);
+                    self.learn(point, key);
                 }
                 Jump::First
             }
@@ -428,7 +450,7 @@ impl WallClock {
                 let consistent = delta.unsigned_abs() <= error_us + point.error_us;
                 self.trusted(point);
                 if consistent {
-                    self.learn(point);
+                    self.learn(point, key);
                 } else {
                     // The clock was wrong, so its rate may be: what it was
                     // measured against says nothing more. Nor is this fix a
@@ -506,15 +528,23 @@ impl WallClock {
     }
 
     /// Measure the rate across the baseline, from one trusted fix to
-    /// another, once it is long enough to do so within `LEARN_MAX_PPM`.
-    fn learn(&mut self, point: Anchor) {
-        let Some(base) = self.base else {
-            self.base = Some(point);
+    /// another of the same key, once it is long enough to do so within
+    /// `LEARN_MAX_PPM`. Another key's fix re-anchored the clock but measures
+    /// nothing, and leaves the baseline to its own key: the rate is learned
+    /// again only from that key, or from a baseline the next owner's sync
+    /// starts once the rate is forgotten (a restart, an owner's sync that
+    /// disagreed, three NTP misses) or the baseline retires.
+    fn learn(&mut self, point: Anchor, key: Option<SyncKey>) {
+        let Some((base, base_key)) = self.base else {
+            self.base = Some((point, key));
             return;
         };
         let span = point.uptime_ms.wrapping_sub(base.uptime_ms);
         if span >= crate::HALF_RANGE {
-            self.base = Some(point);
+            self.base = Some((point, key));
+            return;
+        }
+        if base_key != key {
             return;
         }
         if span == 0 {
@@ -572,7 +602,7 @@ impl WallClock {
             self.disjoint = 0;
             self.contested = false;
         }
-        if old(self.base) {
+        if old(self.base.map(|(base, _)| base)) {
             self.base = None;
         }
         if self

@@ -20,6 +20,7 @@ import 'package:wellfed/screens/feeder/today.dart';
 import 'package:wellfed/screens/feeder/update_end.dart';
 import 'package:wellfed/screens/feeder/updates.dart';
 import 'package:wellfed/screens/feeder/wifi.dart';
+import 'package:wellfed/screens/feeder/zone_picker.dart';
 import 'package:wellfed/screens/home/add_feeder.dart';
 import 'package:wellfed/screens/home/home.dart';
 import 'package:wellfed/screens/home/welcome.dart';
@@ -175,6 +176,7 @@ void main() {
             ('updates', (feeder) => UpdatesScreen(feeder: feeder)),
             ('diagnostics', (feeder) => DiagnosticsScreen(feeder: feeder)),
             ('the clock', (feeder) => ClockScreen(feeder: feeder)),
+            ('the zone picker', (feeder) => ZonePickerScreen(zones: feeder.timeZones(), current: 'America/Denver')),
             ('portion size', (feeder) => PortionScreen(feeder: feeder)),
             ('the live log', (feeder) => LiveLogScreen(feeder: feeder)),
             ('the motor traces', (feeder) => MotorTracesScreen(feeder: feeder)),

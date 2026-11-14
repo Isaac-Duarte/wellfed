@@ -314,7 +314,18 @@ fn roles_dart() -> String {
             (name(op), may)
         })
         .collect();
-    let sets: BTreeSet<&Vec<usize>> = rows.iter().map(|(_, may)| may).collect();
+    // Each role an invite may grant, with the roles that may ask for it.
+    let invites: Vec<(&str, Vec<usize>)> = ROLES
+        .iter()
+        .map(|&(granted, name)| {
+            let invite = Op::CreateInvite { role: granted };
+            let may = (0..ROLES.len())
+                .filter(|&role| invite.allowed(ROLES[role].0))
+                .collect();
+            (name, may)
+        })
+        .collect();
+    let sets: BTreeSet<&Vec<usize>> = rows.iter().chain(&invites).map(|(_, may)| may).collect();
 
     let mut out = String::from(
         "// Generated from wellfed_proto::access by src/app/rust/tests/protocol.rs; do not edit.\n\n\
@@ -331,7 +342,10 @@ fn roles_dart() -> String {
          /// rules: its matrix first, then for an invite the role it grants, which\n\
          /// pairing checks next; the invite rows ask about inviting a member. A\n\
          /// role a newer build added may send nothing.\n\
-         bool mayAsk(ClientRole role, Ask ask) => _senders(ask).contains(role);\n",
+         bool mayAsk(ClientRole role, Ask ask) => _senders(ask).contains(role);\n\n\
+         /// Whether a client holding [by] may create an invite granting [role]:\n\
+         /// the matrix, then pairing's rule of whom each role may invite.\n\
+         bool mayInvite(ClientRole by, ClientRole role) => _inviters(role).contains(by);\n",
     );
     for may in sets {
         let roles: Vec<String> = may
@@ -349,6 +363,11 @@ fn roles_dart() -> String {
     out.push_str("\nSet<ClientRole> _senders(Ask ask) => switch (ask) {\n");
     for (name, may) in &rows {
         writeln!(out, "  Ask.{name} => {},", set_name(may)).unwrap();
+    }
+    out.push_str("};\n");
+    out.push_str("\nSet<ClientRole> _inviters(ClientRole role) => switch (role) {\n");
+    for (name, may) in &invites {
+        writeln!(out, "  ClientRole.{name} => {},", set_name(may)).unwrap();
     }
     out.push_str("};\n");
     out

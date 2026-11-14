@@ -48,7 +48,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1006531256;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 963778175;
 
 // Section: executor
 
@@ -4865,6 +4865,35 @@ fn wire__crate__api__store__swap_store_impl(
         },
     )
 }
+fn wire__crate__api__feeder__time_zones_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "time_zones",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>(crate::api::feeder::time_zones())?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__api__update__unknown_end_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -4941,6 +4970,38 @@ fn wire__crate__api__update__update_offer_impl(
                     api_skew,
                     api_update,
                 ))?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__feeder__use_data_directory_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "use_data_directory",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_dir = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>({
+                    crate::api::feeder::use_data_directory(api_dir);
+                })?;
                 std::result::Result::Ok(output_ok)
             })())
         },
@@ -9660,6 +9721,8 @@ impl SseDecode for crate::api::feeder::TimeInfo {
         let mut var_last = <Option<crate::api::model::TimeSource>>::sse_decode(deserializer);
         let mut var_lastAtMs = <Option<i64>>::sse_decode(deserializer);
         let mut var_ntpLast = <Option<crate::api::model::NtpResult>>::sse_decode(deserializer);
+        let mut var_phoneAheadMs = <Option<i64>>::sse_decode(deserializer);
+        let mut var_serverDisagrees = <bool>::sse_decode(deserializer);
         return crate::api::feeder::TimeInfo {
             generation: var_generation,
             writable: var_writable,
@@ -9675,6 +9738,8 @@ impl SseDecode for crate::api::feeder::TimeInfo {
             last: var_last,
             last_at_ms: var_lastAtMs,
             ntp_last: var_ntpLast,
+            phone_ahead_ms: var_phoneAheadMs,
+            server_disagrees: var_serverDisagrees,
         };
     }
 }
@@ -10504,8 +10569,10 @@ fn pde_ffi_dispatcher_sync_impl(
         109 => wire__crate__api__setup__setup_control_impl(ptr, rust_vec_len, data_len),
         110 => wire__crate__api__setup__setup_service_impl(ptr, rust_vec_len, data_len),
         111 => wire__crate__api__store__store_notice_read_impl(ptr, rust_vec_len, data_len),
-        113 => wire__crate__api__update__unknown_end_impl(ptr, rust_vec_len, data_len),
-        114 => wire__crate__api__update__update_offer_impl(ptr, rust_vec_len, data_len),
+        113 => wire__crate__api__feeder__time_zones_impl(ptr, rust_vec_len, data_len),
+        114 => wire__crate__api__update__unknown_end_impl(ptr, rust_vec_len, data_len),
+        115 => wire__crate__api__update__update_offer_impl(ptr, rust_vec_len, data_len),
+        116 => wire__crate__api__feeder__use_data_directory_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -14364,6 +14431,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::feeder::TimeInfo {
             self.last.into_into_dart().into_dart(),
             self.last_at_ms.into_into_dart().into_dart(),
             self.ntp_last.into_into_dart().into_dart(),
+            self.phone_ahead_ms.into_into_dart().into_dart(),
+            self.server_disagrees.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -18950,6 +19019,8 @@ impl SseEncode for crate::api::feeder::TimeInfo {
         <Option<crate::api::model::TimeSource>>::sse_encode(self.last, serializer);
         <Option<i64>>::sse_encode(self.last_at_ms, serializer);
         <Option<crate::api::model::NtpResult>>::sse_encode(self.ntp_last, serializer);
+        <Option<i64>>::sse_encode(self.phone_ahead_ms, serializer);
+        <bool>::sse_encode(self.server_disagrees, serializer);
     }
 }
 

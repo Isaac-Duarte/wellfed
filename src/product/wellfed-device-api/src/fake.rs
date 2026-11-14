@@ -31,8 +31,9 @@ use crate::clients::{CLIENTS, Client, Label, Role};
 use crate::mailbox::{
     Asked, Calibration, CalibrationResult, CalibrationView, FeederSettings, KEYS_FINISHED,
     KindSettings as _, LockResult, MealSkip, Origin, PlansResult, PlansView, PlayResult, Saved,
-    SettingsFields, SettingsResult, SettingsView, Table, TimeFields, TimeResult, TimeSettings,
-    TimeSettingsResult, TimeSettingsView, TimeState, WifiResult, WifiSource, WifiView,
+    SettingsFields, SettingsResult, SettingsView, SyncKey, Table, TimeFields, TimeResult,
+    TimeSettings, TimeSettingsResult, TimeSettingsView, TimeState, WifiResult, WifiSource,
+    WifiView,
 };
 use crate::wifi::Credentials;
 use crate::{
@@ -91,6 +92,8 @@ pub struct Fake {
     pub rebooted: bool,
     /// Time syncs handed to the clock.
     pub syncs: usize,
+    /// The key each of those syncs named, in order.
+    pub sync_keys: Vec<SyncKey>,
     pub clock: WallClock,
     /// Feeds queued, in order: feed `n` is `feeds[n - 1]`.
     pub feeds: Vec<(u8, proto::Source)>,
@@ -581,9 +584,10 @@ impl Device for Fake {
         }
     }
 
-    fn time_sync(&mut self, fields: TimeFields, origin: Origin) -> TimeResult {
+    fn time_sync(&mut self, fields: TimeFields, origin: Origin, key: SyncKey) -> TimeResult {
         self.syncs += 1;
-        TimeResult::from_sync(self.clock.sync(1, fields.sync(), origin))
+        self.sync_keys.push(key);
+        TimeResult::from_sync(self.clock.sync(1, fields.sync(), origin, key))
     }
 
     fn keys(&mut self, change: KeyChange) -> Option<u32> {
@@ -1013,8 +1017,8 @@ impl Device for Fountain {
     fn wifi(&mut self, change: Option<Asked<Option<Credentials>>>) -> WifiResult {
         self.0.wifi(change)
     }
-    fn time_sync(&mut self, fields: TimeFields, origin: Origin) -> TimeResult {
-        self.0.time_sync(fields, origin)
+    fn time_sync(&mut self, fields: TimeFields, origin: Origin, key: SyncKey) -> TimeResult {
+        self.0.time_sync(fields, origin, key)
     }
     fn time_settings(&mut self, change: Option<TimeSettings>) -> TimeSettingsResult {
         self.0.time_settings(change)

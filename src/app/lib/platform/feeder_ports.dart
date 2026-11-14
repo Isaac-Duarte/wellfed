@@ -10,6 +10,7 @@ import 'package:wellfed/platform/restore_ports.dart';
 import 'package:wellfed/src/rust/api/alerts.dart' show AlertHold;
 import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/feeder.dart' show UpdateInfo;
+import 'package:wellfed/src/rust/api/feeder.dart' as feeder_api show timeZones;
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/model.dart' show Skew;
@@ -122,6 +123,9 @@ abstract interface class FeederPorts {
 
   /// The networks this phone hears, for the feeder's Wi-Fi.
   Future<NetworkScan> scanNetworks();
+
+  /// The time zones an owner picks the feeder's from, as IANA names, sorted.
+  List<String> timeZones();
 }
 
 /// [FeederPorts] on Android, with this phone's key.
@@ -154,6 +158,9 @@ class AppFeederPorts implements FeederPorts {
 
   @override
   Future<NetworkScan> scanNetworks() => scanNearbyNetworks();
+
+  @override
+  List<String> timeZones() => feeder_api.timeZones();
 
   @override
   Future<Uint8List?> pickRecording() async {

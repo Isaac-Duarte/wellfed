@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:wellfed/platform/alert_ports.dart';
 import 'package:wellfed/platform/notices.dart';
 import 'package:wellfed/platform/secure_storage.dart';
+import 'package:wellfed/src/rust/api/feeder.dart' show useDataDirectory;
 import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/src/rust/frb_generated.dart';
@@ -32,6 +33,7 @@ Future<void> background() async {
   // Kotlin answers with the app's directory, as path_provider would, whose
   // Android half this engine leaves out.
   dir = await _channel.invokeMethod<String>('ready') ?? '';
+  if (dir.isNotEmpty) useDataDirectory(dir: dir);
 }
 
 /// One round with every feeder this phone knows. With no client key or no feeders there is

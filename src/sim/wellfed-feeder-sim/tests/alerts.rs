@@ -73,7 +73,7 @@ impl Feeder {
         let now = self.now;
         self.sim
             .platform()
-            .time_sync(now, sync, Origin::Owner)
+            .time_sync(now, sync, Origin::Owner, [0x21; 4])
             .unwrap();
         self.wall = unix_ms;
     }

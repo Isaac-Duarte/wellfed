@@ -1,13 +1,18 @@
-//! One catch-up with one feeder: a short read-only session that reads the
-//! status, reads the alert table if the status shows it moved, and applies it
-//! to the feeder's [`Watch`] in `alerts.json`. Dart only starts one, from the
-//! periodic job, the "instant while home" service or a screen, and posts what
-//! it returns.
+//! One catch-up with one feeder: a short session that reads the status,
+//! reads the alert table if the status shows it moved, and applies it to the
+//! feeder's [`Watch`] in `alerts.json`, and that may send one write, a clock
+//! sync. Dart only starts one, from the periodic job, the "instant while
+//! home" service or a screen, and posts what it returns.
 //!
-//! A catch-up reads and nothing else. It reaches the session only through
-//! [`Read`], whose ops are the status and the alert table, so no path from
-//! here can send a feed, a write, a retry or the clock sync an ordinary
-//! session offers.
+//! It reaches the session through two paths and no other: [`Read`], whose
+//! ops are reads only (the time view, the status and the alert table), and
+//! [`keep_clock`], a separate step whose one op is the clock sync, sent only
+//! when [`wellfed_client::time::AutoSync`] allows it. So no path from here
+//! can send a feed, another write or a retry. The sync is what keeps a
+//! feeder with no time server set while the app is closed. Its spacing (one
+//! automatic sync per feeder every [`crate::clock::SYNC_AGAIN`]) and its
+//! refusals are kept per feeder in `alerts.json` and shared with the
+//! sessions ([`crate::clock`]), so they hold however often catch-ups run.
 //!
 //! A catch-up is short and never left open: [`SITTING`] bounds it, and a
 //! catch-up that runs out of time counts as one that heard nothing.
@@ -23,10 +28,12 @@ use std::path::Path;
 use std::time::Duration;
 
 use jiff::Timestamp;
+use jiff::tz::TimeZone;
 use tokio::time::timeout;
 use wellfed_client::alerts::{Change, Context, Cursor, FeederClock, Watch};
+use wellfed_client::time::{AutoSync, Boot, ClockCheck};
 use wellfed_connect::{Connection, Error};
-use wellfed_model::{Answer, Hex, Op};
+use wellfed_model::{Answer, Hex, Op, Refusal};
 use wellfed_session::noise::Keypair;
 
 use crate::alerts::{self, Sitting};
@@ -38,9 +45,10 @@ use crate::api::keys::random;
 /// and two reads, each answered at once by a feeder that is there.
 const SITTING: Duration = Duration::from_secs(20);
 
-/// What a catch-up may ask: reads only.
+/// What a catch-up may read.
 #[derive(Clone, Copy, Debug)]
 enum Read {
+    Time,
     Status,
     Alerts,
 }
@@ -48,6 +56,7 @@ enum Read {
 impl Read {
     const fn op(self) -> Op {
         match self {
+            Self::Time => Op::GetTime,
             Self::Status => Op::Status,
             Self::Alerts => Op::GetAlerts,
         }
@@ -113,8 +122,9 @@ pub(crate) async fn catch_up(
     // for a route to it, such as a VPN's.
     let address = tried.filter(|_| target.online || target.manual.is_some());
 
+    let mut clock = crate::clock::load(Some(dir), &identity).await;
     let visit = match &address {
-        Some(address) => visit(address, target, &watch).await,
+        Some(address) => visit(address, target, &watch, &mut clock).await,
         None => Visit::NoAnswer,
     };
     let end = match (&visit, &address) {
@@ -162,6 +172,8 @@ pub(crate) async fn catch_up(
         })
     })
     .await??;
+    // After the change above, which made the feeder's entry if it had none.
+    crate::clock::store(Some(dir), &identity, &clock).await;
     Ok((end, changes))
 }
 
@@ -175,14 +187,14 @@ async fn pending(dir: &Path, identity: &str) -> Result<Vec<Change>, BridgeError>
 }
 
 /// The session itself, bounded by [`SITTING`].
-async fn visit(address: &str, target: &Target<'_>, watch: &Watch) -> Visit {
+async fn visit(address: &str, target: &Target<'_>, watch: &Watch, clock: &mut AutoSync) -> Visit {
     let Ok(address) = wellfed_connect::parse_address(address) else {
         return Visit::NoAnswer;
     };
     let Ok(ephemeral) = random() else {
         return Visit::NoAnswer;
     };
-    match timeout(SITTING, read(address, target, watch, ephemeral)).await {
+    match timeout(SITTING, read(address, target, watch, ephemeral, clock)).await {
         Ok(Ok(visit)) => visit,
         // The feeder's own refusal: it is there.
         Ok(Err(Error::UnknownKey | Error::Version(_) | Error::Full | Error::Legacy)) => {
@@ -197,13 +209,25 @@ async fn read(
     target: &Target<'_>,
     watch: &Watch,
     ephemeral: [u8; 32],
+    clock: &mut AutoSync,
 ) -> Result<Visit, Error> {
     let mut connection = Connection::open(target.keys, target.identity, address, ephemeral).await?;
     let epoch = connection.epoch();
-
-    let Answer::Status(status) = ask(&mut connection, Read::Status).await? else {
+    let Answer::Status(mut status) = ask(&mut connection, Read::Status).await? else {
         return Ok(Visit::Answered);
     };
+    let boot = Boot::read(&status, Timestamp::now());
+    // What the clock steps hear changes nothing here: a sync that did not
+    // land waits for the next catch-up, and a link that broke fails the
+    // next read. One that landed set the clock the status read before it
+    // lacked, so the status is read again for the alerts.
+    if let Ok(Synced::Landed) = keep_clock(&mut connection, clock, boot).await {
+        let Answer::Status(again) = ask(&mut connection, Read::Status).await? else {
+            return Ok(Visit::Answered);
+        };
+        status = again;
+    }
+
     let cursor = Cursor {
         epoch,
         boot: status.boot_count,
@@ -228,6 +252,48 @@ async fn read(
         ..cursor
     };
     Ok(Visit::Table(cursor, Box::new(view), clock))
+}
+
+/// What [`keep_clock`] came to.
+enum Synced {
+    /// No sync went, or its answer was not `Done`.
+    No,
+    Landed,
+}
+
+/// Sync the feeder's clock if its time view and the phone's memo `clock`
+/// ask this key's role to, with the status read as `boot`. The
+/// sync goes once; one whose answer is lost is not sent again, and one
+/// refused is not sent again until the clock's view moves on.
+async fn keep_clock(
+    connection: &mut Connection,
+    clock: &mut AutoSync,
+    boot: Boot,
+) -> Result<Synced, Error> {
+    let Answer::Time(time) = ask(connection, Read::Time).await? else {
+        return Ok(Synced::No);
+    };
+    let now = Timestamp::now();
+    let role = connection.role();
+    if clock.read(&time, boot, role, now, crate::clock::SYNC_AGAIN) != ClockCheck::Sync {
+        return Ok(Synced::No);
+    }
+
+    let sync = wellfed_client::time::sync(now, &TimeZone::system());
+    let id = random().map_err(|_| Error::Timeout)?;
+    clock.sent(now);
+    let answer = connection
+        .ask(id, &Op::TimeSync(sync))
+        .await
+        .map_err(wellfed_connect::AskError::into_error)?;
+    Ok(match answer {
+        Answer::Done { .. } => Synced::Landed,
+        Answer::Refused(Refusal::Time) => {
+            clock.refused(&time, boot);
+            Synced::No
+        }
+        _ => Synced::No,
+    })
 }
 
 async fn ask(connection: &mut Connection, read: Read) -> Result<Answer, Error> {

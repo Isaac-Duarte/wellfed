@@ -25,7 +25,7 @@
 use wellfed_core::clock::tick::TickClock;
 use wellfed_core::clock::wall::{
     CARRY_WORDS, Fix, Jump, NoResume, Origin, Restart, State, Sync as ClockSync, SyncError,
-    UNLEARNED_PPM, WallClock,
+    SyncKey, UNLEARNED_PPM, WallClock,
 };
 use wellfed_core::clock::zone::Rule;
 
@@ -130,11 +130,12 @@ pub fn now_ms() -> u32 {
     update(|_, now, _| now)
 }
 
-/// Adopt a client's sync, as `origin`, and log it as a `PLTIM1` record.
-pub fn sync(sync: ClockSync, origin: Origin) -> Result<Jump, SyncError> {
+/// Adopt a client's sync, as `origin` from the key `key`, and log it as a
+/// `PLTIM1` record.
+pub fn sync(sync: ClockSync, origin: Origin, key: SyncKey) -> Result<Jump, SyncError> {
     let rtc = rtc_seconds();
     let (result, now) = update(|clock, now, kept_at| {
-        let result = clock.sync(now, sync, origin);
+        let result = clock.sync(now, sync, origin, key);
         store(clock, now, rtc, kept_at);
         (result, now)
     });

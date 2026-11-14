@@ -217,7 +217,7 @@ impl Rig {
         let now = self.now;
         self.feeder
             .platform_mut()
-            .time_sync(now, sync, Origin::Owner)
+            .time_sync(now, sync, Origin::Owner, [0x21; 4])
             .unwrap();
     }
 

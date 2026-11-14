@@ -102,8 +102,8 @@ class FakeSession with FakeOpaque implements FeederSession {
   @override
   void close() => closes++;
 
-  void opened({Skew skew = Skew.same}) =>
-      updates.add(SessionUpdate.opened(build: 'test', role: ClientRole.owner, skew: skew));
+  void opened({Skew skew = Skew.same, ClientRole role = ClientRole.owner}) =>
+      updates.add(SessionUpdate.opened(build: 'test', role: role, skew: skew));
 
   void status(Card card) => updates.add(SessionUpdate.status(card: card));
 
@@ -201,6 +201,10 @@ class FakeFeederPorts with FakeUpdateRules implements FeederPorts {
 
   @override
   Future<NetworkScan> scanNetworks() async => scan;
+
+  /// A few of the names the bridge lists, in its order.
+  @override
+  List<String> timeZones() => const ['America/Denver', 'America/New_York', 'Asia/Kolkata', 'Europe/Berlin', 'UTC'];
   final answers = <(String, String)>[];
 
   @override

@@ -17,6 +17,7 @@ pub mod android;
 pub mod api;
 mod bluetooth;
 mod catch_up;
+mod clock;
 // `allow`, not `expect`: `make check-rust`'s production pass fires lints
 // here that its first pass does not enable. Unformatted, so a regeneration
 // matches the committed file byte for byte.

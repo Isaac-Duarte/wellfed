@@ -46,6 +46,7 @@ Card fullCard() => fakeCard(
     ),
   ],
   time: TimeInfo(
+    serverDisagrees: false,
     generation: 1,
     writable: true,
     zone: 'MST7MDT,M3.2.0,M11.1.0',

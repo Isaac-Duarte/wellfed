@@ -59,6 +59,7 @@ def state(**changes: Any) -> SimpleNamespace:
         "last_fed": None,
         "portions_today": None,
         "portion_mg": 9000,
+        "time_server_disagrees": False,
     }
     values.update(changes)
     return SimpleNamespace(**values)

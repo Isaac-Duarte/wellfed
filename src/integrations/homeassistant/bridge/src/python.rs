@@ -201,6 +201,13 @@ impl Pending {
     }
 }
 
+/// The zone named `name`, or the host's when there is none or this build's
+/// tzdb lacks it: a zone newer than the bundle should not stop the session.
+fn home_zone(name: Option<&str>) -> jiff::tz::TimeZone {
+    name.and_then(|name| jiff::tz::TimeZone::get(name).ok())
+        .unwrap_or_else(jiff::tz::TimeZone::system)
+}
+
 /// One feeder's session, on a thread of its own until this is dropped.
 #[pyclass(frozen)]
 struct Feeder(feeder::Feeder);
@@ -211,10 +218,13 @@ impl Feeder {
     /// unsettled, and the feed numbers the last `Answered` update listed.
     /// `unread` says the integration's store did not read, and the owner
     /// has not yet checked the bowls: every feed waits until
-    /// `bowls_checked`.
+    /// `bowls_checked`. `zone` is Home Assistant's time zone, an IANA
+    /// name: the feeder's clock syncs carry its offsets and local times
+    /// are read in it. One this build can't find reads as the host's.
     #[new]
     #[pyo3(signature = (
-        secret, identity, address=None, pending=Vec::new(), answered=Vec::new(), unread=false
+        secret, identity, address=None, pending=Vec::new(), answered=Vec::new(), unread=false,
+        zone=None
     ))]
     fn new(
         secret: &[u8],
@@ -223,6 +233,7 @@ impl Feeder {
         pending: Vec<Pending>,
         answered: Vec<u32>,
         unread: bool,
+        zone: Option<&str>,
     ) -> PyResult<Self> {
         let key = ClientKey::restore(secret)?;
         let identity = bytes32(identity, Error::IdentityLength)?;
@@ -233,7 +244,11 @@ impl Feeder {
         };
         Ok(Self(feeder::Feeder::start(
             key,
-            Target { identity, address },
+            Target {
+                identity,
+                address,
+                zone: home_zone(zone),
+            },
             Clocks::DEFAULT,
             carried,
         )?))
