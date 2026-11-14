@@ -7,7 +7,8 @@
 //! - a stopped feeder is unanswered at the first try and failed at the
 //!   last, and only on its home network does that count; elsewhere the
 //!   phone is away and nothing counts;
-//! - a computer on its network reads the table as a phone does;
+//! - a computer on its network reads the table as a phone does, and one on
+//!   a network it can't name still dials;
 //! - nothing a catch-up sends is a write: the feeder's journal holds only
 //!   the owner's own feed.
 
@@ -282,7 +283,7 @@ fn only_the_home_networks_last_try_counts_towards_unreachable() {
 }
 
 #[test]
-fn a_computer_on_its_network_reads_the_table_as_a_phone_does() {
+fn a_computer_reads_the_table_as_a_phone_does_on_any_network_it_is_on() {
     bounded(async {
         let kept = tempfile::tempdir().unwrap();
         let dir = kept.path().display().to_string();
@@ -304,6 +305,11 @@ fn a_computer_on_its_network_reads_the_table_as_a_phone_does() {
             "{:?}",
             read.changes
         );
+
+        // Past a VPN with no LAN to name, it still dials, and the feeder is
+        // there; nothing it can't reach would count.
+        let unnamed = catch_up(&dir, &sim, &identity, Attempt::First, PhoneNetwork::Unnamed).await;
+        assert_eq!(unnamed.end, CatchUpEnd::Unchanged);
 
         sim.stop().await;
     });

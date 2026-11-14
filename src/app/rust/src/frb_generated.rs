@@ -8691,6 +8691,9 @@ impl SseDecode for crate::api::alerts::PhoneNetwork {
                 };
             }
             2 => {
+                return crate::api::alerts::PhoneNetwork::Unnamed;
+            }
+            3 => {
                 return crate::api::alerts::PhoneNetwork::Elsewhere;
             }
             _ => {
@@ -13264,7 +13267,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::alerts::PhoneNetwork {
             crate::api::alerts::PhoneNetwork::Lan { network } => {
                 [1.into_dart(), network.into_into_dart().into_dart()].into_dart()
             }
-            crate::api::alerts::PhoneNetwork::Elsewhere => [2.into_dart()].into_dart(),
+            crate::api::alerts::PhoneNetwork::Unnamed => [2.into_dart()].into_dart(),
+            crate::api::alerts::PhoneNetwork::Elsewhere => [3.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -18086,8 +18090,11 @@ impl SseEncode for crate::api::alerts::PhoneNetwork {
                 <i32>::sse_encode(1, serializer);
                 <String>::sse_encode(network, serializer);
             }
-            crate::api::alerts::PhoneNetwork::Elsewhere => {
+            crate::api::alerts::PhoneNetwork::Unnamed => {
                 <i32>::sse_encode(2, serializer);
+            }
+            crate::api::alerts::PhoneNetwork::Elsewhere => {
+                <i32>::sse_encode(3, serializer);
             }
             _ => {
                 unimplemented!("");

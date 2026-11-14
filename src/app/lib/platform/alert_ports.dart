@@ -89,17 +89,32 @@ enum RoundFailures {
   thrown,
 }
 
+/// The last delivery this engine started: a round, a dismissal, a mute or
+/// the open alerts posted at once.
+Future<void> _delivering = Future.value();
+
+/// Run `work` once every delivery this engine started before it has ended.
+/// A delivery hands over every change Rust still holds unconfirmed, so two
+/// at once (a screen's check during a computer's minute round) would each
+/// post the same notice. A failed one lets the next go on.
+Future<T> oneDeliveryAtATime<T>(Future<T> Function() work) {
+  final Future<T> run = _delivering.then((_) => work());
+  _delivering = run.then<void>((_) {}, onError: (Object _) {});
+  return run;
+}
+
 /// One round of catch-ups with `feeders`, as `key`, with the app's files in
 /// `dir`, on the network `network` says the phone is on. Each feeder's
 /// changes are posted and confirmed before the next, and one that fails leaves the
-/// others their turn ([feederRound]).
+/// others their turn ([feederRound]). Rounds and other deliveries in one
+/// engine go one at a time ([oneDeliveryAtATime]).
 Future<void> catchUpRound({
   required ClientKey key,
   required String dir,
   required List<KnownFeeder> feeders,
   required Future<PhoneNetwork> Function() network,
   required RoundFailures failures,
-}) async {
+}) => oneDeliveryAtATime(() async {
   await Notices.sweep(dir);
   final PhoneNetwork here = await network();
   await feederRound(feeders, failures, (feeder) async {
@@ -122,7 +137,7 @@ Future<void> catchUpRound({
     }
     await Notices.deliver(dir: dir, identity: feeder.identity, name: feeder.name, changes: done.changes);
   });
-}
+});
 
 /// Run `one` for each of `feeders` in turn. One that throws (the bridge's
 /// error, or its panic) is logged and the round goes on: another feeder's
@@ -176,23 +191,24 @@ class AppAlertPorts implements AlertPorts {
       : phoneNetwork(await alertsChannel.invokeMapMethod<Object?, Object?>('network'));
 
   @override
-  Future<void> dismiss(KnownFeeder feeder, NoticeView notice) async {
+  Future<void> dismiss(KnownFeeder feeder, NoticeView notice) => oneDeliveryAtATime(() async {
     final String dir = await _dir();
     final List<NoticeChange> changes = await dismissNotice(dir: dir, identity: feeder.identity, id: notice.id);
     await Notices.deliver(dir: dir, identity: feeder.identity, name: feeder.name, changes: changes);
-  }
+  });
 
   @override
   Future<AlertSettingsView> settings() async => alertSettings(dir: await _dir());
 
   @override
-  Future<void> mute(MuteTarget target, {required bool muted, required List<KnownFeeder> feeders}) async {
-    final String dir = await _dir();
-    for (final FeederNotices each in await setMute(dir: dir, mute: target, muted: muted)) {
-      final String name = feeders.where((feeder) => feeder.identity == each.identity).firstOrNull?.name ?? 'Feeder';
-      await Notices.deliver(dir: dir, identity: each.identity, name: name, changes: each.changes);
-    }
-  }
+  Future<void> mute(MuteTarget target, {required bool muted, required List<KnownFeeder> feeders}) =>
+      oneDeliveryAtATime(() async {
+        final String dir = await _dir();
+        for (final FeederNotices each in await setMute(dir: dir, mute: target, muted: muted)) {
+          final String name = feeders.where((feeder) => feeder.identity == each.identity).firstOrNull?.name ?? 'Feeder';
+          await Notices.deliver(dir: dir, identity: each.identity, name: name, changes: each.changes);
+        }
+      });
 
   @override
   bool get whileOpen => onDesktopHost;
@@ -325,14 +341,14 @@ Future<bool> _request(List<KnownFeeder> feeders) => _asked(() async {
 
 /// Post every change still to make for `feeders`, with no catch-up. A
 /// feeder not in `feeders` keeps its own for its next catch-up.
-Future<void> postPending(List<KnownFeeder> feeders) async {
+Future<void> postPending(List<KnownFeeder> feeders) => oneDeliveryAtATime(() async {
   final String dir = await AppAlertPorts._dir();
   for (final FeederNotices each in await pendingNotices(dir: dir)) {
     final KnownFeeder? feeder = feeders.where((feeder) => feeder.identity == each.identity).firstOrNull;
     if (feeder == null) continue;
     await Notices.deliver(dir: dir, identity: each.identity, name: feeder.name, changes: each.changes);
   }
-}
+});
 
 /// Ask Android once, unprompted, to let alerts through: when this phone first
 /// has a feeder of its own to hear from. After that only the owner asks, from
@@ -386,16 +402,16 @@ Future<void> startAlerts() async {
 
 /// Set a computer's alerts going as the app opens: Notices ready, and what an
 /// earlier `alerts.json` left showing swept. The catch-ups themselves run in
-/// `AlertWatch` once the app has its key and feeders. Like [startAlerts], the
-/// app opens whatever becomes of this.
+/// `AlertWatch` once the app has its key and feeders.
+///
+/// Anything at all that fails here is logged and the app opens: a computer's
+/// notifications are never a reason for it not to.
 Future<void> startComputerAlerts() async {
   try {
     await Notices.init();
     await Notices.sweep(await AppAlertPorts._dir());
-  } on PlatformException catch (error) {
-    debugPrint('alerts did not start: ${error.message ?? error.code}');
-  } on BridgeError catch (error) {
-    debugPrint('alerts did not start: ${error.message}');
+  } on Object catch (error) {
+    debugPrint('alerts did not start: $error');
   }
 }
 

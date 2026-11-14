@@ -1715,12 +1715,13 @@ extension PhoneNetworkPatterns on PhoneNetwork {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( PhoneNetwork_Wifi value)?  wifi,TResult Function( PhoneNetwork_Lan value)?  lan,TResult Function( PhoneNetwork_Elsewhere value)?  elsewhere,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( PhoneNetwork_Wifi value)?  wifi,TResult Function( PhoneNetwork_Lan value)?  lan,TResult Function( PhoneNetwork_Unnamed value)?  unnamed,TResult Function( PhoneNetwork_Elsewhere value)?  elsewhere,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case PhoneNetwork_Wifi() when wifi != null:
 return wifi(_that);case PhoneNetwork_Lan() when lan != null:
-return lan(_that);case PhoneNetwork_Elsewhere() when elsewhere != null:
+return lan(_that);case PhoneNetwork_Unnamed() when unnamed != null:
+return unnamed(_that);case PhoneNetwork_Elsewhere() when elsewhere != null:
 return elsewhere(_that);case _:
   return orElse();
 
@@ -1739,12 +1740,13 @@ return elsewhere(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( PhoneNetwork_Wifi value)  wifi,required TResult Function( PhoneNetwork_Lan value)  lan,required TResult Function( PhoneNetwork_Elsewhere value)  elsewhere,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( PhoneNetwork_Wifi value)  wifi,required TResult Function( PhoneNetwork_Lan value)  lan,required TResult Function( PhoneNetwork_Unnamed value)  unnamed,required TResult Function( PhoneNetwork_Elsewhere value)  elsewhere,}){
 final _that = this;
 switch (_that) {
 case PhoneNetwork_Wifi():
 return wifi(_that);case PhoneNetwork_Lan():
-return lan(_that);case PhoneNetwork_Elsewhere():
+return lan(_that);case PhoneNetwork_Unnamed():
+return unnamed(_that);case PhoneNetwork_Elsewhere():
 return elsewhere(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
@@ -1759,12 +1761,13 @@ return elsewhere(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( PhoneNetwork_Wifi value)?  wifi,TResult? Function( PhoneNetwork_Lan value)?  lan,TResult? Function( PhoneNetwork_Elsewhere value)?  elsewhere,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( PhoneNetwork_Wifi value)?  wifi,TResult? Function( PhoneNetwork_Lan value)?  lan,TResult? Function( PhoneNetwork_Unnamed value)?  unnamed,TResult? Function( PhoneNetwork_Elsewhere value)?  elsewhere,}){
 final _that = this;
 switch (_that) {
 case PhoneNetwork_Wifi() when wifi != null:
 return wifi(_that);case PhoneNetwork_Lan() when lan != null:
-return lan(_that);case PhoneNetwork_Elsewhere() when elsewhere != null:
+return lan(_that);case PhoneNetwork_Unnamed() when unnamed != null:
+return unnamed(_that);case PhoneNetwork_Elsewhere() when elsewhere != null:
 return elsewhere(_that);case _:
   return null;
 
@@ -1782,11 +1785,12 @@ return elsewhere(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String gateway,  String subnet)?  wifi,TResult Function( String network)?  lan,TResult Function()?  elsewhere,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String gateway,  String subnet)?  wifi,TResult Function( String network)?  lan,TResult Function()?  unnamed,TResult Function()?  elsewhere,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case PhoneNetwork_Wifi() when wifi != null:
 return wifi(_that.gateway,_that.subnet);case PhoneNetwork_Lan() when lan != null:
-return lan(_that.network);case PhoneNetwork_Elsewhere() when elsewhere != null:
+return lan(_that.network);case PhoneNetwork_Unnamed() when unnamed != null:
+return unnamed();case PhoneNetwork_Elsewhere() when elsewhere != null:
 return elsewhere();case _:
   return orElse();
 
@@ -1805,11 +1809,12 @@ return elsewhere();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String gateway,  String subnet)  wifi,required TResult Function( String network)  lan,required TResult Function()  elsewhere,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String gateway,  String subnet)  wifi,required TResult Function( String network)  lan,required TResult Function()  unnamed,required TResult Function()  elsewhere,}) {final _that = this;
 switch (_that) {
 case PhoneNetwork_Wifi():
 return wifi(_that.gateway,_that.subnet);case PhoneNetwork_Lan():
-return lan(_that.network);case PhoneNetwork_Elsewhere():
+return lan(_that.network);case PhoneNetwork_Unnamed():
+return unnamed();case PhoneNetwork_Elsewhere():
 return elsewhere();}
 }
 /// A variant of `when` that fallback to returning `null`
@@ -1824,11 +1829,12 @@ return elsewhere();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String gateway,  String subnet)?  wifi,TResult? Function( String network)?  lan,TResult? Function()?  elsewhere,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String gateway,  String subnet)?  wifi,TResult? Function( String network)?  lan,TResult? Function()?  unnamed,TResult? Function()?  elsewhere,}) {final _that = this;
 switch (_that) {
 case PhoneNetwork_Wifi() when wifi != null:
 return wifi(_that.gateway,_that.subnet);case PhoneNetwork_Lan() when lan != null:
-return lan(_that.network);case PhoneNetwork_Elsewhere() when elsewhere != null:
+return lan(_that.network);case PhoneNetwork_Unnamed() when unnamed != null:
+return unnamed();case PhoneNetwork_Elsewhere() when elsewhere != null:
 return elsewhere();case _:
   return null;
 
@@ -1974,6 +1980,38 @@ as String,
 
 
 }
+
+/// @nodoc
+
+
+class PhoneNetwork_Unnamed extends PhoneNetwork {
+  const PhoneNetwork_Unnamed(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is PhoneNetwork_Unnamed);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'PhoneNetwork.unnamed()';
+}
+
+
+}
+
+
+
 
 /// @nodoc
 

@@ -7047,6 +7047,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 1:
         return PhoneNetwork_Lan(network: dco_decode_String(raw[1]));
       case 2:
+        return PhoneNetwork_Unnamed();
+      case 3:
         return PhoneNetwork_Elsewhere();
       default:
         throw Exception("unreachable");
@@ -11638,6 +11640,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         var var_network = sse_decode_String(deserializer);
         return PhoneNetwork_Lan(network: var_network);
       case 2:
+        return PhoneNetwork_Unnamed();
+      case 3:
         return PhoneNetwork_Elsewhere();
       default:
         throw UnimplementedError('');
@@ -16307,8 +16311,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case PhoneNetwork_Lan(network: final network):
         sse_encode_i_32(1, serializer);
         sse_encode_String(network, serializer);
-      case PhoneNetwork_Elsewhere():
+      case PhoneNetwork_Unnamed():
         sse_encode_i_32(2, serializer);
+      case PhoneNetwork_Elsewhere():
+        sse_encode_i_32(3, serializer);
     }
   }
 

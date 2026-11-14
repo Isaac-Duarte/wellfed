@@ -40,6 +40,10 @@ pub enum PhoneNetwork {
     /// A computer on the IPv4 network `network` (`address/prefix`), the one
     /// its default route leaves by ([`crate::network`]), cable or Wi-Fi.
     Lan { network: String },
+    /// A computer online on a network it can't name: a full-tunnel VPN with
+    /// no single LAN beside it ([`crate::network`]). A catch-up still dials,
+    /// but learns no home and counts no failure.
+    Unnamed,
     /// Off Wi-Fi, or Android keeps this app off the network for now: a
     /// catch-up that fails here says nothing about the feeder.
     Elsewhere,
@@ -68,18 +72,26 @@ impl PhoneNetwork {
                 "{LAN_FORM}{}",
                 sha256(&canonical_of(network)?)
             ))),
-            Self::Elsewhere => Ok(None),
+            Self::Unnamed | Self::Elsewhere => Ok(None),
         }
+    }
+
+    /// Whether the phone or computer is on a network at all, so a catch-up
+    /// dials where the feeder last answered.
+    fn online(&self) -> bool {
+        !matches!(self, Self::Elsewhere)
     }
 }
 
 /// The network this computer is on, for a desktop's catch-ups: the one its
-/// default route leaves by. With no default route it is away from every
-/// feeder's home, so a catch-up dials only an address the owner gave.
+/// default route leaves by, or past a VPN the LAN beside it. With no IPv4
+/// default route (none at all, or an IPv6-only uplink) it is away from
+/// every feeder's home, so a catch-up dials only an address the owner gave.
 pub fn computer_network() -> PhoneNetwork {
-    match crate::network::default_route_network() {
-        Some(network) => PhoneNetwork::Lan { network },
-        None => PhoneNetwork::Elsewhere,
+    match crate::network::default_route() {
+        crate::network::Route::Network(network) => PhoneNetwork::Lan { network },
+        crate::network::Route::Unnamed => PhoneNetwork::Unnamed,
+        crate::network::Route::None => PhoneNetwork::Elsewhere,
     }
 }
 
@@ -302,6 +314,7 @@ pub async fn catch_up_with(
         known: known.as_deref(),
         attempt: &attempt,
         network: network.fingerprint()?,
+        online: network.online(),
     };
     let (end, changes) = catch_up::catch_up(Path::new(&dir), &target, Timestamp::now).await?;
     Ok(CatchUp {
@@ -689,5 +702,8 @@ mod tests {
         assert_ne!(home, wifi.fingerprint().unwrap());
         assert!(home.unwrap().starts_with(LAN_FORM));
         assert_eq!(PhoneNetwork::Elsewhere.fingerprint().unwrap(), None);
+        assert_eq!(PhoneNetwork::Unnamed.fingerprint().unwrap(), None);
+        assert!(PhoneNetwork::Unnamed.online());
+        assert!(!PhoneNetwork::Elsewhere.online());
     }
 }

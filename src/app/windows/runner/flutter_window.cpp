@@ -57,7 +57,9 @@ void FlutterWindow::RegisterChannels() {
       result->NotImplemented();
       return;
     }
-    // A toast's click hands this process the right to come forward.
+    // Windows may refuse the foreground to a process the owner isn't using;
+    // a toast's click usually grants it. Refused, the taskbar button
+    // flashes instead.
     HWND window = GetHandle();
     if (::IsIconic(window)) {
       ::ShowWindow(window, SW_RESTORE);
@@ -72,21 +74,37 @@ void FlutterWindow::RegisterChannels() {
   toast_channel_->SetMethodCallHandler([](const auto& call, auto result) {
     const auto* arguments =
         std::get_if<flutter::EncodableMap>(call.arguments());
-    if (call.method_name() != "takeOff" || arguments == nullptr) {
-      result->NotImplemented();
-      return;
-    }
-    const auto id = arguments->find(flutter::EncodableValue("id"));
-    const auto app = arguments->find(flutter::EncodableValue("app"));
-    const auto* name = app == arguments->end()
+    const auto app = arguments == nullptr
+                         ? flutter::EncodableMap::const_iterator()
+                         : arguments->find(flutter::EncodableValue("app"));
+    const auto* name = arguments == nullptr || app == arguments->end()
                            ? nullptr
                            : std::get_if<std::string>(&app->second);
-    if (id == arguments->end() || name == nullptr) {
-      result->Error("arguments", "takeOff needs an id and an app");
+    if (name == nullptr) {
+      result->Error("arguments", "a toast call needs the app's id");
       return;
     }
-    result->Success(flutter::EncodableValue(
-        TakeOffToast(id->second.LongValue(), *name)));
+
+    const std::string& method = call.method_name();
+    if (method == "enabled") {
+      result->Success(flutter::EncodableValue(ToastsEnabled(*name)));
+    } else if (method == "shown") {
+      flutter::EncodableList ids;
+      for (const int64_t id : ShownToasts(*name)) {
+        ids.push_back(flutter::EncodableValue(id));
+      }
+      result->Success(flutter::EncodableValue(ids));
+    } else if (method == "takeOff") {
+      const auto id = arguments->find(flutter::EncodableValue("id"));
+      if (id == arguments->end()) {
+        result->Error("arguments", "takeOff needs an id");
+        return;
+      }
+      result->Success(flutter::EncodableValue(
+          TakeOffToast(id->second.LongValue(), *name)));
+    } else {
+      result->NotImplemented();
+    }
   });
 }
 

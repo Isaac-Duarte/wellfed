@@ -47,7 +47,12 @@ class Notices {
   static final _plugin = FlutterLocalNotificationsPlugin();
   static final _tapped = StreamController<String>.broadcast();
   static bool _ready = false;
-  static final NoticeHost _host = NoticeHost.current;
+
+  /// The host this posts through: the process's own, unless a test stands
+  /// in another.
+  @visibleForTesting
+  static NoticeHost host = NoticeHost.current;
+  static NoticeHost get _host => host;
 
   static const _icon = '@mipmap/ic_launcher';
 
@@ -58,8 +63,9 @@ class Notices {
   static const toastAppId = 'io.github.isaacduarte.wellfed';
   static const _toastActivator = 'b8528b2d-8e1f-41d1-b158-6df3f7d90c63';
 
-  /// The Windows runner's own half: an unpackaged app's toast is taken off
-  /// by its id, which the plugin leaves to packaged apps.
+  /// The Windows runner's own half (`windows/runner/toasts.cpp`): whether
+  /// Windows lets the app post, which toasts it shows and taking one off,
+  /// all of which the plugin does only for a packaged app.
   static const _toasts = MethodChannel('io.github.isaacduarte.wellfed/toasts');
 
   static const _settings = InitializationSettings(
@@ -97,18 +103,23 @@ class Notices {
   /// Get ready in this engine: each one that posts calls this once. Only the
   /// app's own engine hears taps, through [tapped].
   ///
-  /// A computer that can't post at all (no D-Bus session on Linux, a
-  /// registry Windows won't let the app write) goes on without
-  /// notifications: [allowed] says so, and alerts only list in the app.
+  /// A computer whose plugin refuses to start (no D-Bus session on Linux, or
+  /// Windows's plugin saying it didn't) goes on without notifications:
+  /// [allowed] says so, and alerts only list in the app. A failure inside
+  /// Windows's own registration is the plugin's to survive, not this.
   static Future<void> init() async {
     if (_ready) return;
     try {
-      await _plugin.initialize(
+      final bool? started = await _plugin.initialize(
         settings: _settings,
         onDidReceiveNotificationResponse: (response) {
           if (response.payload case final String identity) _tapped.add(identity);
         },
       );
+      if (_host.desktop && started == false) {
+        debugPrint("notifications are off on this computer: the plugin didn't start");
+        return;
+      }
     } on Exception catch (error) {
       if (!_host.desktop) rethrow;
       debugPrint('notifications are off on this computer: $error');
@@ -125,16 +136,18 @@ class Notices {
   /// The feeder a tap asks to open, while the app runs.
   static Stream<String> get tapped => _tapped.stream;
 
-  /// The feeder whose notification opened the app, if one did.
+  /// The feeder whose notification opened the app, if one did. Linux's side
+  /// can't say, and a click there reaches only an app that is running.
   static Future<String?> launchedFor() async {
+    if (_host == NoticeHost.linux || (_host.desktop && !_ready)) return null;
     final NotificationAppLaunchDetails? details = await _plugin.getNotificationAppLaunchDetails();
     if (details == null || !details.didNotificationLaunchApp) return null;
     return details.notificationResponse?.payload;
   }
 
   /// Whether this app may post them: Android's or macOS's word, whether a
-  /// Linux desktop runs a notification server, and on Windows whether the
-  /// plugin started, as Windows tells an unpackaged app nothing more.
+  /// Linux desktop runs a notification server, and on Windows the app's
+  /// notification setting, read by the runner.
   static Future<bool> allowed() async => switch (_host) {
     NoticeHost.android =>
       await _plugin
@@ -146,8 +159,18 @@ class Notices {
               ?.isEnabled ??
           false,
     NoticeHost.linux => _ready && await _serverAnswers(),
-    NoticeHost.windows => _ready,
+    NoticeHost.windows => _ready && await _toastsEnabled(),
   };
+
+  /// Whether Windows lets the app's toasts through, as its notification
+  /// settings say. A runner with no toast half can't say, and is believed.
+  static Future<bool> _toastsEnabled() async {
+    try {
+      return await _toasts.invokeMethod<bool>('enabled', {'app': toastAppId}) ?? false;
+    } on MissingPluginException {
+      return true;
+    }
+  }
 
   /// Whether a freedesktop notification server answers on the session bus.
   /// A desktop with none (a bare window manager) refuses the call.
@@ -161,10 +184,13 @@ class Notices {
   }
 
   /// Whether this computer can't post at all, so there is nothing to ask:
-  /// Linux with no notification server, or a plugin that didn't start.
+  /// Linux with no notification server, or a plugin that didn't start. A
+  /// Windows whose settings keep the toasts off can still be asked, through
+  /// those settings.
   static Future<bool> unavailable() async => switch (_host) {
     NoticeHost.android || NoticeHost.macos => false,
-    NoticeHost.linux || NoticeHost.windows => !await allowed(),
+    NoticeHost.linux => !await allowed(),
+    NoticeHost.windows => !_ready,
   };
 
   /// Ask Android or macOS to let this app post them: whether it does, or
@@ -218,13 +244,35 @@ class Notices {
   /// watch in the new file knows: nothing else ever would. Rust chooses them
   /// under the file's lock, so one another engine posted meanwhile stays.
   static Future<void> sweep(String dir) async {
-    final List<int> showing = _ready
-        ? alertNotificationIds(await _plugin.getActiveNotifications(), host: _host)
-        : const [];
+    final List<int> showing = await _showing();
     // Empty once the sweep is done, and then nothing changes.
     final List<int> stale = await alertsToSweep(dir: dir, showing: Int32List.fromList(showing));
     await remove(stale);
     await alertsSwept(dir: dir, takenOff: Int32List.fromList(stale));
+  }
+
+  /// The alert notifications this app shows now, as each system can say.
+  /// Linux's side lists none but those it keeps a server id for; an
+  /// unpackaged Windows app reads its toast history through the runner.
+  static Future<List<int>> _showing() async {
+    if (_host.desktop && !_ready) return const [];
+    switch (_host) {
+      case NoticeHost.android || NoticeHost.macos:
+        return alertNotificationIds(await _plugin.getActiveNotifications(), host: _host);
+      case NoticeHost.linux:
+        final Map<int, int>? kept = await _plugin
+            .resolvePlatformSpecificImplementation<LinuxFlutterLocalNotificationsPlugin>()
+            ?.getSystemIdMap();
+        return [...?kept?.keys];
+      case NoticeHost.windows:
+        try {
+          return [
+            ...?await _toasts.invokeListMethod<int>('shown', {'app': toastAppId}),
+          ];
+        } on MissingPluginException {
+          return const [];
+        }
+    }
   }
 
   static Future<void> _show(String identity, String name, NoticeView notice) async {
@@ -261,16 +309,20 @@ class Notices {
     );
   }
 
+  /// Take notification `id` off. On a computer a system that fails to (a
+  /// Linux notification server gone meanwhile) counts it as off: what it
+  /// showed went with it, and a delivery must still reach its confirmation.
   static Future<void> _cancel(int id) async {
+    if (!_host.desktop) return _plugin.cancel(id: id);
     if (!_ready) return;
-    await _plugin.cancel(id: id);
-    if (_host == NoticeHost.windows) {
-      try {
-        await _toasts.invokeMethod<void>('takeOff', {'id': id, 'app': toastAppId});
-      } on MissingPluginException {
-        // A runner built before its toast half: the toast stays until the
-        // owner clears it.
-      }
+    try {
+      await _plugin.cancel(id: id);
+      if (_host == NoticeHost.windows) await _toasts.invokeMethod<bool>('takeOff', {'id': id, 'app': toastAppId});
+    } on MissingPluginException {
+      // A Windows runner with no toast half: the toast stays until the owner
+      // clears it.
+    } on Exception catch (error) {
+      debugPrint('notification $id was not taken off: $error');
     }
   }
 

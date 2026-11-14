@@ -43,6 +43,15 @@ static void window_call_cb(FlMethodChannel* channel, FlMethodCall* call,
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
+
+  // Opened again: GApplication hands the second launch's activation to this
+  // one, which brings its window forward rather than opening another.
+  GList* windows = gtk_application_get_windows(GTK_APPLICATION(application));
+  if (windows != nullptr) {
+    gtk_window_present(GTK_WINDOW(windows->data));
+    return;
+  }
+
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
 
@@ -197,7 +206,14 @@ MyApplication* my_application_new() {
   // the application to be recognized beyond its binary name.
   g_set_prgname(APPLICATION_ID);
 
+  // Unique per user session: a second Wellfed would follow the same feeders
+  // and post every alert twice, over the same stores.
+#if GLIB_CHECK_VERSION(2, 74, 0)
+  const GApplicationFlags flags = G_APPLICATION_DEFAULT_FLAGS;
+#else
+  const GApplicationFlags flags = G_APPLICATION_FLAGS_NONE;
+#endif
   return MY_APPLICATION(g_object_new(my_application_get_type(),
                                      "application-id", APPLICATION_ID, "flags",
-                                     G_APPLICATION_NON_UNIQUE, nullptr));
+                                     flags, nullptr));
 }
