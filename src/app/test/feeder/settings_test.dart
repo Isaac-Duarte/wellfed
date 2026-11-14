@@ -150,7 +150,7 @@ void main() {
             .evaluate()
             .every((element) => (element.widget as InkWell).onTap == null),
         isTrue,
-        reason: 'listed as an owner\'s, not offered',
+        reason: "listed as an owner's, not offered",
       );
     });
 
