@@ -12,7 +12,19 @@ pub use crate::api::model::{
     FeedReason, FoodLevel, MealReminder, NtpResult, Phase, Stats, StatsSection, TimeSource,
     TraceEntry, TraceSummary, Tune, UpdatePhase, UpdateRefusal, Weekday, Window,
 };
+use flutter_rust_bridge::frb;
+
 use crate::api::router::NotSentReason;
+
+/// The time zones an owner picks from for the feeder, as IANA names, sorted.
+/// Choosing one sends [`ZoneChange::Named`], whose rule is checked then.
+#[frb(sync)]
+pub fn time_zones() -> Vec<String> {
+    wellfed_client::time::zones()
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
+}
 
 /// What the owner asks of a feeder.
 pub enum FeederRequest {

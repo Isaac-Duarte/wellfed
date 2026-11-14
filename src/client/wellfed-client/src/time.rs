@@ -23,7 +23,7 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use wellfed_core::clock::zone::{Rule, Zone};
 use wellfed_core_feeder::schedule;
-use wellfed_model::{NextMeal, Plan, Plans, TimeSync, TimeView};
+use wellfed_model::{ClientRole, NextMeal, Plan, Plans, TimeSync, TimeView};
 
 /// How far ahead a rule must agree with its zone.
 const AGREE_S: i64 = 10 * 366 * 86_400;
@@ -46,6 +46,50 @@ pub fn sync(now: Timestamp, zone: &TimeZone) -> TimeSync {
         next_change_s,
         next_offset_s,
     }
+}
+
+/// The feeder's reported error at which an owner's client syncs a valid
+/// clock: half of [`MAX_ERROR_MS`], the error past which it reads invalid.
+///
+/// The error grows at the rate bound from the last trusted fix: 5,000 ppm
+/// before the rate is learned, so this comes about 3.3 hours after an
+/// owner's sync and leaves as long again before the clock expires at about
+/// 6.6. A client that checks in every few hours (the app's sessions, or
+/// Android's periodic check, which Doze can space an hour or more apart)
+/// so meets it before expiry. Each sync is measured against the first
+/// owner's sync since the rate was forgotten, so the syncs after about 11
+/// hours of them teach the rate; the bound then drops to 200 ppm, and the
+/// error reaches this about every 3.5 days. Syncing sooner would teach
+/// nothing more: only the span from that first sync narrows the rate.
+///
+/// [`MAX_ERROR_MS`]: wellfed_core::clock::wall::MAX_ERROR_MS
+pub const OWNER_SYNC_ERROR_MS: u64 = wellfed_core::clock::wall::MAX_ERROR_MS / 2;
+
+/// Whether a client holding `role` should sync the feeder's clock now, by
+/// its time view. Anyone's sync sets an invalid clock. On a valid one only
+/// an owner's moves the trusted interval and teaches the rate; a member's
+/// or the server's may only narrow it, so they leave a valid clock alone.
+pub fn sync_due(view: &TimeView, role: ClientRole) -> bool {
+    match (view.clock_ms, view.error_ms) {
+        (None, _) => true,
+        (Some(_), Some(error_ms)) => {
+            role == ClientRole::Owner && u64::from(error_ms) >= OWNER_SYNC_ERROR_MS
+        }
+        (Some(_), None) => false,
+    }
+}
+
+/// The zone names an owner picks from, sorted: each bundled name of an
+/// area and a place (`America/Denver`), and `UTC`. The tzdb's older
+/// spellings (`EST5EDT`, `GMT+3`, `Etc/…`) are left out; [`rule`] still
+/// takes them by name.
+pub fn zones() -> Vec<&'static str> {
+    let mut names: Vec<&'static str> = jiff_tzdb::available()
+        .filter(|name| *name == "UTC" || (name.contains('/') && !name.starts_with("Etc/")))
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+    names
 }
 
 /// The earliest occurrence after `now` of any enabled plan in `plans`, in
@@ -494,6 +538,79 @@ mod tests {
         let sydney = TimeZone::get("Australia/Sydney").unwrap();
         let rule = Zone::parse(b"AEST-10AEDT,M10.1.0,M4.1.0/3").unwrap().rule();
         assert_eq!(disagreement(rule, &sydney, now), None);
+    }
+
+    fn view(clock_ms: Option<u64>, error_ms: Option<u32>) -> TimeView {
+        TimeView {
+            generation: Generation(1),
+            writable: true,
+            zone: None,
+            ntp: wellfed_model::NtpServer::Off,
+            clock_ms,
+            error_ms,
+            offset_s: None,
+            rate_ppb: 0,
+            rate_bound_ppb: 5_000_000,
+            learned: false,
+            syncs: 1,
+            last: Some(wellfed_model::TimeSource::Owner),
+            last_age_s: Some(0),
+            ntp_last: None,
+        }
+    }
+
+    /// Anyone sets an invalid clock; only an owner re-sets a valid one,
+    /// and only once its error reaches half the validity limit.
+    #[test]
+    fn a_sync_is_due_by_the_error_and_the_role() {
+        let invalid = view(None, None);
+        for role in [ClientRole::Owner, ClientRole::Member, ClientRole::Server] {
+            assert!(sync_due(&invalid, role), "{role:?}");
+        }
+
+        let fresh = view(Some(1_793_000_000_000), Some(1_000));
+        let half = u32::try_from(OWNER_SYNC_ERROR_MS).unwrap();
+        let grown = view(Some(1_793_000_000_000), Some(half));
+        assert!(!sync_due(&fresh, ClientRole::Owner));
+        assert!(!sync_due(&view(Some(1), Some(half - 1)), ClientRole::Owner));
+        assert!(sync_due(&grown, ClientRole::Owner));
+        for role in [ClientRole::Member, ClientRole::Server, ClientRole::Unknown] {
+            assert!(!sync_due(&grown, role), "{role:?}");
+        }
+        assert!(!sync_due(&view(Some(1), None), ClientRole::Owner));
+    }
+
+    /// At the unlearned bound the error reaches the sync point about 3.3
+    /// hours after a fix, halfway to expiry: the cadence `OWNER_SYNC_ERROR_MS`
+    /// describes.
+    #[test]
+    fn the_owner_s_sync_comes_halfway_to_expiry() {
+        use wellfed_core::clock::wall::{LEARNED_FLOOR_PPM, MAX_ERROR_MS, UNLEARNED_PPM};
+
+        let after_s = |ppm: u32| OWNER_SYNC_ERROR_MS * 1000 / u64::from(ppm);
+        assert_eq!(OWNER_SYNC_ERROR_MS * 2, MAX_ERROR_MS);
+        assert_eq!(after_s(UNLEARNED_PPM), 12_000, "3.3 hours");
+        assert_eq!(after_s(LEARNED_FLOOR_PPM), 300_000, "3.5 days");
+    }
+
+    /// The names offered are sorted, unique, and each one makes a rule.
+    #[test]
+    fn every_zone_offered_is_a_place_with_a_rule() {
+        let now = Timestamp::from_second(NOW).unwrap();
+        let names = zones();
+        assert!(names.len() > 300, "{} zones", names.len());
+        assert!(names.windows(2).all(|pair| pair[0] < pair[1]));
+        assert!(names.contains(&"America/Denver"));
+        assert!(names.contains(&"UTC"));
+        assert!(!names.iter().any(|name| name.starts_with("Etc/")));
+        assert!(!names.contains(&"EST5EDT"));
+
+        let refused: Vec<&str> = names
+            .iter()
+            .copied()
+            .filter(|name| rule(name, now, None).is_err())
+            .collect();
+        assert!(refused.len() <= 4, "{refused:?}");
     }
 
     /// Every zone's rule fits the feeder and agrees with jiff at every

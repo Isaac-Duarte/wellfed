@@ -9,8 +9,9 @@
 //!   phone is away and nothing counts;
 //! - a computer on its network reads the table as a phone does, and one on
 //!   a network it can't name still dials;
-//! - nothing a catch-up sends is a write: the feeder's journal holds only
-//!   the owner's own feed.
+//! - nothing a catch-up sends is a write but the clock sync: the feeder's
+//!   journal holds only the owner's own feed, and a clock that is not set
+//!   is set once, and a set one left alone.
 
 use std::rc::Rc;
 use std::time::Duration;
@@ -224,6 +225,49 @@ fn a_failed_meal_posts_once_and_a_dismissal_stays_on_the_phone() {
         assert_eq!(listed.notices, []);
 
         assert_eq!(feeding::reserved(&flash), Ok(1), "the owner's feed alone");
+        sim.stop().await;
+    });
+}
+
+/// The feeder's time view, read as the owner.
+async fn time(sim: &Running) -> wellfed_model::TimeView {
+    let mut owner = Connection::open(
+        &Keypair::from_secret(OWNER),
+        sim.identity,
+        sim.address,
+        [0xa2; 32],
+    )
+    .await
+    .unwrap();
+    let Answer::Time(time) = owner.ask([2; 16], &Op::GetTime).await.unwrap() else {
+        panic!("no time view");
+    };
+    time
+}
+
+#[test]
+fn a_catch_up_sets_a_clock_that_is_not_set_and_leaves_a_set_one() {
+    bounded(async {
+        let kept = tempfile::tempdir().unwrap();
+        let dir = kept.path().display().to_string();
+        let flash: Rc<Flash> = Flash::memory();
+        let sim = Running::start(&flash, Some(*Keypair::from_secret(OWNER).public())).await;
+        let identity = hex(&sim.identity);
+        know(&dir, &[&identity]);
+        assert_eq!(time(&sim).await.clock_ms, None, "a fresh feeder needs the time");
+
+        let first = catch_up(&dir, &sim, &identity, Attempt::First, home()).await;
+        assert_eq!(first.end, CatchUpEnd::Read);
+        let set = time(&sim).await;
+        assert!(set.clock_ms.is_some(), "{set:?}");
+        assert_eq!(set.last, Some(wellfed_model::TimeSource::Owner));
+        assert_eq!(set.syncs, 1);
+
+        // Its error is a second or so, far from halfway to expiry.
+        catch_up(&dir, &sim, &identity, Attempt::First, home()).await;
+        assert_eq!(time(&sim).await.syncs, 1, "a set clock is left alone");
+
+        assert_eq!(feeding::reserved(&flash), Ok(0), "no feed");
         sim.stop().await;
     });
 }

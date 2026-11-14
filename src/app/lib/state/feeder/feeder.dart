@@ -104,6 +104,9 @@ class FeederController extends ChangeNotifier {
   /// The Wi-Fi this phone is on, when Android will say.
   Future<String?> currentNetwork() => _ports.currentNetwork();
 
+  /// The time zones the feeder's may be chosen from, as IANA names, sorted.
+  List<String> timeZones() => _ports.timeZones();
+
   /// The networks this phone hears, for the feeder's Wi-Fi.
   Future<NetworkScan> scanNetworks() => _ports.scanNetworks();
 

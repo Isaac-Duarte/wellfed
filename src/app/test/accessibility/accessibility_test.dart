@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' hide Card;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/platform/join_ports.dart';
 import 'package:wellfed/screens/feeder/clock.dart';
+import 'package:wellfed/screens/feeder/zone_picker.dart';
 import 'package:wellfed/screens/feeder/diagnostics.dart';
 import 'package:wellfed/screens/feeder/feed_sheet.dart';
 import 'package:wellfed/screens/feeder/history.dart';
@@ -175,6 +176,7 @@ void main() {
             ('updates', (feeder) => UpdatesScreen(feeder: feeder)),
             ('diagnostics', (feeder) => DiagnosticsScreen(feeder: feeder)),
             ('the clock', (feeder) => ClockScreen(feeder: feeder)),
+            ('the zone picker', (feeder) => ZonePickerScreen(zones: feeder.timeZones(), current: 'America/Denver')),
             ('portion size', (feeder) => PortionScreen(feeder: feeder)),
             ('the live log', (feeder) => LiveLogScreen(feeder: feeder)),
             ('the motor traces', (feeder) => MotorTracesScreen(feeder: feeder)),

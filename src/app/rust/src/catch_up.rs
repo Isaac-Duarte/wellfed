@@ -4,10 +4,12 @@
 //! periodic job, the "instant while home" service or a screen, and posts what
 //! it returns.
 //!
-//! A catch-up reads and nothing else. It reaches the session only through
-//! [`Read`], whose ops are the status and the alert table, so no path from
-//! here can send a feed, a write, a retry or the clock sync an ordinary
-//! session offers.
+//! A catch-up reads, and syncs the clock when the feeder's time view asks
+//! for it. It reaches the session only through [`Read`], whose ops are the
+//! time view, the status and the alert table, and [`keep_clock`], whose one
+//! op is the clock sync, so no path from here can send a feed, another write
+//! or a retry. The sync is what keeps a feeder with no time server set while
+//! the app is closed: see [`wellfed_client::time::sync_due`].
 //!
 //! A catch-up is short and never left open: [`SITTING`] bounds it, and a
 //! catch-up that runs out of time counts as one that heard nothing.
@@ -23,6 +25,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use jiff::Timestamp;
+use jiff::tz::TimeZone;
 use tokio::time::timeout;
 use wellfed_client::alerts::{Change, Context, Cursor, FeederClock, Watch};
 use wellfed_connect::{Connection, Error};
@@ -38,9 +41,10 @@ use crate::api::keys::random;
 /// and two reads, each answered at once by a feeder that is there.
 const SITTING: Duration = Duration::from_secs(20);
 
-/// What a catch-up may ask: reads only.
+/// What a catch-up may read.
 #[derive(Clone, Copy, Debug)]
 enum Read {
+    Time,
     Status,
     Alerts,
 }
@@ -48,6 +52,7 @@ enum Read {
 impl Read {
     const fn op(self) -> Op {
         match self {
+            Self::Time => Op::GetTime,
             Self::Status => Op::Status,
             Self::Alerts => Op::GetAlerts,
         }
@@ -200,6 +205,11 @@ async fn read(
 ) -> Result<Visit, Error> {
     let mut connection = Connection::open(target.keys, target.identity, address, ephemeral).await?;
     let epoch = connection.epoch();
+    // What the clock steps hear changes nothing here: a sync that did not
+    // land waits for the next catch-up, and a link that broke fails the
+    // status read next.
+    let _ = keep_clock(&mut connection).await;
+
 
     let Answer::Status(status) = ask(&mut connection, Read::Status).await? else {
         return Ok(Visit::Answered);
@@ -228,6 +238,26 @@ async fn read(
         ..cursor
     };
     Ok(Visit::Table(cursor, Box::new(view), clock))
+}
+
+/// Sync the feeder's clock if its time view asks this key's role to, before
+/// the status, so the status and the alert table read after say whether it
+/// took. The sync goes once; one whose answer is lost is not sent again.
+async fn keep_clock(connection: &mut Connection) -> Result<(), Error> {
+    let Answer::Time(time) = ask(connection, Read::Time).await? else {
+        return Ok(());
+    };
+    if !wellfed_client::time::sync_due(&time, connection.role()) {
+        return Ok(());
+    }
+
+    let sync = wellfed_client::time::sync(Timestamp::now(), &TimeZone::system());
+    let id = random().map_err(|_| Error::Timeout)?;
+    connection
+        .ask(id, &Op::TimeSync(sync))
+        .await
+        .map_err(wellfed_connect::AskError::into_error)?;
+    Ok(())
 }
 
 async fn ask(connection: &mut Connection, read: Read) -> Result<Answer, Error> {

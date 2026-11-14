@@ -28,6 +28,17 @@ void main() {
     expect(holding(null).canFeed, isTrue, reason: 'a role no session has named yet is left to the feeder');
   });
 
+  test('a phone invites only as the feeder lets its role', () {
+    expect(holding(ClientRole.owner).invitable, [ClientRole.member, ClientRole.owner]);
+    expect(holding(ClientRole.member).invitable, [ClientRole.member]);
+    expect(holding(ClientRole.unknown).invitable, isEmpty, reason: 'a role a newer build added grants nothing');
+    expect(holding(null).invitable, isEmpty, reason: 'no session has named the role');
+    for (final ClientRole role in ClientRole.values) {
+      expect(holding(role).may(Ask.reboot), mayAsk(role, Ask.reboot), reason: '$role');
+    }
+    expect(mayAsk(ClientRole.member, Ask.reboot), isFalse, reason: "a restart is an owner's");
+  });
+
   test('only a role that may update the feeder is told to update it', () {
     expect(mayAsk(ClientRole.owner, Ask.offerUpdate), isTrue);
     expect(mayAsk(ClientRole.member, Ask.offerUpdate), isFalse);

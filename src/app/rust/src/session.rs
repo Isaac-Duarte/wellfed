@@ -20,9 +20,13 @@
 //! session. The reads are reads, and the feed itself is not sent again.
 //!
 //! After pairing, or whenever the feeder's clock is not set, the session
-//! gives the feeder this phone's clock and zone, as `wellfed time` does.
-//! That sync carries the zone's next change too, so a feeder with no zone
-//! setting keeps local time across it.
+//! gives the feeder this phone's clock and zone. That sync carries the
+//! zone's next change too, so a feeder with no zone setting keeps local time
+//! across it. An owner's session also syncs a valid clock once its error has
+//! grown halfway to expiry ([`wellfed_client::time::sync_due`]), so a feeder
+//! with no time server stays set and learns its rate while an owner's app
+//! checks in. A sync is not a feed: one that did not land is not sent again,
+//! and another goes only [`SYNC_AGAIN`] later, with the time then.
 //!
 //! A session reads the history from the oldest event the feeder keeps, which
 //! is what "last fed" and today's meals need. It holds nothing across
@@ -41,7 +45,8 @@ use wellfed_client::history::{Backlog, Entry, Feed};
 use wellfed_client::plans::Edit;
 use wellfed_connect::{AskError, Connection, Received};
 use wellfed_model::{
-    Answer, CoreEvent, EventBody, FeederEvent, Generation, Op, PLANS, Plan, Pushed, Settings, Skew,
+    Answer, ClientRole, CoreEvent, EventBody, FeederEvent, Generation, Op, PLANS, Plan, Pushed,
+    Settings, Skew,
 };
 use wellfed_session::noise::Keypair;
 
@@ -71,6 +76,12 @@ const QUIET: Duration = Duration::from_secs(2);
 /// for an NTP fix in step, which it takes every 17 minutes, or for a clock it
 /// has forgotten, so no event says when, by what or how well it was last set.
 const TIME_EVERY: Duration = Duration::from_secs(60);
+/// How long after a sync this session sends another that the time view asks
+/// for. One that landed leaves an error of about a second, which takes hours
+/// to grow back, so this only spaces the syncs a feeder keeps refusing or
+/// leaving unanswered: within the clock's 6.6 hours of validity it still
+/// leaves several tries.
+const SYNC_AGAIN: Duration = Duration::from_secs(30 * 60);
 /// How often the status is read while this session's own feed runs. Nothing
 /// else is due from the feeder until the feed's end, and an answer is the only
 /// way to hear it is still there.
@@ -314,6 +325,10 @@ struct Serving<'a, U> {
     /// This session gave the feeder its offset, once: a feeder that refuses
     /// the sync is not asked again on every read of the time.
     offset_given: bool,
+    /// The role this session's key holds, which decides the syncs it sends.
+    role: ClientRole,
+    /// When this session last sent a sync, by any path.
+    synced_at: Option<Instant>,
     /// A feeder just paired with no zone gets this phone's, once. Only then:
     /// later, no zone is the owner's choice (the clock screen clears it).
     zone_due: bool,
@@ -362,6 +377,7 @@ async fn serve(
     if let Some(link) = link {
         link.event_at(status.last_event);
     }
+    let connection_role = connection.role();
     let mut serving = Serving {
         link,
         connection,
@@ -374,11 +390,12 @@ async fn serve(
         running: None,
         asked_at: None,
         offset_given: false,
+        role: connection_role,
+        synced_at: None,
         zone_due: sync_clock,
     };
     if sync_clock || status.clock.is_none() {
-        let sync = wellfed_client::time::sync(Timestamp::now(), &TimeZone::system());
-        serving.request(&Op::TimeSync(sync), Asked::Clock)?;
+        serving.sync()?;
     }
     serving.request(&Op::GetSettings, Asked::Settings)?;
     serving.request(&Op::GetPlans, Asked::Plans)?;
@@ -658,6 +675,13 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
         }
     }
 
+    /// Give the feeder this phone's clock and zone.
+    fn sync(&mut self) -> Result<(), BridgeError> {
+        self.synced_at = Some(Instant::now());
+        let sync = wellfed_client::time::sync(Timestamp::now(), &TimeZone::system());
+        self.request(&Op::TimeSync(sync), Asked::Clock)
+    }
+
     /// Read the status again, unless a read is already on its way.
     fn refresh(&mut self) -> Result<(), BridgeError> {
         if !self
@@ -757,6 +781,7 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
             }
             (Asked::Time, Some(Answer::Time(time))) => {
                 let give = !self.offset_given && needs_offset(&time);
+                let due = sync_due(&time, self.role, self.synced_at.map(|at| at.elapsed()));
                 let zone = self.zone_due.then(|| zone_for(&time)).flatten();
                 self.zone_due = false;
                 self.facts.time = Some(TimeRead::just_read(time));
@@ -765,8 +790,9 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
                 }
                 if give {
                     self.offset_given = true;
-                    let sync = wellfed_client::time::sync(Timestamp::now(), &TimeZone::system());
-                    self.request(&Op::TimeSync(sync), Asked::Clock)?;
+                }
+                if give || due {
+                    self.sync()?;
                 }
                 Ok(self.card())
             }
@@ -958,6 +984,12 @@ fn needs_offset(time: &wellfed_model::TimeView) -> bool {
     time.clock_ms.is_some() && time.offset_s.is_none() && time.zone.is_none()
 }
 
+/// Whether a session holding `role` that last synced `since` ago (`None`:
+/// never) syncs on reading `time`.
+fn sync_due(time: &wellfed_model::TimeView, role: ClientRole, since: Option<Duration>) -> bool {
+    wellfed_client::time::sync_due(time, role) && since.is_none_or(|since| since >= SYNC_AGAIN)
+}
+
 /// This phone's zone for a feeder that keeps none and may store one. A zone
 /// is kept on flash, so the offset survives a power cut, and its rule
 /// follows daylight saving.
@@ -1050,6 +1082,30 @@ mod tests {
     fn a_feed_s_due_time_covers_what_the_feeder_can_take() {
         assert_eq!(feed_due(2), Duration::from_secs(49));
         assert_eq!(feed_due(48), Duration::from_secs(601));
+    }
+
+    /// An owner's session syncs a clock whose error grew halfway to expiry,
+    /// then leaves it [`SYNC_AGAIN`] whether or not that one landed; a
+    /// member's syncs only a clock that is not set.
+    #[test]
+    fn an_owner_s_session_syncs_a_grown_clock_and_waits_to_sync_again() {
+        let grown = wellfed_model::TimeView {
+            error_ms: Some(60_000),
+            ..after_a_power_cut()
+        };
+        let lost = wellfed_model::TimeView {
+            clock_ms: None,
+            error_ms: None,
+            ..after_a_power_cut()
+        };
+
+        assert!(sync_due(&grown, ClientRole::Owner, None));
+        assert!(!sync_due(&after_a_power_cut(), ClientRole::Owner, None));
+        assert!(!sync_due(&grown, ClientRole::Owner, Some(Duration::from_secs(29 * 60))));
+        assert!(sync_due(&grown, ClientRole::Owner, Some(SYNC_AGAIN)));
+        assert!(!sync_due(&grown, ClientRole::Member, None));
+        assert!(sync_due(&lost, ClientRole::Member, None));
+        assert!(!sync_due(&lost, ClientRole::Member, Some(Duration::from_secs(60))));
     }
 
     #[test]

@@ -13,6 +13,7 @@ import 'package:wellfed/screens/feeder/people.dart';
 import 'package:wellfed/screens/feeder/portion.dart';
 import 'package:wellfed/screens/feeder/tabs.dart';
 import 'package:wellfed/screens/feeder/updates.dart';
+import 'package:wellfed/screens/feeder/zone_picker.dart';
 import 'package:wellfed/screens/home/home.dart';
 import 'package:wellfed/screens/install/install_progress.dart';
 import 'package:wellfed/screens/setup/join.dart';
@@ -246,6 +247,31 @@ void main() {
         await tester.pump();
         await showPhone(tester, overBlank(PeopleScreen(feeder: feeder)), brightness);
         await matchesGolden('people', brightness);
+      });
+
+      golden('people, for a member', (tester) async {
+        final (FeederController feeder, FakeSession session) = await oneFeeder(tester, phone: fixturePhone());
+        session.opened(role: ClientRole.member);
+        answerAsFull(session);
+        final Future<FeederReply> Function(FeederRequest)? full = session.answering;
+        session.answering = (request) async => switch ((request, full)) {
+          (FeederRequest_ListClients(), _) => _people(),
+          (_, final answer?) => answer(request),
+          _ => const FeederReply.done(),
+        };
+        session.status(fullCard());
+        await tester.pump();
+        await showPhone(tester, overBlank(PeopleScreen(feeder: feeder)), brightness);
+        await matchesGolden('people_member', brightness);
+      });
+
+      golden('the zone picker', (tester) async {
+        await showPhone(
+          tester,
+          overBlank(ZonePickerScreen(zones: FakeFeederPorts().timeZones(), current: 'America/Denver')),
+          brightness,
+        );
+        await matchesGolden('zone_picker', brightness);
       });
 
       golden('the clock', (tester) async {

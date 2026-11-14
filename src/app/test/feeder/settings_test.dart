@@ -141,9 +141,27 @@ void main() {
       await _settingsTab(tester, role: ClientRole.member);
 
       expect(find.text('OWNER ONLY'), findsOneWidget);
-      expect(find.text('Restart'), findsNothing);
       expect(find.text('Diagnostics'), findsNothing);
       expect(find.text('Firmware updates'), findsOneWidget);
+      await scrollTo(tester, find.text('Restart the feeder'));
+      expect(
+        find
+            .ancestor(of: find.text('Restart the feeder'), matching: find.byType(InkWell))
+            .evaluate()
+            .every((element) => (element.widget as InkWell).onTap == null),
+        isTrue,
+        reason: 'listed as an owner\'s, not offered',
+      );
+    });
+
+    testWidgets('a member opens People, to see who uses the feeder and invite members', (tester) async {
+      final (_, FakeSession session) = await _settingsTab(tester, role: ClientRole.member);
+      session.replies.add(const FeederReply.clients(clients: []));
+
+      await scrollTo(tester, find.text('See who uses it, and invite members'));
+      await tapIn(tester, find.text('See who uses it, and invite members'));
+      expect(session.requests, contains(const FeederRequest.listClients()));
+      expect(find.text('Invite someone'), findsOneWidget);
     });
 
     // The feeder's two settings records came apart: it holds them read-only,
@@ -297,7 +315,7 @@ void main() {
       expect(find.textContaining('Sound is off'), findsOneWidget);
     });
 
-    testWidgets('the feeder rows say where each stands, with Remove at the end and no Restart', (tester) async {
+    testWidgets('the feeder rows say where each stands, with Restart last and Remove at the end', (tester) async {
       final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       session.answering = (request) async => switch (request) {
         FeederRequest_GetCall() => const FeederReply.call(
@@ -313,8 +331,48 @@ void main() {
       expect(find.text('0123456789ab'), findsOneWidget);
       expect(find.text('Up 0 min'), findsOneWidget);
       await scrollTo(tester, find.text('Remove from this phone'));
-      expect(find.text('Restart'), findsNothing);
+      expect(find.text('Restart the feeder'), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.text('Restart the feeder')).dy,
+        greaterThan(tester.getTopLeft(find.text('Diagnostics')).dy),
+      );
       expect(find.text('Remove from this phone'), findsOneWidget);
+    });
+
+    testWidgets('a restart says what it ends, and goes once confirmed', (tester) async {
+      final (_, FakeSession session) = await _settingsTab(tester);
+
+      await scrollTo(tester, find.text('Restart the feeder'));
+      await tapIn(tester, find.text('Restart the feeder'));
+      expect(find.textContaining('A restart ends Bluetooth setup.'), findsOneWidget);
+      expect(find.textContaining("won't restart in the middle of a feed"), findsOneWidget);
+      await tapIn(tester, find.text('Cancel'));
+      expect(session.requests.whereType<FeederRequest_Reboot>(), isEmpty);
+
+      await tapIn(tester, find.text('Restart the feeder'));
+      await tapIn(tester, find.widgetWithText(FilledButton, 'Restart'));
+      expect(session.requests.whereType<FeederRequest_Reboot>(), hasLength(1));
+      expect(find.text('Kitchen is restarting.'), findsOneWidget);
+    });
+
+    testWidgets('a restart refused during a feed says to wait for it, and an unanswered one is not sent again', (
+      tester,
+    ) async {
+      final (_, FakeSession session) = await _settingsTab(tester);
+      session.replies
+        ..add(const FeederReply.refused(refusal: FeederRefusal.busy()))
+        ..add(const FeederReply.unanswered());
+
+      await scrollTo(tester, find.text('Restart the feeder'));
+      await tapIn(tester, find.text('Restart the feeder'));
+      await tapIn(tester, find.widgetWithText(FilledButton, 'Restart'));
+      expect(find.text("It's feeding or about to. Restart it once the feed ends."), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 5));
+      await tapIn(tester, find.text('Restart the feeder'));
+      await tapIn(tester, find.widgetWithText(FilledButton, 'Restart'));
+      expect(find.textContaining('may or may not have'), findsOneWidget);
+      expect(session.requests.whereType<FeederRequest_Reboot>(), hasLength(2), reason: 'one for each tap, none resent');
     });
 
     testWidgets('removing takes the feeder off this phone once confirmed', (tester) async {

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:wellfed/screens/feeder/invite.dart';
+import 'package:wellfed/src/roles.g.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
@@ -20,8 +21,9 @@ String roleName(ClientRole role) => switch (role) {
   ClientRole.unknown => 'A role this app does not know',
 };
 
-/// Who a feeder lists (11.1). Owner only: the settings tab links here from its
-/// owner section.
+/// Who a feeder lists (11.1). An owner removes people and invites members or
+/// owners; a member, by the feeder's own rules, reads the list and invites
+/// members.
 class PeopleScreen extends StatefulWidget {
   const PeopleScreen({super.key, required this.feeder});
 
@@ -86,47 +88,54 @@ class _PeopleScreenState extends State<PeopleScreen> {
       ),
       body: ListenableBuilder(
         listenable: feeder,
-        builder: (context, _) => ListView(
-          padding: const EdgeInsets.all(Space.s4),
-          children: [
-            if (feeder.state.clients.isNotEmpty)
-              Panel(
-                child: Column(
-                  children: [
-                    for (final (i, client) in feeder.state.clients.indexed)
-                      _Person(
-                        client: client,
-                        first: i == 0,
-                        onRemove: _asking || client.you ? null : () => unawaited(_remove(client)),
-                      ),
-                  ],
+        builder: (context, _) {
+          final bool removes = feeder.state.may(Ask.revokeClient);
+          return ListView(
+            padding: const EdgeInsets.all(Space.s4),
+            children: [
+              if (feeder.state.clients.isNotEmpty)
+                Panel(
+                  child: Column(
+                    children: [
+                      for (final (i, client) in feeder.state.clients.indexed)
+                        _Person(
+                          client: client,
+                          first: i == 0,
+                          removable: removes && !client.you,
+                          onRemove: _asking ? null : () => unawaited(_remove(client)),
+                        ),
+                    ],
+                  ),
                 ),
+              const SizedBox(height: Space.s4),
+              Text(
+                removes
+                    ? 'Removing someone closes their connection at once. Their '
+                          'history stays.'
+                    : 'You can invite members. Only an owner can remove someone or invite an owner.',
+                style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
               ),
-            const SizedBox(height: Space.s4),
-            Text(
-              'Removing someone closes their connection at once. Their '
-              'history stays.',
-              style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
-            ),
-            const SizedBox(height: Space.s4),
-            FilledButton(
-              onPressed: feeder.state.connection == Connection.online
-                  ? () => unawaited(inviteSomeone(context, feeder))
-                  : null,
-              child: const Text('Invite someone'),
-            ),
-          ],
-        ),
+              const SizedBox(height: Space.s4),
+              FilledButton(
+                onPressed: feeder.state.connection == Connection.online && feeder.state.invitable.isNotEmpty
+                    ? () => unawaited(inviteSomeone(context, feeder))
+                    : null,
+                child: const Text('Invite someone'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 }
 
 class _Person extends StatelessWidget {
-  const _Person({required this.client, required this.first, required this.onRemove});
+  const _Person({required this.client, required this.first, required this.removable, required this.onRemove});
 
   final ClientView client;
   final bool first;
+  final bool removable;
   final VoidCallback? onRemove;
 
   @override
@@ -161,7 +170,7 @@ class _Person extends StatelessWidget {
               ],
             ),
           ),
-          if (!client.you)
+          if (removable)
             IconButton(
               tooltip: 'Remove ${client.label}',
               onPressed: onRemove,

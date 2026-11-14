@@ -455,7 +455,7 @@ void main() {
 
       await feederTap(tester, find.text('Restart it from here'));
       await feederTap(tester, find.widgetWithText(FilledButton, 'Restart'));
-      expect(find.textContaining("It's busy"), findsOneWidget);
+      expect(find.text("It's feeding or about to. Restart it once the feed ends."), findsOneWidget);
 
       await feederTap(tester, find.text('Restart it from here'));
       await feederTap(tester, find.widgetWithText(FilledButton, 'Restart'));

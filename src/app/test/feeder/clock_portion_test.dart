@@ -110,6 +110,77 @@ void main() {
       expect(find.textContaining("Use this phone's zone"), findsNothing);
     });
 
+    testWidgets('any zone can be chosen by searching for it', (tester) async {
+      final FakeSession session = await show(tester);
+
+      await tapIn(tester, find.text('Choose a zone…'));
+      expect(find.text('Berlin'), findsOneWidget);
+      await tester.enterText(find.byType(TextField), 'new york');
+      await tester.pump();
+      expect(find.text('Berlin'), findsNothing);
+      await tapIn(tester, find.text('New York'));
+
+      final put = session.requests.first as FeederRequest_PutTime;
+      expect(put.base, 8);
+      expect(put.zone, const ZoneChange.named(name: 'America/New_York'));
+      expect(put.ntp, isNull);
+      expect(session.requests.last, const FeederRequest.getTime());
+    });
+
+    testWidgets('a search that matches nothing says so, and backing out sends nothing', (tester) async {
+      final FakeSession session = await show(tester);
+
+      await tapIn(tester, find.text('Choose a zone…'));
+      await tester.enterText(find.byType(TextField), 'atlantis');
+      await tester.pump();
+      expect(find.text('No time zone matches. Try the nearest large city.'), findsOneWidget);
+      await tapIn(tester, find.byTooltip('Back'));
+
+      expect(session.requests.whereType<FeederRequest_PutTime>(), isEmpty);
+    });
+
+    testWidgets('a zone the feeder keeps can be cleared', (tester) async {
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
+      session.status(
+        fakeCard(
+          time: const TimeInfo(
+            generation: 8,
+            writable: true,
+            zone: 'MST7MDT,M3.2.0,M11.1.0',
+            zoneNow: ZoneView(abbreviation: 'MST', offsetS: -7 * 3600, seasonal: true),
+            phoneZone: 'America/Denver',
+            sameAsPhone: true,
+            ntp: NtpView.gateway(port: 123),
+            syncs: 1,
+          ),
+        ),
+      );
+      await showTab(tester, ClockScreen(feeder: feeder));
+      session.requests.clear();
+
+      await tapIn(tester, find.text('Clear the zone'));
+      final put = session.requests.first as FeederRequest_PutTime;
+      expect(put.zone, const ZoneChange.clear());
+    });
+
+    testWidgets('a feeder that keeps no zone offers no clear', (tester) async {
+      await show(tester);
+
+      expect(find.text('None kept'), findsOneWidget);
+      expect(find.text('Choose a zone…'), findsOneWidget);
+      expect(find.text('Clear the zone'), findsNothing);
+    });
+
+    testWidgets('a zone the feeder cannot follow says so', (tester) async {
+      final FakeSession session = await show(tester);
+      session.replies.add(const FeederReply.notAsked(reason: NotAsked.badZone));
+
+      await tapIn(tester, find.text('Choose a zone…'));
+      await tapIn(tester, find.text('Kolkata'));
+
+      expect(find.text("The feeder can't follow that time zone."), findsOneWidget);
+    });
+
     testWidgets('coming to the screen reads the time again', (tester) async {
       final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       session.status(fakeCard(time: time));
