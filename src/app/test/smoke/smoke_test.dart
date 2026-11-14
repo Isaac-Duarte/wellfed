@@ -241,6 +241,12 @@ void main() {
     final router = FeederRouter(pinsPath: '${pins.path}/pending.json');
     feeder = FeederController(FakeBook()..feeders = [known], _Ports(owner, router), known);
     await _until(feeder, (state) => state.cardIsCurrent);
+    // The simulator asks a router that never answers, and a session sends
+    // no sync before NTP has had its two minutes: the owner sets the time
+    // by hand, as from the Clock screen, so meals can be skipped.
+    final FeederReply synced = await feeder.ask(const FeederRequest.syncClock());
+    expect(synced, isA<FeederReply_Done>());
+    await _until(feeder, (state) => state.card?.clockSet ?? false);
   });
 
   tearDownAll(() async {
