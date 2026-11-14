@@ -263,7 +263,7 @@ void main() {
       session.requests.clear();
 
       expect(find.textContaining("The feeder's time server disagrees with its clock."), findsOneWidget);
-      expect(find.textContaining('Check the time source under Get the time from'), findsOneWidget);
+      expect(find.textContaining('If the server is wrong, choose another under Get the time from'), findsOneWidget);
       expect(session.requests, isEmpty);
       await tapIn(tester, find.text('Set the time from this phone'));
       expect(session.requests, [const FeederRequest.syncClock(), const FeederRequest.getTime()]);
