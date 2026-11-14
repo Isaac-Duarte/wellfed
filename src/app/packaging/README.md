@@ -9,7 +9,7 @@ This folder holds what turns the app's release builds into installers for macOS,
 | Debian 13, Ubuntu 24.04 and later | `wellfed_<version>_amd64.deb` | The bundle in `/usr/lib/wellfed/`, a desktop entry, the icon and AppStream metadata |
 | Windows 10 1809 or later, 64-bit | `Wellfed-<version>-windows-setup.exe` | An Inno Setup installer for the current user, into `%LOCALAPPDATA%\Programs\Wellfed`, with a Start menu shortcut and an uninstaller |
 
-The version is the one in `src/app/pubspec.yaml`, without its build number. The `wellfed` command line is a developer tool and none of these packages carry it.
+The version is the one in `src/app/pubspec.yaml`, without its build number. The `wellfed` command line is a developer tool and none of these packages carry it. Nothing goes in `/usr/bin` either, on purpose: a `wellfed` there would shadow or be shadowed by the developer CLI of the same name, so the desktop entry starts `/usr/lib/wellfed/wellfed` by its full path.
 
 ## What is here
 
@@ -30,7 +30,7 @@ Each system's package is built on that system, since Flutter can't cross-build a
 
 You need the [Linux build's toolchain](../README.md#toolchain), plus `tar`, `xz`, `ar` (binutils), `curl` and `unsquashfs` (squashfs-tools). No root and no `dpkg`.
 
-1. Run `make appimage-tools` once. It downloads appimagetool 1.9.1 and the AppImage runtime of release 20251108 into `~/.cache/wellfed/appimage` (set `APPIMAGE_TOOLS` to put them elsewhere), and checks each against the SHA-256 the Makefile pins.
+1. Run `make appimage-tools` once. It downloads appimagetool 1.9.1 and the AppImage runtime of release 20251108 into `~/.cache/wellfed/appimage` (set `APPIMAGE_TOOLS` to put them elsewhere), and checks each against the SHA-256 pinned in `src/tools/xtask/src/desktop/linux.rs`, which the Makefile reads. The packager checks both hashes again before it runs appimagetool or embeds the runtime.
 2. Run `make desktop-packages`. You should see `Built …AppImage` and `Built …deb`.
 
 `desktop-file-validate` and `appstreamcli` check the desktop entry and the metadata where they are installed, and the run says when one isn't.
@@ -59,8 +59,9 @@ Copy the Mac's and Windows's artifacts into one `dist/desktop/<version>/`, then 
 | Package | Checked |
 | --- | --- |
 | Release build, every system | The runner, the Rust bridge, Dart's compiled code and the engine are there before anything is staged |
+| Linux bundle | No binary in it needs a glibc symbol newer than the floor in `linux.rs` (2.39), by what `objdump -T` lists, checked in both staged trees before packing. The `.deb`'s `libc6 (>= …)` comes from the same constant |
 | AppImage | Its squashfs, listed with `unsquashfs` from where the runtime ends, holds `AppRun`, the desktop entry, the icon, the runner, `libwellfed_app_bridge.so` and `libapp.so` |
-| `.deb` | Its three members are in dpkg's order, its control names the package, its architecture and its dependencies, and its data holds the runner, the bridge, `libapp.so`, the desktop entry, the icon and the copyright file |
+| `.deb` | Its three members are in dpkg's order, its control names the package, its architecture, its dependencies and the glibc floor, its `md5sums` lists the bridge, and its data holds the runner, the bridge, `libapp.so`, the desktop entry, the icon and the copyright file |
 | Disk image | `hdiutil verify` passes. Mounted read-only, it holds the runner, the bridge's framework, `App.framework`, `AppIcon.icns` and the Applications link. `codesign --verify --deep --strict` passes on the app, and the runner and the bridge each hold both arm64 and x86_64 |
 | Windows installer | Inno Setup names the runner, the bridge, the engine, the C++ runtime and Dart's code one by one, so its build fails if one is missing. `check-windows-installer` then installs and uninstalls it |
 
@@ -72,15 +73,17 @@ The Linux packages carry the release bundle and nothing else, and use the system
 
 | Needs | For |
 | --- | --- |
-| glibc 2.39 or later | The build host's glibc sets the floor: an AppImage built on an older distribution would run on more |
+| glibc 2.39 or later | The build host's glibc sets it: the Rust bridge needs 2.39 when built on the Arch builder (the runner 2.34, the secure storage plugin 2.38). A build that needs more fails rather than raise the floor silently |
 | GTK 3, GLib, fontconfig, libepoxy, EGL and GLES | Flutter's Linux embedding |
-| libsecret, and a running Secret Service (GNOME Keyring, KWallet or KeePassXC) | The client secret. With none, the app stops at start and says so |
+| libsecret, and a running Secret Service (GNOME Keyring, KWallet or KeePassXC) | The client secret. With none, the app stops at start and says so. The `.deb` recommends `gnome-keyring \| kwallet6 \| libkf5wallet-bin \| keepassxc`: any one installed satisfies it, so a KDE desktop with KWallet pulls in nothing, and only a system with none gets GNOME Keyring |
 | libdbus | The bridge's Bluetooth, through BlueZ |
 | NetworkManager or `iw` (recommended) | Reading the Wi-Fi's name during an install |
 
 `libdartjni.so` in the bundle names `libjvm.so`. Only Android loads it, so no package depends on a JVM.
 
 The Windows installer carries the Visual C++ runtime's DLLs beside the app, from the build machine's Visual Studio, since the runner and the bridge both load them.
+
+On Windows, `flutter_secure_storage` keeps the client secret in `%APPDATA%\Wellfed contributors\Wellfed`, encrypted with DPAPI for the user, apart from the other stores in `%LOCALAPPDATA%\Wellfed`. That folder roams with a roaming profile, and path_provider names it from `Runner.rc`'s CompanyName and ProductName, so renaming either would strand every installed app's key. The bridge's `tests/windows_store.rs` fails if either changes. Moving the secret beside the other stores waits for a maintained, safe Rust wrapper for DPAPI: the one on crates.io sits on the unmaintained `winapi` crate.
 
 ## What is reproducible
 

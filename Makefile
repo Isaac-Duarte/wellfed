@@ -244,25 +244,24 @@ app-installer-input:
 # image on a Mac. Flutter builds a desktop only on its own system, so each
 # host runs this (Windows runs `cargo xtask package-desktop` directly), and
 # `cargo xtask desktop-sums` lists every artifact gathered in one folder.
-# appimagetool and its runtime are pinned by hash: appimagetool-x86_64 from
-# AppImage/appimagetool release 1.9.1, runtime-x86_64 from
-# AppImage/type2-runtime release 20251108 (both MIT).
+# appimagetool and its runtime are pinned in the packager, which checks each
+# hash before it runs the tool or embeds the runtime; appimage-tools reads
+# the same URLs and hashes from there, so the two can't disagree.
 APPIMAGE_TOOLS ?= $(HOME)/.cache/wellfed/appimage
-APPIMAGETOOL_URL = https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
-APPIMAGETOOL_SHA256 = ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
-APPIMAGE_RUNTIME_URL = https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
-APPIMAGE_RUNTIME_SHA256 = 2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
-APPIMAGE_CHECK = printf '%s  %s\n%s  %s\n' $(APPIMAGETOOL_SHA256) $(APPIMAGE_TOOLS)/appimagetool-x86_64.AppImage \
-	$(APPIMAGE_RUNTIME_SHA256) $(APPIMAGE_TOOLS)/runtime-x86_64 | sha256sum -c --quiet
+APPIMAGE_PINS = src/tools/xtask/src/desktop/linux.rs
+appimage_pin = $(shell sed -n '/^const $(1): Pin/,/^};/s/^ *$(2): "\(.*\)",$$/\1/p' $(APPIMAGE_PINS))
 appimage-tools:
+	@test -n "$(call appimage_pin,APPIMAGETOOL,sha256)" -a -n "$(call appimage_pin,APPIMAGE_RUNTIME,sha256)" || \
+		{ echo "no AppImage pins found in $(APPIMAGE_PINS)"; exit 1; }
 	mkdir -p $(APPIMAGE_TOOLS)
-	curl -fL --proto '=https' -o $(APPIMAGE_TOOLS)/appimagetool-x86_64.AppImage $(APPIMAGETOOL_URL)
-	curl -fL --proto '=https' -o $(APPIMAGE_TOOLS)/runtime-x86_64 $(APPIMAGE_RUNTIME_URL)
-	@$(APPIMAGE_CHECK)
+	curl -fL --proto '=https' -o $(APPIMAGE_TOOLS)/appimagetool-x86_64.AppImage $(call appimage_pin,APPIMAGETOOL,url)
+	curl -fL --proto '=https' -o $(APPIMAGE_TOOLS)/runtime-x86_64 $(call appimage_pin,APPIMAGE_RUNTIME,url)
+	printf '%s  %s\n%s  %s\n' \
+		$(call appimage_pin,APPIMAGETOOL,sha256) $(APPIMAGE_TOOLS)/appimagetool-x86_64.AppImage \
+		$(call appimage_pin,APPIMAGE_RUNTIME,sha256) $(APPIMAGE_TOOLS)/runtime-x86_64 | sha256sum -c --quiet
 	chmod +x $(APPIMAGE_TOOLS)/appimagetool-x86_64.AppImage
 desktop-packages:
 ifeq ($(shell uname),Linux)
-	@$(APPIMAGE_CHECK) || { echo "no pinned AppImage tools in $(APPIMAGE_TOOLS): run make appimage-tools"; exit 1; }
 	cargo run --quiet --locked -p xtask -- package-desktop \
 		--appimagetool $(APPIMAGE_TOOLS)/appimagetool-x86_64.AppImage --appimage-runtime $(APPIMAGE_TOOLS)/runtime-x86_64
 else

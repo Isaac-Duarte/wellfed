@@ -100,8 +100,28 @@ pub(crate) enum Error {
     },
     #[error("{package} lacks {entry}")]
     MissingEntry { package: PathBuf, entry: String },
-    #[error("{package}: {problem}")]
-    Malformed { package: PathBuf, problem: String },
+    #[error("{0}: its runtime is not a 64-bit little-endian ELF")]
+    RuntimeNotElf(PathBuf),
+    #[error("{package}: its members are {members:?}, not dpkg's three in order")]
+    DebMembers {
+        package: PathBuf,
+        members: Vec<String>,
+    },
+    #[error("{binary} holds {archs}, not both arm64 and x86_64")]
+    NotUniversal { binary: PathBuf, archs: String },
+    #[error("{binary} needs glibc {needs}, newer than the packages' floor of {floor}")]
+    GlibcTooNew {
+        binary: PathBuf,
+        needs: String,
+        floor: String,
+    },
+    #[error("{path} has SHA-256 {found}, not the pinned {expected}: download it again from {url}")]
+    PinMismatch {
+        path: PathBuf,
+        found: String,
+        expected: &'static str,
+        url: &'static str,
+    },
     #[error("git did not give the last commit's time: {0:?}")]
     NoCommitTime(String),
     #[error(

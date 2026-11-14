@@ -71,7 +71,7 @@ enum Task {
         #[arg(long)]
         replay: Option<PathBuf>,
     },
-    /// Build the desktop app's installers for this host into dist/desktop/<            match desktop::sums(&cli.root) {>/.
+    /// Build the desktop app's installers for this host into dist/desktop/<version>/.
     PackageDesktop {
         /// Package the release build already under src/app/build/ instead of building one.
         #[arg(long)]
@@ -86,7 +86,7 @@ enum Task {
         #[arg(long)]
         iscc: Option<PathBuf>,
     },
-    /// Rewrite SHA256SUMS over every desktop artifact in dist/desktop/<            match desktop::sums(&cli.root) {>/.
+    /// Rewrite SHA256SUMS over every desktop artifact in dist/desktop/<version>/.
     DesktopSums,
     /// Install a Windows installer silently, check it, uninstall it, and check the stores survive.
     CheckWindowsInstaller {

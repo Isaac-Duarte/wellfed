@@ -89,9 +89,9 @@ fn check_app(app: &Path) -> Result<(), Error> {
         let words: Vec<&str> = archs.split_whitespace().collect();
         require(
             words.contains(&"arm64") && words.contains(&"x86_64"),
-            || Error::Malformed {
-                package: path.clone(),
-                problem: format!("it holds {}, not arm64 and x86_64", archs.trim()),
+            || Error::NotUniversal {
+                binary: path.clone(),
+                archs: archs.trim().to_owned(),
             },
         )?;
     }

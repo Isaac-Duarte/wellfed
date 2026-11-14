@@ -16,6 +16,7 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use wellfed_formats::canonical::sha256;
 use wellfed_formats::require;
 
 use super::{
@@ -38,6 +39,26 @@ const BUILT: &[&str] = &[
     "data/icudtl.dat",
     "data/flutter_assets",
 ];
+
+/// appimagetool 1.9.1 and the runtime of type2-runtime release 20251108,
+/// both MIT. Pinned here, so a replaced download fails before it runs or is
+/// embedded in a package; `make appimage-tools` downloads from these URLs
+/// and checks these hashes, read from this file.
+const APPIMAGETOOL: Pin = Pin {
+    url: "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage",
+    sha256: "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0",
+};
+const APPIMAGE_RUNTIME: Pin = Pin {
+    url: "https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64",
+    sha256: "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d",
+};
+
+/// The newest glibc symbol version any packed binary may need, and the
+/// `.deb`'s `libc6 (>= …)`. The build host's glibc sets what the Rust bridge
+/// links against (2.39 on the Arch builder in November 2026), so a build on
+/// a newer host fails here instead of shipping a package that won't load on
+/// the distributions the owner guide names.
+const GLIBC_FLOOR: (u32, u32) = (2, 39);
 
 /// Builds, packs and checks the AppImage and the `.deb`.
 pub(super) fn package(
@@ -65,12 +86,16 @@ pub(super) fn package(
     let appimage = out.join(format!("Wellfed-{}-x86_64.AppImage", version.name));
     let appdir = stage.join("Wellfed.AppDir");
     stage_appdir(root, version, &bundle, &appdir, epoch)?;
+    check_glibc(&appdir.join(INSTALL))?;
+    require_pinned(&appimagetool, APPIMAGETOOL)?;
+    require_pinned(&runtime, APPIMAGE_RUNTIME)?;
     pack_appimage(&appimagetool, &runtime, &appdir, &appimage, epoch)?;
     check_appimage(&appimage)?;
 
     let deb = out.join(format!("wellfed_{}_amd64.deb", version.debian()));
     let deb_stage = stage.join("deb");
     stage_deb(root, version, &bundle, &deb_stage, epoch)?;
+    check_glibc(&deb_stage.join("root").join(INSTALL))?;
     pack_deb(&deb_stage, &deb, epoch)?;
     check_deb(&deb)?;
 
@@ -178,10 +203,7 @@ fn pack_appimage(
 /// and checks it holds the app, the bridge and the icon.
 fn check_appimage(appimage: &Path) -> Result<(), Error> {
     let bytes = fs::read(appimage).map_err(at(appimage))?;
-    let offset = elf_end(&bytes).ok_or_else(|| Error::Malformed {
-        package: appimage.to_path_buf(),
-        problem: "its runtime is not a 64-bit little-endian ELF".to_owned(),
-    })?;
+    let offset = elf_end(&bytes).ok_or_else(|| Error::RuntimeNotElf(appimage.to_path_buf()))?;
 
     let listed = output(
         Command::new("unsquashfs")
@@ -276,9 +298,14 @@ fn stage_deb(
     let control = template(
         root,
         "linux/control",
-        &[("VERSION", &version.debian()), ("SIZE", &kib.to_string())],
+        &[
+            ("VERSION", &version.debian()),
+            ("SIZE", &kib.to_string()),
+            ("GLIBC", &glibc_floor()),
+        ],
     )?;
     write(&stage.join("control/control"), control.as_bytes())?;
+    write(&stage.join("control/md5sums"), &md5sums(&tree)?)?;
     write(&stage.join("debian-binary"), b"2.0\n")
 }
 
@@ -326,12 +353,15 @@ fn pack_deb(stage: &Path, deb: &Path, epoch: u64) -> Result<(), Error> {
 /// and that its data holds the app, the bridge and the icon.
 fn check_deb(deb: &Path) -> Result<(), Error> {
     let members = output(Command::new("ar").arg("t").arg(deb))?;
-    let members = String::from_utf8_lossy(&members.stdout).into_owned();
+    let members: Vec<String> = String::from_utf8_lossy(&members.stdout)
+        .lines()
+        .map(str::to_owned)
+        .collect();
     require(
-        members.lines().collect::<Vec<_>>() == ["debian-binary", "control.tar.xz", "data.tar.xz"],
-        || Error::Malformed {
+        members == ["debian-binary", "control.tar.xz", "data.tar.xz"],
+        || Error::DebMembers {
             package: deb.to_path_buf(),
-            problem: format!("its members are {members:?}, not dpkg's three in order"),
+            members: members.clone(),
         },
     )?;
 
@@ -341,12 +371,30 @@ fn check_deb(deb: &Path) -> Result<(), Error> {
         Command::new("tar").args(["-xJOf", "-", "./control"]),
     )?;
     let control = String::from_utf8_lossy(&control).into_owned();
-    for field in ["Package: wellfed\n", "Architecture: amd64\n", "Depends: "] {
+    let libc = format!("libc6 (>= {})", glibc_floor());
+    for field in [
+        "Package: wellfed\n",
+        "Architecture: amd64\n",
+        "Depends: ",
+        &libc,
+    ] {
         require(control.contains(field), || Error::MissingEntry {
             package: deb.to_path_buf(),
             entry: format!("the control field {:?}", field.trim()),
         })?;
     }
+    let sums = piped(
+        &control_xz.stdout,
+        Command::new("tar").args(["-xJOf", "-", "./md5sums"]),
+    )?;
+    require(
+        String::from_utf8_lossy(&sums)
+            .contains(&format!("  {INSTALL}/lib/libwellfed_app_bridge.so\n")),
+        || Error::MissingEntry {
+            package: deb.to_path_buf(),
+            entry: "the bridge in md5sums".to_owned(),
+        },
+    )?;
 
     let data_xz = output(Command::new("ar").arg("p").arg(deb).arg("data.tar.xz"))?;
     let listing = piped(&data_xz.stdout, Command::new("tar").args(["-tJf", "-"]))?;
@@ -433,6 +481,108 @@ fn lint(tree: &Path) -> Result<(), Error> {
     Ok(())
 }
 
+/// Fails unless a downloaded tool has its pinned SHA-256.
+fn require_pinned(path: &Path, pin: Pin) -> Result<(), Error> {
+    let bytes = fs::read(path).map_err(at(path))?;
+    let found = sha256(&bytes);
+    require(found == pin.sha256, || Error::PinMismatch {
+        path: path.to_path_buf(),
+        found: found.clone(),
+        expected: pin.sha256,
+        url: pin.url,
+    })
+}
+
+/// A downloaded tool, by where it comes from and its SHA-256.
+#[derive(Clone, Copy, Debug)]
+struct Pin {
+    url: &'static str,
+    sha256: &'static str,
+}
+
+/// `2.39`, as the `.deb` writes it.
+fn glibc_floor() -> String {
+    format!("{}.{}", GLIBC_FLOOR.0, GLIBC_FLOOR.1)
+}
+
+/// Fails if the runner or any library in a staged bundle needs a glibc
+/// symbol newer than the floor, by the versions `objdump -T` lists.
+fn check_glibc(install: &Path) -> Result<(), Error> {
+    let mut binaries = vec![install.join("wellfed")];
+    let lib = install.join("lib");
+    for entry in fs::read_dir(&lib).map_err(at(&lib))? {
+        let path = entry.map_err(at(&lib))?.path();
+        if path.extension().is_some_and(|ext| ext == "so") {
+            binaries.push(path);
+        }
+    }
+    binaries.sort();
+
+    for binary in binaries {
+        let symbols =
+            output(Command::new("objdump").arg("-T").arg(&binary)).map_err(
+                |error| match error {
+                    Error::Spawn { .. } => Error::MissingTool {
+                        tool: "objdump",
+                        hint: "install binutils",
+                    },
+                    other => other,
+                },
+            )?;
+        let needs = newest_glibc(&String::from_utf8_lossy(&symbols.stdout));
+        if let Some(needs) = needs.filter(|needs| *needs > GLIBC_FLOOR) {
+            return Err(Error::GlibcTooNew {
+                binary,
+                needs: format!("{}.{}", needs.0, needs.1),
+                floor: glibc_floor(),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// The newest `GLIBC_x.y[.z]` version in an `objdump -T` listing, as x.y.
+fn newest_glibc(listing: &str) -> Option<(u32, u32)> {
+    listing
+        .split(|c: char| c.is_whitespace() || c == '(' || c == ')')
+        .filter_map(|word| word.strip_prefix("GLIBC_"))
+        .filter_map(|version| {
+            let mut parts = version.split('.');
+            Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
+        })
+        .max()
+}
+
+/// The `.deb`'s `md5sums`: every regular file it installs, by its path
+/// without a leading `./`, sorted, in `md5sum`'s format.
+fn md5sums(tree: &Path) -> Result<Vec<u8>, Error> {
+    let mut files = Vec::new();
+    regular_files(tree, Path::new(""), &mut files)?;
+    files.sort();
+    let sums = output(
+        Command::new("md5sum")
+            .arg("--")
+            .args(&files)
+            .current_dir(tree),
+    )?;
+    Ok(sums.stdout)
+}
+
+fn regular_files(tree: &Path, relative: &Path, files: &mut Vec<PathBuf>) -> Result<(), Error> {
+    let dir = tree.join(relative);
+    for entry in fs::read_dir(&dir).map_err(at(&dir))? {
+        let entry = entry.map_err(at(&dir))?;
+        let kind = entry.file_type().map_err(at(&entry.path()))?;
+        let path = relative.join(entry.file_name());
+        if kind.is_dir() {
+            regular_files(tree, &path, files)?;
+        } else if kind.is_file() {
+            files.push(path);
+        }
+    }
+    Ok(())
+}
+
 /// The total size of a tree's files.
 fn tree_size(dir: &Path) -> Result<u64, Error> {
     let mut total = 0;
@@ -484,6 +634,16 @@ mod tests {
         assert_eq!(date_of(0), "1970-01-01");
         assert_eq!(date_of(951_782_400), "2000-02-29");
         assert_eq!(date_of(1_794_614_400), "2026-11-14");
+    }
+
+    #[test]
+    fn the_newest_glibc_is_read_from_objdump() {
+        let listing = "0000000000000000      DF *UND*\t0000000000000000 (GLIBC_2.2.5) memcpy\n\
+                       0000000000000000      DF *UND*\t0000000000000000 (GLIBC_2.39) pidfd_spawnp\n\
+                       0000000000000000      DF *UND*\t0000000000000000  GLIBC_2.4   __stack_chk_fail\n";
+        assert_eq!(newest_glibc(listing), Some((2, 39)));
+        assert_eq!(newest_glibc("no versions here"), None);
+        assert!(newest_glibc(listing) <= Some(GLIBC_FLOOR));
     }
 
     #[test]
