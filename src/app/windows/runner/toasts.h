@@ -2,6 +2,7 @@
 #define RUNNER_TOASTS_H_
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -14,9 +15,17 @@
 // already gone counts as taken off.
 bool TakeOffToast(int64_t id, const std::string& app);
 
-// Whether Windows lets the app's toasts through, as its notification
-// settings say. False when Windows can't say.
-bool ToastsEnabled(const std::string& app);
+// The two switches the Settings app writes for toasts: the app's own
+// (`Enabled` under Notifications\Settings\<app>) and every app's
+// (`ToastEnabled` under PushNotifications). 0 means off; an absent or
+// unreadable value is empty, which Windows reads as on. Dart decides from
+// them: a notifier's own setting can't be read for an unpackaged app id,
+// which Windows answers with "element not found".
+struct ToastSwitches {
+  std::optional<uint32_t> app;
+  std::optional<uint32_t> all;
+};
+ToastSwitches ReadToastSwitches(const std::string& app);
 
 // The ids of the app's toasts in the action centre. None when Windows
 // can't say.

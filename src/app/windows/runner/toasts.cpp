@@ -6,9 +6,27 @@
 #include <winrt/Windows.UI.Notifications.h>
 
 #include <cwchar>
+#include <string>
 
-using winrt::Windows::UI::Notifications::NotificationSetting;
 using winrt::Windows::UI::Notifications::ToastNotificationManager;
+
+namespace {
+
+// The DWORD |value| under HKEY_CURRENT_USER\|key|, if it is there.
+std::optional<uint32_t> ReadDword(const std::wstring& key,
+                                  const wchar_t* value) {
+  DWORD data = 0;
+  DWORD size = sizeof(data);
+  const LSTATUS status =
+      ::RegGetValueW(HKEY_CURRENT_USER, key.c_str(), value, RRF_RT_REG_DWORD,
+                     nullptr, &data, &size);
+  if (status != ERROR_SUCCESS) {
+    return std::nullopt;
+  }
+  return static_cast<uint32_t>(data);
+}
+
+}  // namespace
 
 bool TakeOffToast(int64_t id, const std::string& app) {
   try {
@@ -23,13 +41,16 @@ bool TakeOffToast(int64_t id, const std::string& app) {
   }
 }
 
-bool ToastsEnabled(const std::string& app) {
-  try {
-    return ToastNotificationManager::CreateToastNotifier(winrt::to_hstring(app))
-               .Setting() == NotificationSetting::Enabled;
-  } catch (winrt::hresult_error const&) {
-    return false;
-  }
+ToastSwitches ReadToastSwitches(const std::string& app) {
+  ToastSwitches switches;
+  switches.app = ReadDword(
+      L"Software\\Microsoft\\Windows\\CurrentVersion\\Notifications\\Settings\\" +
+          std::wstring(winrt::to_hstring(app)),
+      L"Enabled");
+  switches.all = ReadDword(
+      L"Software\\Microsoft\\Windows\\CurrentVersion\\PushNotifications",
+      L"ToastEnabled");
+  return switches;
 }
 
 std::vector<int64_t> ShownToasts(const std::string& app) {

@@ -64,6 +64,14 @@ void main() {
     }
   });
 
+  test("Windows's toasts are on unless its settings turned the app or every app off", () {
+    expect(toastsAllowed(app: null, all: null), isTrue, reason: 'never touched');
+    expect(toastsAllowed(app: 1, all: 1), isTrue);
+    expect(toastsAllowed(app: 0, all: null), isFalse, reason: 'Wellfed turned off');
+    expect(toastsAllowed(app: null, all: 0), isFalse, reason: 'every app turned off');
+    expect(toastsAllowed(app: 1, all: 0), isFalse);
+  });
+
   test('on a computer an urgent alert asks for more attention, and alerts group by feeder', () {
     final NotificationDetails urgent = desktopDetails(failedMeal(), 'ab');
     expect(urgent.linux?.urgency, LinuxNotificationUrgency.critical);

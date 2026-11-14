@@ -86,8 +86,18 @@ void FlutterWindow::RegisterChannels() {
     }
 
     const std::string& method = call.method_name();
-    if (method == "enabled") {
-      result->Success(flutter::EncodableValue(ToastsEnabled(*name)));
+    if (method == "switches") {
+      const ToastSwitches switches = ReadToastSwitches(*name);
+      flutter::EncodableMap read;
+      if (switches.app) {
+        read[flutter::EncodableValue("app")] =
+            flutter::EncodableValue(static_cast<int64_t>(*switches.app));
+      }
+      if (switches.all) {
+        read[flutter::EncodableValue("all")] =
+            flutter::EncodableValue(static_cast<int64_t>(*switches.all));
+      }
+      result->Success(flutter::EncodableValue(read));
     } else if (method == "shown") {
       flutter::EncodableList ids;
       for (const int64_t id : ShownToasts(*name)) {

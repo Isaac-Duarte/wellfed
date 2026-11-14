@@ -207,8 +207,12 @@ MyApplication* my_application_new() {
   g_set_prgname(APPLICATION_ID);
 
   // Unique per user session: a second Wellfed would follow the same feeders
-  // and post every alert twice, over the same stores.
-#if GLIB_CHECK_VERSION(2, 74, 0)
+  // and post every alert twice, over the same stores. A debug build is not,
+  // so `flutter run` starts beside an installed Wellfed rather than raising
+  // it. It keeps the same id, which path_provider names the app's folder by.
+#ifndef NDEBUG
+  const GApplicationFlags flags = G_APPLICATION_NON_UNIQUE;
+#elif GLIB_CHECK_VERSION(2, 74, 0)
   const GApplicationFlags flags = G_APPLICATION_DEFAULT_FLAGS;
 #else
   const GApplicationFlags flags = G_APPLICATION_FLAGS_NONE;

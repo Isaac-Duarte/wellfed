@@ -162,22 +162,38 @@ class Notices {
     NoticeHost.windows => _ready && await _toastsEnabled(),
   };
 
-  /// Whether Windows lets the app's toasts through, as its notification
-  /// settings say. A runner with no toast half can't say, and is believed.
+  /// Whether Windows lets the app's toasts through, as the switches its
+  /// Settings app writes say ([toastsAllowed]). A runner that can't read
+  /// them, or has no toast half, is believed: Windows posts unless told not
+  /// to.
   static Future<bool> _toastsEnabled() async {
     try {
-      return await _toasts.invokeMethod<bool>('enabled', {'app': toastAppId}) ?? false;
+      final Map<String, Object?>? read = await _toasts.invokeMapMethod<String, Object?>('switches', {
+        'app': toastAppId,
+      });
+      return toastsAllowed(app: read?['app'] as int?, all: read?['all'] as int?);
     } on MissingPluginException {
+      return true;
+    } on PlatformException {
       return true;
     }
   }
+
+  /// How long a notification server may take to answer before it counts as
+  /// none: a hung one must not hold every delivery behind it.
+  static const _serverWait = Duration(seconds: 5);
 
   /// Whether a freedesktop notification server answers on the session bus.
   /// A desktop with none (a bare window manager) refuses the call.
   static Future<bool> _serverAnswers() async {
     try {
-      await _plugin.resolvePlatformSpecificImplementation<LinuxFlutterLocalNotificationsPlugin>()?.getCapabilities();
+      await _plugin
+          .resolvePlatformSpecificImplementation<LinuxFlutterLocalNotificationsPlugin>()
+          ?.getCapabilities()
+          .timeout(_serverWait);
       return true;
+    } on TimeoutException {
+      return false;
     } on Exception {
       return false;
     }
@@ -333,6 +349,11 @@ class Notices {
     }
   }
 }
+
+/// Whether Windows lets the app's toasts through, from the two switches its
+/// Settings app writes: the app's own (`app`) and every app's (`all`). 0 is
+/// off; a switch never written (`null`) is on.
+bool toastsAllowed({required int? app, required int? all}) => app != 0 && all != 0;
 
 /// How a computer shows `notice` of the feeder `identity`. A computer has no
 /// channels: an urgent alert asks for more of the owner's attention instead,

@@ -93,11 +93,13 @@ enum RoundFailures {
 /// the open alerts posted at once.
 Future<void> _delivering = Future.value();
 
-/// Run `work` once every delivery this engine started before it has ended.
-/// A delivery hands over every change Rust still holds unconfirmed, so two
-/// at once (a screen's check during a computer's minute round) would each
-/// post the same notice. A failed one lets the next go on.
+/// On a computer, run `work` once every delivery this engine started before
+/// it has ended. A delivery hands over every change Rust still holds
+/// unconfirmed, so two at once (a screen's check during the minute's round)
+/// would each post the same notice. A failed one lets the next go on. A
+/// phone's app engine runs no rounds of its own, so it goes as it always did.
 Future<T> oneDeliveryAtATime<T>(Future<T> Function() work) {
+  if (!onDesktopHost) return work();
   final Future<T> run = _delivering.then((_) => work());
   _delivering = run.then<void>((_) {}, onError: (Object _) {});
   return run;
