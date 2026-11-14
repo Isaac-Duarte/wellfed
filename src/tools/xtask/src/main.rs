@@ -12,6 +12,11 @@
 //! layering from `cargo metadata`. It is a maintenance check, not a secret
 //! scanner or a licensing audit.
 //!
+//! `package-desktop` builds the desktop app's installers for the host it
+//! runs on, checks what each holds and writes their sums; `desktop-sums`
+//! rewrites the sums over every host's artifacts gathered in one folder, and
+//! `check-windows-installer` installs and uninstalls the Windows one.
+//!
 //! `bless-diagrams` records each diagram pair's hashes in
 //! `docs/diagrams.lock`, once its author has checked the SVG and its Mermaid
 //! still show the same thing.
@@ -19,6 +24,7 @@
 #![forbid(unsafe_code)]
 
 mod clap_tree;
+mod desktop;
 mod diagrams;
 mod doc_checks;
 mod fuzz;
@@ -64,6 +70,28 @@ enum Task {
         /// Run this one saved input (a crash artifact) instead of fuzzing.
         #[arg(long)]
         replay: Option<PathBuf>,
+    },
+    /// Build the desktop app's installers for this host into dist/desktop/<            match desktop::sums(&cli.root) {>/.
+    PackageDesktop {
+        /// Package the release build already under src/app/build/ instead of building one.
+        #[arg(long)]
+        skip_build: bool,
+        /// Linux: the appimagetool binary.
+        #[arg(long)]
+        appimagetool: Option<PathBuf>,
+        /// Linux: the AppImage runtime appimagetool prepends.
+        #[arg(long)]
+        appimage_runtime: Option<PathBuf>,
+        /// Windows: Inno Setup's ISCC.exe, if not where winget puts it.
+        #[arg(long)]
+        iscc: Option<PathBuf>,
+    },
+    /// Rewrite SHA256SUMS over every desktop artifact in dist/desktop/<            match desktop::sums(&cli.root) {>/.
+    DesktopSums,
+    /// Install a Windows installer silently, check it, uninstall it, and check the stores survive.
+    CheckWindowsInstaller {
+        /// The Wellfed-<version>-windows-setup.exe to check.
+        setup: PathBuf,
     },
 }
 
@@ -133,6 +161,58 @@ fn main() -> ExitCode {
                 }
             }
         }
+        Task::PackageDesktop {
+            skip_build,
+            appimagetool,
+            appimage_runtime,
+            iscc,
+        } => {
+            let options = desktop::Options {
+                build: if skip_build {
+                    desktop::Build::Existing
+                } else {
+                    desktop::Build::Fresh
+                },
+                appimagetool,
+                appimage_runtime,
+                iscc,
+            };
+            match desktop::package(&cli.root, &options) {
+                Ok(built) => {
+                    for artifact in built {
+                        println!("Built {}", artifact.display());
+                    }
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("package-desktop: {}", chain(&error));
+                    ExitCode::from(1)
+                }
+            }
+        }
+        Task::DesktopSums => match desktop::sums(&cli.root) {
+            Ok(sums) => {
+                println!("Wrote {}", sums.display());
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("desktop-sums: {}", chain(&error));
+                ExitCode::from(1)
+            }
+        },
+        Task::CheckWindowsInstaller { setup } => match desktop::check_windows_installer(&setup) {
+            Ok(()) => {
+                println!(
+                    "{}: installed, checked, uninstalled; the stores are still there.",
+                    setup.display()
+                );
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("check-windows-installer: {}", chain(&error));
+                ExitCode::from(1)
+            }
+        },
         Task::Fuzz {
             target,
             seconds,

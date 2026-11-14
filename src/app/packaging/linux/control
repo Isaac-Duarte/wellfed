@@ -1,0 +1,14 @@
+Package: wellfed
+Version: @VERSION@
+Architecture: amd64
+Maintainer: Wellfed contributors <noreply@well-fed.dev>
+Installed-Size: @SIZE@
+Depends: libc6 (>= 2.39), libgcc-s1, libstdc++6, zlib1g, libglib2.0-0, libgtk-3-0, libepoxy0, libegl1, libgles2, libfontconfig1, libsecret-1-0, libdbus-1-3
+Recommends: network-manager | iw, gnome-keyring | kwallet6 | keepassxc
+Section: utils
+Priority: optional
+Homepage: https://well-fed.dev
+Description: App for Wellfed pet feeders
+ Wellfed is open firmware for a pet feeder, and this is its app. It talks
+ to each feeder directly on your home network, with no cloud and no
+ account: feeds, meal plans, history, settings and alerts while it is open.
