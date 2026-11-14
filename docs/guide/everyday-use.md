@@ -5,7 +5,7 @@ This page covers life with a feeder running Wellfed: meals, feeding now, the but
 > [!NOTE]
 > There's no public build to install yet, so this describes Wellfed as it runs on our test feeder. The [roadmap](../roadmap.md) shows how far along each piece is. Don't rely on it alone to feed a pet yet.
 
-The app runs on Android phones and on macOS, Linux and Windows computers. It has one screen per feeder, with four tabs: **Today**, **Schedule**, **History** and **Settings**. The app talks to the feeder directly on your home network, so away from home it can't reach it. On a computer it shows no alerts.
+The app runs on Android phones and on macOS, Linux and Windows computers. It has one screen per feeder, with four tabs: **Today**, **Schedule**, **History** and **Settings**. The app talks to the feeder directly on your home network, so away from home it can't reach it. On a computer it shows alerts only while it's open ([alerts](#alerts)).
 
 ![The app's Today tab, with Ready to feed at the top, 3 portions fed today, the day's meals (fed at 7:00 AM, a Dispense button press at 9:12 AM, missed at noon, next at 5:00 PM, one later), a line saying power, Wi-Fi and clock look fine, and a Feed now button](app-today.png)
 
@@ -135,6 +135,15 @@ A longer limit, about a week, needs two clock syncs from an owner about 11 hours
 An owner chooses where the time comes from, with **Get the time from** on the **Clock** screen: **Your router**, **A time server** or **Phones only**. An address has to be an IP address, since names aren't looked up. Many home routers don't answer with the time. When yours doesn't, the feeder's **Today** tab offers Cloudflare's public time server, or phones only. Either choice ends the offer. Out of the box the feeder asks only your router, so it contacts nothing outside your network unless you choose it. **A time server** also lists public time servers from Cloudflare and Google to pick with one tap.
 
 **Phones only** needs something to set the clock at least every 6 hours or so, and nothing in the beta does that. The app sets the clock only once it's lost, when you open the app, and by then meals are already holding. Home Assistant doesn't set it at all. Choose your router or a time server instead.
+
+## Alerts
+
+The feeder decides when something is wrong, such as a meal that failed, low food or a feeder that can't feed. The app tells you, once for each alert, and takes the notification off when the feeder says it's over. It hears only on your home network.
+
+- **On an Android phone**, the app checks each feeder about every 15 minutes, even when it's closed. Turn on **Instant while home** to check every minute, which uses more battery.
+- **On a computer**, the app checks each feeder every minute while it's open, and shows each alert as one of your computer's notifications, in the same words. Closing the app stops the checks, so keep your phone as the main way to hear. A notification the app posted comes off once it's open again to see the alert end. Click a notification to open that feeder's alerts.
+
+To mute one kind of alert or a whole level, open **Settings**, then **Alerts at home**. On a Mac, the app asks to post notifications when you first add a feeder. A Linux desktop with no notification service, such as a bare window manager, can't show them: the alert settings say so, and alerts still list in the app.
 
 ## Naming a feeder
 

@@ -3856,6 +3856,7 @@ dependencies = [
  "chrono",
  "flutter_rust_bridge",
  "futures-util",
+ "if-addrs",
  "jiff",
  "jni",
  "log",

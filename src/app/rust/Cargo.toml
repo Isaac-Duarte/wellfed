@@ -15,6 +15,9 @@ crate-type = ["cdylib", "staticlib", "lib"]
 [dependencies]
 flutter_rust_bridge = "=2.13.0"
 futures-util.workspace = true
+# A computer's network for the alert catch-ups (`network.rs`), already in the
+# lockfile through mDNS.
+if-addrs = "0.15.0"
 jiff.workspace = true
 log = "0.4.34"
 serde.workspace = true

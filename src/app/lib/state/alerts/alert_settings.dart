@@ -19,15 +19,39 @@ final class AlertSettingsLoading extends AlertSettingsState {
   const AlertSettingsLoading();
 }
 
+/// How this device follows its feeders' alerts.
+sealed class Watching {
+  /// For the modes.
+  const Watching();
+}
+
+/// A phone: Android's periodic catch-up, and "instant while home" if on.
+final class PhoneWatching extends Watching {
+  /// `instant` as saved, and whether it runs now.
+  const PhoneWatching({required this.instant, required this.running});
+
+  /// "Instant while home" is on.
+  final bool instant;
+
+  /// Instant mode runs now. On but not running, Android would not start it
+  /// again just now; it comes back when the app is opened.
+  final bool running;
+}
+
+/// A computer: every minute while the app is open, and never once it closes.
+final class OpenWatching extends Watching {
+  /// While open.
+  const OpenWatching();
+}
+
 /// The settings, read.
 final class AlertSettingsShown extends AlertSettingsState {
-  /// The choices as `settings` holds them, with Android's word on
+  /// The choices as `settings` holds them, with the system's word on
   /// notifications.
   AlertSettingsShown({
     required this.notificationsAllowed,
     required this.notificationAsk,
-    required this.instant,
-    required this.instantRunning,
+    required this.watching,
     required List<KindLevel> kinds,
     required Set<NoticeKind> mutedKinds,
     required Set<AlertLevel> mutedLevels,
@@ -36,18 +60,14 @@ final class AlertSettingsShown extends AlertSettingsState {
        mutedKinds = Set.unmodifiable(mutedKinds),
        mutedLevels = Set.unmodifiable(mutedLevels);
 
-  /// Android lets this app post notifications.
+  /// The system lets this app post notifications.
   final bool notificationsAllowed;
 
   /// What the button does while notifications are off.
   final NotificationAsk notificationAsk;
 
-  /// "Instant while home" is on.
-  final bool instant;
-
-  /// Instant mode runs now. On but not running, Android would not start it
-  /// again just now; it comes back when the app is opened.
-  final bool instantRunning;
+  /// How this device follows the alerts.
+  final Watching watching;
 
   /// Every kind of alert, with its level, in the order the page lists them.
   final List<KindLevel> kinds;
@@ -94,19 +114,16 @@ class AlertSettingsController extends ChangeNotifier {
   AlertSettingsState get state => _state;
   AlertSettingsState _state = const AlertSettingsLoading();
 
-  /// Read the settings, and Android's word on notifications. Instant mode
-  /// that is on but stopped starts again here, as the page is in front.
+  /// Read the settings, and the system's word on notifications. Instant
+  /// mode that is on but stopped starts again here, as the page is in front.
   Future<void> load({String? problem}) async {
     AlertSettingsState next;
     try {
       final AlertSettingsView settings = await _ports.settings();
-      bool running = settings.instant && await _ports.instantRunning();
-      if (settings.instant && !running) running = await _ports.resumeInstant();
       next = AlertSettingsShown(
         notificationsAllowed: await _ports.notificationsAllowed(),
         notificationAsk: await _ports.notificationAsk(),
-        instant: settings.instant,
-        instantRunning: running,
+        watching: _ports.whileOpen ? const OpenWatching() : await _phoneWatching(settings),
         kinds: settings.kinds,
         mutedKinds: settings.mutedKinds.toSet(),
         mutedLevels: settings.mutedLevels.toSet(),
@@ -122,8 +139,14 @@ class AlertSettingsController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<PhoneWatching> _phoneWatching(AlertSettingsView settings) async {
+    bool running = settings.instant && await _ports.instantRunning();
+    if (settings.instant && !running) running = await _ports.resumeInstant();
+    return PhoneWatching(instant: settings.instant, running: running);
+  }
+
   /// The app is back in front: notifications may have been turned on in
-  /// Android's settings meanwhile, and then the open alerts post.
+  /// the system's settings meanwhile, and then the open alerts post.
   Future<void> resumed() async {
     // An ask's own dialog resumes the app, and the ask posts for itself.
     if (_ports.asking) return;
@@ -150,14 +173,14 @@ class AlertSettingsController extends ChangeNotifier {
     }
   }
 
-  /// Ask Android to let alerts through; alerts still open are posted once
+  /// Ask the system to let alerts through; alerts still open are posted once
   /// it does.
   Future<void> allowNotifications() async {
     String? problem;
     try {
       await _ports.askForNotifications(_book.feeders);
     } on PlatformException catch (error) {
-      problem = "Couldn't ask Android: ${error.message ?? error.code}.";
+      problem = "Couldn't ask for notifications: ${error.message ?? error.code}.";
     } on BridgeError catch (error) {
       problem = "Couldn't post the open alerts: ${error.message}.";
     }

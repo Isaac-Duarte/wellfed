@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:wellfed/platform/desktop_awake.dart';
@@ -26,6 +29,10 @@ abstract interface class AlertPorts {
 
   /// Mute `target` or unmute it; notifications of what is muted come off.
   Future<void> mute(MuteTarget target, {required bool muted, required List<KnownFeeder> feeders});
+
+  /// Whether this is a computer, which checks every feeder each minute while
+  /// the app is open (`AlertWatch`) and has no "instant while home".
+  bool get whileOpen;
 
   /// Turn "instant while home" on or off. Whether Android went along.
   Future<bool> setInstant({required bool on});
@@ -145,7 +152,7 @@ Future<void> feederRound(
 /// The app engine's channel to the Kotlin side of alerts.
 const alertsChannel = MethodChannel('io.github.isaacduarte.wellfed/alerts');
 
-/// [AlertPorts] on Android, as this phone's `_key`.
+/// [AlertPorts] on Android or a computer, as this app's `_key`.
 class AppAlertPorts implements AlertPorts {
   /// Ports for the phone with `_key`.
   const AppAlertPorts(this._key);
@@ -160,14 +167,13 @@ class AppAlertPorts implements AlertPorts {
   @override
   Future<void> check(List<KnownFeeder> feeders) async {
     final String dir = await _dir();
-    await catchUpRound(
-      key: _key,
-      dir: dir,
-      feeders: feeders,
-      network: () async => phoneNetwork(await alertsChannel.invokeMapMethod<Object?, Object?>('network')),
-      failures: RoundFailures.thrown,
-    );
+    await catchUpRound(key: _key, dir: dir, feeders: feeders, network: _network, failures: RoundFailures.thrown);
   }
+
+  /// How this phone or computer is connected now.
+  static Future<PhoneNetwork> _network() async => onDesktopHost
+      ? computerNetwork()
+      : phoneNetwork(await alertsChannel.invokeMapMethod<Object?, Object?>('network'));
 
   @override
   Future<void> dismiss(KnownFeeder feeder, NoticeView notice) async {
@@ -189,17 +195,23 @@ class AppAlertPorts implements AlertPorts {
   }
 
   @override
+  bool get whileOpen => onDesktopHost;
+
+  @override
   Future<bool> setInstant({required bool on}) async {
+    if (onDesktopHost) return false;
     final bool went = await alertsChannel.invokeMethod<bool>('instant', on) ?? false;
     await saveInstant(dir: await _dir(), enabled: on && went);
     return went;
   }
 
   @override
-  Future<bool> instantRunning() async => await alertsChannel.invokeMethod<bool>('instantRunning') ?? false;
+  Future<bool> instantRunning() async =>
+      !onDesktopHost && (await alertsChannel.invokeMethod<bool>('instantRunning') ?? false);
 
   @override
-  Future<bool> resumeInstant() async => await alertsChannel.invokeMethod<bool>('instant', true) ?? false;
+  Future<bool> resumeInstant() async =>
+      !onDesktopHost && (await alertsChannel.invokeMethod<bool>('instant', true) ?? false);
 
   @override
   Future<bool> notificationsAllowed() => Notices.allowed();
@@ -211,11 +223,13 @@ class AppAlertPorts implements AlertPorts {
   Future<bool> askForNotifications(List<KnownFeeder> feeders) async {
     switch (await _notificationAsk()) {
       case NotificationAsk.openSettings:
-        // Back from them, the screens read Android's word again.
-        await alertsChannel.invokeMethod<void>('notificationSettings');
+        // Back from them, the screens read the system's word again.
+        await _openNotificationSettings();
         return false;
       case NotificationAsk.request:
         return _request(feeders);
+      case NotificationAsk.unavailable:
+        return false;
     }
   }
 
@@ -240,11 +254,16 @@ Future<T> _asked<T>(Future<T> Function() ask) async {
 
 /// What the alert screens' button does while notifications are off.
 enum NotificationAsk {
-  /// "Allow notifications": Android's own request.
+  /// "Allow notifications": Android's or macOS's own request.
   request,
 
-  /// "Open notification settings": the app's page in Android's settings.
+  /// "Open notification settings": the app's page in Android's settings, or
+  /// the system's notification settings on a computer.
   openSettings,
+
+  /// No button: this computer can't post at all, as a Linux desktop with no
+  /// notification server can't.
+  unavailable,
 }
 
 /// Ask Android's dialog only while it can still show: from Android 13, and
@@ -254,10 +273,39 @@ enum NotificationAsk {
 NotificationAsk notificationAskFor({required bool sdkAtLeast33, required bool refusedBefore}) =>
     sdkAtLeast33 && !refusedBefore ? NotificationAsk.request : NotificationAsk.openSettings;
 
-Future<NotificationAsk> _notificationAsk() async => notificationAskFor(
-  sdkAtLeast33: (await alertsChannel.invokeMethod<int>('sdk') ?? 0) >= 33,
-  refusedBefore: await notificationsRefused(dir: await AppAlertPorts._dir()),
-);
+/// What the button does on this host. macOS asks as Android 13 does, until
+/// the owner refuses once; Windows has only its settings; Linux has no
+/// settings to open, so its button goes once no server answers.
+Future<NotificationAsk> _notificationAsk() async {
+  if (await Notices.unavailable()) return NotificationAsk.unavailable;
+  return switch (NoticeHost.current) {
+    NoticeHost.android => notificationAskFor(
+      sdkAtLeast33: (await alertsChannel.invokeMethod<int>('sdk') ?? 0) >= 33,
+      refusedBefore: await notificationsRefused(dir: await AppAlertPorts._dir()),
+    ),
+    NoticeHost.macos => notificationAskFor(
+      sdkAtLeast33: true,
+      refusedBefore: await notificationsRefused(dir: await AppAlertPorts._dir()),
+    ),
+    NoticeHost.linux || NoticeHost.windows => NotificationAsk.openSettings,
+  };
+}
+
+/// The system's notification settings: Android's page for the app, macOS's
+/// Notifications pane, or Windows's notification settings. Linux has no one
+/// place, and never offers this.
+Future<void> _openNotificationSettings() async {
+  switch (NoticeHost.current) {
+    case NoticeHost.android:
+      await alertsChannel.invokeMethod<void>('notificationSettings');
+    case NoticeHost.macos:
+      await Process.run('open', ['x-apple.systempreferences:com.apple.preference.notifications']);
+    case NoticeHost.windows:
+      await Process.run('explorer.exe', ['ms-settings:notifications']);
+    case NoticeHost.linux:
+      break;
+  }
+}
 
 /// Android's request, then what it answered: the open alerts post once it
 /// allows, and a refusal is noted for good. `null`, Android could not ask
@@ -329,6 +377,21 @@ Future<void> startAlerts() async {
     await alertsChannel.invokeMethod<void>('schedule');
     final AlertSettingsView settings = await alertSettings(dir: await AppAlertPorts._dir());
     if (settings.instant) await alertsChannel.invokeMethod<bool>('instant', true);
+  } on PlatformException catch (error) {
+    debugPrint('alerts did not start: ${error.message ?? error.code}');
+  } on BridgeError catch (error) {
+    debugPrint('alerts did not start: ${error.message}');
+  }
+}
+
+/// Set a computer's alerts going as the app opens: Notices ready, and what an
+/// earlier `alerts.json` left showing swept. The catch-ups themselves run in
+/// `AlertWatch` once the app has its key and feeders. Like [startAlerts], the
+/// app opens whatever becomes of this.
+Future<void> startComputerAlerts() async {
+  try {
+    await Notices.init();
+    await Notices.sweep(await AppAlertPorts._dir());
   } on PlatformException catch (error) {
     debugPrint('alerts did not start: ${error.message ?? error.code}');
   } on BridgeError catch (error) {

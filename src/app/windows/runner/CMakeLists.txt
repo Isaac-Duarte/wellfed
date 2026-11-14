@@ -38,3 +38,12 @@ target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)
+
+# Taking an alert's toast off (`toasts.cpp`) goes through C++/WinRT, built on
+# its own: the runner's standard settings turn warnings into errors and turn
+# off the exceptions WinRT reports failures with.
+add_library(wellfed_toasts STATIC "toasts.cpp")
+target_compile_features(wellfed_toasts PRIVATE cxx_std_17)
+target_compile_options(wellfed_toasts PRIVATE /EHsc)
+target_link_libraries(wellfed_toasts PRIVATE runtimeobject)
+target_link_libraries(${BINARY_NAME} PRIVATE wellfed_toasts)

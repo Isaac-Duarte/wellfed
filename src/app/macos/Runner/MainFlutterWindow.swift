@@ -6,6 +6,10 @@ import FlutterMacOS
 class MainFlutterWindow: NSWindow {
   /// Answers the install's question of which Wi-Fi an interface is on.
   private var wifi: WifiNames?
+  /// Brings this window forward when an alert's notification is clicked
+  /// (`lib/platform/app_window.dart`). macOS activates the app on a click
+  /// by itself; this also restores a minimized window.
+  private var windowChannel: FlutterMethodChannel?
 
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
@@ -28,6 +32,19 @@ class MainFlutterWindow: NSWindow {
 
     RegisterGeneratedPlugins(registry: flutterViewController)
     wifi = WifiNames(messenger: flutterViewController.engine.binaryMessenger)
+    windowChannel = FlutterMethodChannel(
+      name: "io.github.isaacduarte.wellfed/window",
+      binaryMessenger: flutterViewController.engine.binaryMessenger)
+    windowChannel?.setMethodCallHandler { [weak self] call, result in
+      guard call.method == "front", let self else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      NSApp.activate(ignoringOtherApps: true)
+      if self.isMiniaturized { self.deminiaturize(nil) }
+      self.makeKeyAndOrderFront(nil)
+      result(nil)
+    }
 
     super.awakeFromNib()
   }

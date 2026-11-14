@@ -20,7 +20,7 @@ flowchart LR
 | Part | What it does | What it doesn't do |
 | --- | --- | --- |
 | The feeder | Runs meals by itself, drives the motor, checks every request, and keeps its plans and recent history | Talk to a cloud. It never downloads anything from the internet: an update has to be offered by a client |
-| The app | A screen for each thing the feeder offers, on an Android phone or a macOS, Linux or Windows computer: install, setup, meals, history, settings, people, updates and going back. On Android it notifies the feeder's alerts while you're home | Hold any meals or feeding logic of its own, or decide an alert: it shows what the feeder reports |
+| The app | A screen for each thing the feeder offers, on an Android phone or a macOS, Linux or Windows computer: install, setup, meals, history, settings, people, updates and going back. It notifies the feeder's alerts while you're home: on Android in the background, on a computer while the app is open | Hold any meals or feeding logic of its own, or decide an alert: it shows what the feeder reports |
 | Home Assistant | The feeder's meals, feeds, settings and alerts as Home Assistant entities, for automations and dashboards | Install firmware, change Wi-Fi or remove clients: those stay with the owner's app |
 
 The app and Home Assistant share their protocol code in Rust, so they can't disagree about what goes over the wire. Each phone or computer has its own key, and a feeder lists up to eight. [Who can talk to your feeder](access.md) covers those keys.

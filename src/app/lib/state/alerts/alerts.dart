@@ -40,7 +40,7 @@ final class AlertsShown extends AlertsState {
   /// When a catch-up last reached the feeder, by this phone's clock.
   final int? reachedMs;
 
-  /// Android lets this app post: without it, alerts only list here.
+  /// The system lets this app post: without it, alerts only list here.
   final bool notificationsAllowed;
 
   /// What the button does while they are off.
@@ -109,7 +109,7 @@ class FeederAlertsController extends ChangeNotifier {
   }
 
   /// The app is back in front: notifications may have been turned on in
-  /// Android's settings meanwhile, and then this feeder's open alerts post.
+  /// the system's settings meanwhile, and then this feeder's open alerts post.
   Future<void> resumed() async {
     // An ask's own dialog resumes the app, and the ask posts for itself.
     if (_ports.asking) return;
@@ -127,7 +127,7 @@ class FeederAlertsController extends ChangeNotifier {
     }
   }
 
-  /// Ask Android to let alerts through, or open its settings, as
+  /// Ask the system to let alerts through, or open its settings, as
   /// [AlertsShown.notificationAsk] says; this feeder's alerts still open are
   /// posted once it does.
   Future<void> allowNotifications() async {
@@ -135,7 +135,7 @@ class FeederAlertsController extends ChangeNotifier {
     try {
       await _ports.askForNotifications([_feeder]);
     } on PlatformException catch (error) {
-      problem = "Couldn't ask Android: ${error.message ?? error.code}.";
+      problem = "Couldn't ask for notifications: ${error.message ?? error.code}.";
     } on BridgeError catch (error) {
       problem = "Couldn't post its alerts: ${error.message}.";
     }

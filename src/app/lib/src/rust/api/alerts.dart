@@ -17,6 +17,12 @@ part 'alerts.freezed.dart';
 // These functions are ignored because they are not marked as `pub`: `detail`, `fingerprint`, `identity_of`, `posts`, `toggle`, `view`, `views`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `cmp`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `partial_cmp`
 
+/// The network this computer is on, for a desktop's catch-ups: the one its
+/// default route leaves by. With no default route it is away from every
+/// feeder's home, so a catch-up dials only an address the owner gave.
+Future<PhoneNetwork> computerNetwork() =>
+    RustLib.instance.api.crateApiAlertsComputerNetwork();
+
 /// Keep catch-ups off while `run` goes (`held`), or let go. A hold lapses by
 /// itself after two hours unrenewed.
 void holdAlerts({required AlertHold run, required bool held}) =>
@@ -468,6 +474,10 @@ sealed class PhoneNetwork with _$PhoneNetwork {
     required String gateway,
     required String subnet,
   }) = PhoneNetwork_Wifi;
+
+  /// A computer on the IPv4 network `network` (`address/prefix`), the one
+  /// its default route leaves by ([`crate::network`]), cable or Wi-Fi.
+  const factory PhoneNetwork.lan({required String network}) = PhoneNetwork_Lan;
 
   /// Off Wi-Fi, or Android keeps this app off the network for now: a
   /// catch-up that fails here says nothing about the feeder.

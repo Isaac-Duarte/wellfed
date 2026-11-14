@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide Card;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wellfed/screens/alerts/alert_settings_screen.dart';
 import 'package:wellfed/screens/desktop/sidebar_shell.dart';
 import 'package:wellfed/screens/feeder/tabs.dart';
 import 'package:wellfed/screens/home/add_feeder.dart';
@@ -12,11 +13,13 @@ import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
+import 'package:wellfed/state/alerts/alert_settings.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/fleet/fleet.dart';
 import 'package:wellfed/state/install/install.dart';
 import 'package:wellfed/state/settings/backups.dart';
 
+import '../alerts/alerts_support.dart' show FakeAlertPorts;
 import '../feeder/feeder_support.dart';
 import '../support/fake_install.dart';
 import '../support/fakes.dart';
@@ -179,6 +182,21 @@ void main() {
         );
         await decodeImages(tester);
         await matchesGolden('desktop_app_settings', brightness);
+      });
+
+      _desktopGolden('alert settings', (tester) async {
+        final FeederFleet fleet = await _fleet(tester);
+        final ports = FakeAlertPorts()..whileOpen = true;
+        await _desktop(
+          tester,
+          _window(
+            fleet,
+            const SettingsPlace(),
+            AlertSettingsScreen(newController: () => AlertSettingsController(ports, FakeBook()..feeders = [kitchen])),
+          ),
+          brightness,
+        );
+        await matchesGolden('desktop_alert_settings', brightness);
       });
 
       _desktopGolden('the meal editor', (tester) async {

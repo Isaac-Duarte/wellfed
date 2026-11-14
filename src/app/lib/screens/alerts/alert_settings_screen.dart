@@ -5,13 +5,14 @@ import 'package:wellfed/src/rust/api/alerts.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/alerts/alert_settings.dart';
 import 'package:wellfed/state/alerts/alert_words.dart';
+import 'package:wellfed/state/form_factor.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 import 'package:wellfed/widgets/settings_list.dart';
 
-/// Alerts on this phone: how they work and where, notifications, "instant
-/// while home", and what to mute.
+/// Alerts on this phone or computer: how they work and where, notifications,
+/// "instant while home" on a phone, and what to mute.
 class AlertSettingsScreen extends StatefulWidget {
   const AlertSettingsScreen({super.key, required this.newController});
 
@@ -24,7 +25,7 @@ class AlertSettingsScreen extends StatefulWidget {
 class _AlertSettingsScreenState extends State<AlertSettingsScreen> {
   late final AlertSettingsController _settings = widget.newController();
 
-  // Back from Android's settings, notifications may be on now.
+  // Back from the system's settings, notifications may be on now.
   late final AppLifecycleListener _lifecycle;
 
   @override
@@ -64,15 +65,26 @@ class _AlertSettingsScreenState extends State<AlertSettingsScreen> {
         builder: (context, _) => ListView(
           padding: const EdgeInsets.all(Space.s4),
           children: [
-            const Notice(
-              tone: Tone.neutral,
-              glyph: Glyph.info,
-              lead: 'Alerts work at home.',
-              text:
-                  "This phone hears from a feeder on the same Wi-Fi, so you won't get alerts away from home. "
-                  "The feeder decides what is wrong. This phone decides one thing itself: that it can't reach "
-                  'a feeder.',
-            ),
+            if (isDesktop)
+              const Notice(
+                tone: Tone.neutral,
+                glyph: Glyph.info,
+                lead: 'Alerts work at home, while Wellfed is open.',
+                text:
+                    'This computer hears from a feeder on the same network only while Wellfed is open, so your '
+                    'phone stays the main way to hear. The feeder decides what is wrong. This computer decides one '
+                    "thing itself: that it can't reach a feeder.",
+              )
+            else
+              const Notice(
+                tone: Tone.neutral,
+                glyph: Glyph.info,
+                lead: 'Alerts work at home.',
+                text:
+                    "This phone hears from a feeder on the same Wi-Fi, so you won't get alerts away from home. "
+                    "The feeder decides what is wrong. This phone decides one thing itself: that it can't reach "
+                    'a feeder.',
+              ),
             const SizedBox(height: Space.s5),
             switch (_settings.state) {
               AlertSettingsLoading() => const Searching('Reading the settings'),
@@ -106,7 +118,7 @@ class _Choices extends StatelessWidget {
           Notice(tone: Tone.warning, glyph: Glyph.warning, text: problem),
           const SizedBox(height: Space.s4),
         ],
-        if (shown.instant && !shown.instantRunning) ...[
+        if (shown.watching case PhoneWatching(instant: true, running: false)) ...[
           const Notice(
             tone: Tone.warning,
             glyph: Glyph.warning,
@@ -118,33 +130,58 @@ class _Choices extends StatelessWidget {
           ),
           const SizedBox(height: Space.s4),
         ],
+        if (!shown.notificationsAllowed && notificationAskLabel(shown.notificationAsk) == null) ...[
+          Notice(
+            tone: Tone.warning,
+            glyph: Glyph.warning,
+            lead: 'Notifications are off.',
+            text: notificationsOffWords(shown.notificationAsk),
+          ),
+          const SizedBox(height: Space.s4),
+        ],
         SettingsSection(
-          'On this phone',
+          'On this $deviceName',
           Column(
             children: [
               if (!shown.notificationsAllowed)
-                SettingsLink(
-                  notificationAskLabel(shown.notificationAsk),
-                  'Android is keeping alerts off this phone.',
-                  first: true,
-                  onTap: () => unawaited(settings.allowNotifications()),
-                ),
-              SettingsTile(
-                first: shown.notificationsAllowed,
-                child: SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text('Instant while home', style: TextStyle(fontSize: 15, color: c.text)),
-                  subtitle: Text(
-                    'Checks every minute while this phone is on the Wi-Fi, with a notice that stays while it '
-                    'runs. It uses more battery. Off, Android checks about every 15 minutes, and less '
-                    'often while the phone sleeps. It stops when the phone restarts or Android stops it, '
-                    'and starts again when you open Wellfed.',
-                    style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
+                if (notificationAskLabel(shown.notificationAsk) case final String label)
+                  SettingsLink(
+                    label,
+                    notificationsOffWords(shown.notificationAsk),
+                    first: true,
+                    onTap: () => unawaited(settings.allowNotifications()),
                   ),
-                  value: shown.instant,
-                  onChanged: (on) => unawaited(settings.setInstant(on: on)),
+              switch (shown.watching) {
+                PhoneWatching(:final bool instant) => SettingsTile(
+                  first: shown.notificationsAllowed,
+                  child: SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text('Instant while home', style: TextStyle(fontSize: 15, color: c.text)),
+                    subtitle: Text(
+                      'Checks every minute while this phone is on the Wi-Fi, with a notice that stays while it '
+                      'runs. It uses more battery. Off, Android checks about every 15 minutes, and less '
+                      'often while the phone sleeps. It stops when the phone restarts or Android stops it, '
+                      'and starts again when you open Wellfed.',
+                      style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
+                    ),
+                    value: instant,
+                    onChanged: (on) => unawaited(settings.setInstant(on: on)),
+                  ),
                 ),
-              ),
+                OpenWatching() => SettingsTile(
+                  first: shown.notificationsAllowed || notificationAskLabel(shown.notificationAsk) == null,
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text('Every minute while open', style: TextStyle(fontSize: 15, color: c.text)),
+                    subtitle: Text(
+                      "Wellfed checks each feeder every minute while it's open, and posts what's new. Closing "
+                      'Wellfed stops the checks, and a notification it posted comes off once Wellfed is open again '
+                      'to see the alert end.',
+                      style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
+                    ),
+                  ),
+                ),
+              },
             ],
           ),
         ),
@@ -194,8 +231,8 @@ class _Choices extends StatelessWidget {
         ),
         const SizedBox(height: Space.s3),
         Text(
-          "A muted alert still shows in its feeder's alert list. Dismissing an alert hides it on this phone "
-          'only; the feeder keeps it until it is over.',
+          "A muted alert still shows in its feeder's alert list. Dismissing an alert hides it on this "
+          '$deviceName only; the feeder keeps it until it is over.',
           style: TextStyle(fontSize: Sizes.sm, height: 1.5, color: c.textMuted),
         ),
       ],
