@@ -31,7 +31,7 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use tokio::time::timeout;
 use wellfed_client::alerts::{Change, Context, Cursor, FeederClock, Watch};
-use wellfed_client::time::{AutoSync, ClockCheck};
+use wellfed_client::time::{AutoSync, Boot, ClockCheck};
 use wellfed_connect::{Connection, Error};
 use wellfed_model::{Answer, Hex, Op, Refusal};
 use wellfed_session::noise::Keypair;
@@ -216,11 +216,12 @@ async fn read(
     let Answer::Status(mut status) = ask(&mut connection, Read::Status).await? else {
         return Ok(Visit::Answered);
     };
+    let boot = Boot::read(&status, Timestamp::now());
     // What the clock steps hear changes nothing here: a sync that did not
     // land waits for the next catch-up, and a link that broke fails the
     // next read. One that landed set the clock the status read before it
     // lacked, so the status is read again for the alerts.
-    if let Ok(Synced::Landed) = keep_clock(&mut connection, clock, status.boot_count).await {
+    if let Ok(Synced::Landed) = keep_clock(&mut connection, clock, boot).await {
         let Answer::Status(again) = ask(&mut connection, Read::Status).await? else {
             return Ok(Visit::Answered);
         };
@@ -261,13 +262,13 @@ enum Synced {
 }
 
 /// Sync the feeder's clock if its time view and the phone's memo `clock`
-/// ask this key's role to, in the feeder's boot `boot` (the status's). The
+/// ask this key's role to, with the status read as `boot`. The
 /// sync goes once; one whose answer is lost is not sent again, and one
 /// refused is not sent again until the clock's view moves on.
 async fn keep_clock(
     connection: &mut Connection,
     clock: &mut AutoSync,
-    boot: u32,
+    boot: Boot,
 ) -> Result<Synced, Error> {
     let Answer::Time(time) = ask(connection, Read::Time).await? else {
         return Ok(Synced::No);

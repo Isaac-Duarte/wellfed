@@ -263,9 +263,32 @@ void main() {
       session.requests.clear();
 
       expect(find.textContaining("The feeder's time server disagrees with its clock."), findsOneWidget);
+      expect(find.textContaining('Check the time source under Get the time from'), findsOneWidget);
       expect(session.requests, isEmpty);
       await tapIn(tester, find.text('Set the time from this phone'));
       expect(session.requests, [const FeederRequest.syncClock(), const FeederRequest.getTime()]);
+    });
+
+    testWidgets('a member whose feeder disagrees with its time server is told to ask an owner', (tester) async {
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
+      session.status(
+        fakeCard(
+          clockSet: false,
+          time: const TimeInfo(
+            serverDisagrees: true,
+            generation: 8,
+            writable: false,
+            ntp: NtpView.gateway(port: 123),
+            syncs: 4,
+            last: TimeSource.owner,
+          ),
+        ),
+      );
+      await showTab(tester, ClockScreen(feeder: feeder));
+
+      expect(find.textContaining('Ask an owner to check its time source'), findsOneWidget);
+      expect(find.textContaining('hours or days'), findsOneWidget);
+      expect(find.text('Set the time from this phone'), findsNothing);
     });
 
     testWidgets('coming to the screen reads the time again', (tester) async {

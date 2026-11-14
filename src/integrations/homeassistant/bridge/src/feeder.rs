@@ -84,7 +84,7 @@ use tokio::sync::{mpsc, oneshot};
 use wellfed_client::alerts::{Cursor as AlertCursor, FeederClock};
 use wellfed_client::history::{Backlog, Entry, Feed};
 use wellfed_client::settle::{self, After, Lost};
-use wellfed_client::time::{AutoSync, ClockCheck};
+use wellfed_client::time::{AutoSync, Boot, ClockCheck};
 use wellfed_client::today::Facts;
 use wellfed_connect::{Connection, Cursor, Received, Timing};
 use wellfed_model::{
@@ -474,6 +474,8 @@ struct Memory {
     clock: AutoSync,
     /// [`Target::zone`].
     zone: Zone,
+    /// When `facts.status` was read, by this host's clock.
+    status_at: jiff::Timestamp,
 }
 
 /// [`Target::zone`] as [`Memory`] keeps it: UTC until a run names it.
@@ -859,7 +861,7 @@ enum Outstanding {
     Read(Read, u64),
     /// A sync of the feeder's clock, sent on the view `on` read in the
     /// feeder's boot `boot`.
-    Clock { on: Box<TimeView>, boot: u32 },
+    Clock { on: Box<TimeView>, boot: Boot },
 }
 
 struct Session<'a> {
@@ -956,6 +958,7 @@ impl<'a> Session<'a> {
         };
         let newest = status.last_event;
         self.memory.facts.status = Some(status);
+        self.memory.status_at = jiff::Timestamp::now();
         self.status_read()?;
         for read in [Read::Settings, Read::Plans, Read::Time, Read::Calibration] {
             if self.serves(read) {
@@ -1401,6 +1404,7 @@ impl<'a> Session<'a> {
         match (read, answer) {
             (Read::Status, Some(Answer::Status(status))) => {
                 facts.status = Some(status);
+                self.memory.status_at = jiff::Timestamp::now();
                 self.status_read()?;
                 self.alerts_due()?;
                 self.idle(asked)?;
@@ -1499,7 +1503,7 @@ impl<'a> Session<'a> {
             ..time.clone()
         };
         let now = jiff::Timestamp::now();
-        let boot = status.boot_count;
+        let boot = Boot::read(status, self.memory.status_at);
         let check = self
             .memory
             .clock
@@ -2194,6 +2198,7 @@ mod tests {
             panic!("no time view");
         };
         session.memory.facts.status = Some(status);
+        session.memory.status_at = jiff::Timestamp::now();
         session.memory.facts.time = Some(time);
     }
 

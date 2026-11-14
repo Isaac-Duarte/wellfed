@@ -13,10 +13,16 @@
 //! valid clock an NTP fix only narrows it. A first fix and a jump are
 //! recorded in the history (`ClockSync` by the feeder); a fix in step is
 //! not, so polling every 17 minutes does not wear the event ring.
+//!
+//! A fix the clock refuses as outside its interval while it needs the time
+//! (expired or contested) holds the next request, from [`RETRY_MIN_MS`]
+//! doubling to [`POLL_MS`]. Without it the clock's need would ask again on
+//! every pass: a server the clock disagrees with keeps answering the same
+//! way until the interval grows to reach it, which can take hours.
 
 use core::fmt;
 
-use wellfed_core::clock::ntp::{Bad, Exchange, Outcome, PACKET};
+use wellfed_core::clock::ntp::{Bad, Exchange, Outcome, PACKET, POLL_MS, RETRY_MIN_MS};
 use wellfed_core::clock::wall::{Jump, SyncError};
 use wellfed_device_api::mailbox::{NtpResult, NtpServer, TimeSettingsResult};
 use wellfed_proto::api::{EventBody, Source};
@@ -97,6 +103,8 @@ pub struct Time<S> {
     retry_at: u32,
     exchange: Exchange,
     last: Option<NtpResult>,
+    /// How long the next refused fix holds the exchange.
+    refused_hold_ms: u32,
     packet: [u8; PACKET],
 }
 
@@ -110,6 +118,7 @@ impl<S: Copy> Time<S> {
             retry_at: 0,
             exchange: Exchange::new(),
             last: None,
+            refused_hold_ms: RETRY_MIN_MS,
             packet: [0; PACKET],
         }
     }
@@ -206,6 +215,7 @@ impl<S: Copy> Time<S> {
         if self.configured != view.settings.ntp {
             self.configured = view.settings.ntp;
             self.exchange.restart(now_ms);
+            self.refused_hold_ms = RETRY_MIN_MS;
         }
     }
 
@@ -228,6 +238,7 @@ impl<S: Copy> Time<S> {
         }
         self.target = target;
         self.exchange.restart(now_ms);
+        self.refused_hold_ms = RETRY_MIN_MS;
         record(Record::Server {
             ip: target.map(|(ip, _)| ip),
             port: target.map_or(0, |(_, port)| port),
@@ -261,9 +272,17 @@ impl<S: Copy> Time<S> {
                             };
                             events::record(platform, now_ms, body);
                         }
+                        self.refused_hold_ms = RETRY_MIN_MS;
                         NtpResult::Used
                     }
-                    Err(SyncError::Bounded) => NtpResult::Bounded,
+                    Err(SyncError::Bounded) => {
+                        if platform.clock_state(now_ms).reading.is_none() {
+                            self.exchange.hold(now_ms, self.refused_hold_ms);
+                            self.refused_hold_ms =
+                                self.refused_hold_ms.saturating_mul(2).min(POLL_MS);
+                        }
+                        NtpResult::Bounded
+                    }
                     Err(SyncError::Time | SyncError::Offset | SyncError::NextChange) => {
                         NtpResult::Refused
                     }

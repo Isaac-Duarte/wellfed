@@ -52,7 +52,7 @@ use jiff::tz::TimeZone;
 use tokio::sync::{mpsc, oneshot};
 use wellfed_client::history::{Backlog, Entry, Feed};
 use wellfed_client::plans::Edit;
-use wellfed_client::time::{AutoSync, ClockCheck};
+use wellfed_client::time::{AutoSync, Boot, ClockCheck};
 use wellfed_connect::{AskError, Connection, Received};
 use wellfed_model::{
     Answer, ClientRole, CoreEvent, EventBody, FeederEvent, Generation, NtpServer, Op, PLANS, Plan,
@@ -339,6 +339,8 @@ struct Serving<'a, U> {
     identity: String,
     /// The phone's memo of its automatic syncs of this feeder.
     clock: AutoSync,
+    /// When the status in `facts` was read, by this phone's clock.
+    status_at: Timestamp,
     /// The memo changed since the loop last kept it.
     clock_changed: bool,
     /// A feeder just paired with no zone gets this phone's, once. Only then:
@@ -407,6 +409,7 @@ async fn serve(
         role: connection_role,
         identity,
         clock,
+        status_at: Timestamp::now(),
         clock_changed: false,
         zone_due: sync_clock,
     };
@@ -691,6 +694,12 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
         }
     }
 
+    /// The feeder's boot, by the status last read and when.
+    fn boot(&self) -> Option<Boot> {
+        let status = self.facts.status.as_ref()?;
+        Some(Boot::read(status, self.status_at))
+    }
+
     /// Give the feeder this phone's clock and zone.
     /// `on`: the time view an automatic sync was decided on, which the
     /// memo notes; `None` for an offset.
@@ -796,6 +805,7 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
                     link.event_at(status.last_event);
                 }
                 self.facts.status = Some(status);
+                self.status_at = Timestamp::now();
                 Ok(self.card())
             }
             (Asked::Settings, Some(Answer::Settings(Settings::Feeder(settings)))) => {
@@ -808,7 +818,7 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
             }
             (Asked::Time, Some(Answer::Time(time))) => {
                 let now = Timestamp::now();
-                let boot = self.facts.status.as_ref().map(|status| status.boot_count);
+                let boot = self.boot();
                 let before = self.clock.clone();
                 let check = boot.map_or(ClockCheck::Leave, |boot| {
                     self.clock
@@ -866,7 +876,7 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
                 Ok((self.update)(SessionUpdate::ClockSynced))
             }
             (Asked::Clock { on }, answer) => {
-                let boot = self.facts.status.as_ref().map(|status| status.boot_count);
+                let boot = self.boot();
                 if let (Some(on), Some(boot), Some(Answer::Refused(Refusal::Time))) =
                     (on, boot, answer)
                 {

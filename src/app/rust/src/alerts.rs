@@ -93,7 +93,13 @@ impl Versioned for AlertState {
             }
             if let Some((old, new)) = kept::both(old, new, "/clock") {
                 kept::carry(old, new);
-                for nested in ["/invalid", "/refused_on"] {
+                for nested in [
+                    "/invalid",
+                    "/invalid/boot",
+                    "/refused",
+                    "/refused/on",
+                    "/refused/boot",
+                ] {
                     if let Some((old, new)) = kept::both(old, new, nested) {
                         kept::carry(old, new);
                     }
@@ -436,7 +442,7 @@ mod tests {
     };
 
     use serde::Serialize;
-    use wellfed_client::time::{InvalidRun, ViewMark};
+    use wellfed_client::time::{Boot, InvalidRun, Refused, ViewMark};
     use wellfed_model::{
         Alert, AlertKey, AlertKind, AlertLevel, AlertsView, Blocked, ClientRole, EnrollPath,
         FeedOutcome, FeedReason, Generation, Hex, MissedReason, OpenAlert, Source, TimeSource,
@@ -751,14 +757,24 @@ mod tests {
                     sent_ms: Some(1_800_000_000_000),
                     invalid: Some(InvalidRun {
                         since_ms: 1_800_000_060_000,
-                        boot: 12,
+                        boot: Boot {
+                            count: 12,
+                            uptime_ms: 60_000,
+                            read_ms: 1_800_000_060_000,
+                        },
                         syncs: 3,
                     }),
-                    refused_on: Some(ViewMark {
-                        boot: 12,
-                        valid: false,
-                        syncs: 3,
-                        last: Some(TimeSource::Owner),
+                    refused: Some(Refused {
+                        on: ViewMark {
+                            valid: false,
+                            syncs: 3,
+                            last: Some(TimeSource::Owner),
+                        },
+                        boot: Boot {
+                            count: 12,
+                            uptime_ms: 120_000,
+                            read_ms: 1_800_000_120_000,
+                        },
                     }),
                 }),
             }],
@@ -1432,7 +1448,10 @@ mod tests {
             "/data/feeders/0/watch/reach",
             "/data/feeders/0/clock",
             "/data/feeders/0/clock/invalid",
-            "/data/feeders/0/clock/refused_on",
+            "/data/feeders/0/clock/invalid/boot",
+            "/data/feeders/0/clock/refused",
+            "/data/feeders/0/clock/refused/on",
+            "/data/feeders/0/clock/refused/boot",
             "/data/sweeping/0",
             "/data/set_aside",
         ];

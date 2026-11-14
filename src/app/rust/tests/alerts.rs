@@ -451,6 +451,57 @@ fn a_catch_up_on_any_network_writes_nothing_but_a_sync_the_rule_allowed() {
     }
 }
 
+/// A session's read of the time waits as a catch-up's does, on the same
+/// memo: a catch-up finds the clock unset with the router silent, the run
+/// it notes in `alerts.json` is two minutes old by the time a session opens
+/// on that directory, and the session's first read of the time syncs it.
+#[test]
+fn a_session_syncs_a_clock_that_has_waited_two_minutes_for_its_router() {
+    use wellfed_app_bridge::api::feeder::use_data_directory;
+    use wellfed_app_bridge::api::session::SessionUpdate;
+    use wellfed_app_bridge::session;
+
+    bounded(async {
+        let kept = tempfile::tempdir().unwrap();
+        let dir = kept.path().display().to_string();
+        let flash: Rc<Flash> = Flash::memory();
+        let sim = Running::start(&flash, Some(*Keypair::from_secret(OWNER).public())).await;
+        let identity = hex(&sim.identity);
+        know(&dir, &[&identity]);
+
+        catch_up(&dir, &sim, &identity, Attempt::First, home()).await;
+        assert_eq!(time(&sim).await.syncs, 0, "the router's turn first");
+        backdate_invalid_run(&dir, 2 * 60_000);
+
+        use_data_directory(dir.clone());
+        let (commands, receiver) = tokio::sync::mpsc::unbounded_channel();
+        let (updates, mut heard) = tokio::sync::mpsc::unbounded_channel();
+        tokio::task::spawn_local(session::run(
+            Keypair::from_secret(OWNER),
+            sim.identity,
+            sim.address,
+            false,
+            receiver,
+            move |update| updates.send(update).is_ok(),
+        ));
+        loop {
+            match heard.recv().await.expect("the session ended") {
+                SessionUpdate::ClockSynced => break,
+                SessionUpdate::ClockNotSynced => panic!("the feeder refused the clock"),
+                _ => {}
+            }
+        }
+        let set = time(&sim).await;
+        assert!(set.clock_ms.is_some(), "{set:?}");
+        assert_eq!(set.syncs, 1);
+
+        commands
+            .send(wellfed_app_bridge::session::Command::Close)
+            .unwrap();
+        sim.stop().await;
+    });
+}
+
 #[test]
 fn only_the_home_networks_last_try_counts_towards_unreachable() {
     bounded(async {

@@ -695,6 +695,27 @@ async def test_a_feeder_of_another_revision_is_served_and_names_the_side_to_upda
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
+async def test_a_time_server_the_clock_disagrees_with_raises_a_repair_until_it_is_set(
+    hass: HomeAssistant, feeder: fake.FakeFeeder
+) -> None:
+    feeder.push(
+        fake.connected(),
+        fake.update(bridge.UpdateKind.State, state=fake.state(time_server_disagrees=True)),
+    )
+    entry = _entry(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    issue = _issue(hass, "time_server_disagrees")
+    assert issue is not None
+    assert issue.translation_key == "time_server_disagrees"
+    assert issue.severity is ir.IssueSeverity.WARNING
+
+    # Set by an owner, or once the clock accepts its server: the repair goes.
+    feeder.push(fake.update(bridge.UpdateKind.State, state=fake.state()))
+    await _until(hass, lambda: _issue(hass, "time_server_disagrees") is None)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
 async def test_a_pre_revision_feeder_asks_for_a_feeder_update_and_is_retried(
     hass: HomeAssistant, feeder: fake.FakeFeeder, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -40,6 +40,7 @@ from .kept import kept, remove as remove_kept
 from .session import (
     STORE_READ_ONLY_ISSUE,
     STORE_UNREAD_ISSUE,
+    TIME_SERVER_ISSUE,
     UNCERTAIN_ISSUE,
     UNKNOWN_ISSUE,
     FeederSession,
@@ -182,7 +183,13 @@ async def async_remove_entry(hass: HomeAssistant, entry: WellfedConfigEntry) -> 
         feeder = bytes.fromhex(identity)
         store = kept(hass, entry.entry_id)
         await store.load()
-        for issue in (UNCERTAIN_ISSUE, UNKNOWN_ISSUE, STORE_UNREAD_ISSUE, STORE_READ_ONLY_ISSUE):
+        for issue in (
+            UNCERTAIN_ISSUE,
+            UNKNOWN_ISSUE,
+            STORE_UNREAD_ISSUE,
+            STORE_READ_ONLY_ISSUE,
+            TIME_SERVER_ISSUE,
+        ):
             ir.async_delete_issue(hass, DOMAIN, f"{issue}_{identity}")
         if store.unread or any(p.released_ms is None for p in store.pending):
             hold_dropped(hass, feeder)

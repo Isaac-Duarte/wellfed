@@ -983,6 +983,15 @@ class State:
         """
     @property
     def status(self, /) -> Status: ...
+    @property
+    def time_server_disagrees(self, /) -> bool:
+        """
+        The clock reads invalid while its time server answers outside the
+        time it last trusted ([`wellfed_client::time::server_disagrees`]): no
+        client sets it by itself, and meals wait until an owner changes the
+        time source or sets the time, or the clock comes to accept the
+        server, which can take days.
+        """
 
 @final
 class Status:

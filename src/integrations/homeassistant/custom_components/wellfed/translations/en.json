@@ -405,6 +405,10 @@
       "title": "Update the Wellfed integration for feeder {feeder}",
       "description": "Feeder {feeder} runs build {build}, newer than this integration. Everything both know works; what the newer build added shows as unknown. Update the Wellfed integration. This clears once it matches."
     },
+    "time_server_disagrees": {
+      "title": "Feeder {feeder}'s time server disagrees with its clock",
+      "description": "Feeder {feeder} lost its clock, and its time server answers with a time far from the one it last trusted. One of them is wrong, so neither Home Assistant nor any phone sets the clock by itself, and scheduled meals wait. Left alone, the feeder can take hours or days to accept the server, the longer the further apart they are. Ask an owner to open Clock in the Wellfed app and check the time source under Get the time from, or choose another, or to set the time from their phone if its time is right. This clears once the clock is set."
+    },
     "legacy_feeder": {
       "title": "Feeder {feeder} needs a firmware update",
       "description": "Feeder {feeder} runs build {build}, from before this integration's device API, so Home Assistant can read and change nothing on it and its entities are unavailable. Update the feeder from the Wellfed app. Home Assistant tries again on its own, and this clears once it answers."

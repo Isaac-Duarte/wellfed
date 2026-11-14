@@ -144,6 +144,25 @@ fn a_clock_that_needs_the_time_asks_soon() {
     assert!(exchange.due(20));
 }
 
+/// A caller whose clock refused a fix holds the next request; the clock's
+/// need, which asks `soon` every pass, does not shorten the hold.
+#[test]
+fn a_hold_outlasts_the_clock_needing_the_time() {
+    let mut exchange = Exchange::new();
+    assert!(exchange.poll(0, 1).is_some());
+    let real = serve(&request(1), NOON, NOON, 2, 0).unwrap();
+    assert!(matches!(
+        exchange.received(10, &real),
+        Some(Outcome::Fix(_))
+    ));
+    exchange.hold(10, POLL_MS);
+    for now in (20..10 + POLL_MS).step_by(1_000) {
+        exchange.soon(now);
+        assert!(exchange.poll(now, 2).is_none(), "asked at {now} ms");
+    }
+    assert!(exchange.poll(10 + POLL_MS, 2).is_some());
+}
+
 /// A kiss-o'-death holds even while the clock needs the time, which asks
 /// `soon` every pass.
 #[test]

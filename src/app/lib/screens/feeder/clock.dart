@@ -235,9 +235,11 @@ class _Disagreement extends StatelessWidget {
 
 /// The clock reads invalid while the feeder's time server answers outside
 /// the time the clock last trusted: the server or that time is wrong, so
-/// no phone sets it by itself. The server's answer is taken once the
-/// clock's bound reaches it; an owner who checked this phone's time may
-/// set it sooner with [onSync].
+/// no phone sets it by itself. The feeder takes the server's answer only
+/// once its bound has grown to reach it, which takes hours for a server
+/// minutes off and days for one an hour off. So the notice gives an owner
+/// the real remedies: the time source, in "Get the time from" below, or
+/// [onSync] from a phone they checked. Anyone else is told to ask an owner.
 class _ServerDisagrees extends StatelessWidget {
   const _ServerDisagrees({required this.owner, required this.onSync});
 
@@ -252,10 +254,13 @@ class _ServerDisagrees extends StatelessWidget {
         tone: Tone.warning,
         lead: "The feeder's time server disagrees with its clock.",
         text: owner
-            ? 'One of them is wrong, so no $deviceName sets the clock by itself and meals wait. The feeder takes the '
-                  "server's time within an hour or so. If this $deviceName's time is right, you can set it now."
-            : 'One of them is wrong, so no $deviceName sets the clock by itself and meals wait. The feeder takes the '
-                  "server's time within an hour or so, or an owner can set it from their phone.",
+            ? 'One of them is wrong, so no $deviceName sets the clock by itself, and meals wait. Left alone, the '
+                  'feeder can take hours or days to accept the server, the longer the further apart they are. '
+                  'Check the time source under Get the time from, below, or choose another. If this '
+                  "$deviceName's time is right, you can set the feeder's from it."
+            : 'One of them is wrong, so no $deviceName sets the clock by itself, and meals wait. Left alone, the '
+                  'feeder can take hours or days to accept the server. Ask an owner to check its time source or '
+                  'set the time.',
       ),
       if (owner) ...[
         const SizedBox(height: Space.s2),

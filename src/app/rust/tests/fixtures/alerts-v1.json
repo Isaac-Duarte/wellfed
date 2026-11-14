@@ -1766,14 +1766,24 @@
           "sent_ms": 1800000000000,
           "invalid": {
             "since_ms": 1800000060000,
-            "boot": 12,
+            "boot": {
+              "count": 12,
+              "uptime_ms": 60000,
+              "read_ms": 1800000060000
+            },
             "syncs": 3
           },
-          "refused_on": {
-            "boot": 12,
-            "valid": false,
-            "syncs": 3,
-            "last": "owner"
+          "refused": {
+            "on": {
+              "valid": false,
+              "syncs": 3,
+              "last": "owner"
+            },
+            "boot": {
+              "count": 12,
+              "uptime_ms": 120000,
+              "read_ms": 1800000120000
+            }
           }
         }
       }

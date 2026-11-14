@@ -6,7 +6,7 @@
 use std::time::Duration;
 
 use jiff::Timestamp;
-use wellfed_client::time::{AutoSync, ClockCheck};
+use wellfed_client::time::{AutoSync, Boot, ClockCheck};
 use wellfed_core::clock::ntp::{self, Exchange, Outcome};
 use wellfed_core::clock::wall::{Fix, Origin, State, Sync};
 use wellfed_feeder::feeder::Platform;
@@ -20,8 +20,15 @@ const MINUTE_MS: u32 = 60_000;
 const START: u64 = 1_793_145_600_000;
 /// An owner's key.
 const OWNER: [u8; 4] = [0x21; 4];
-/// The boot the views are read in.
-const BOOT: u32 = 1;
+/// The feeder's boot as a client reads it at uptime `now` and its own
+/// time `read_ms`.
+fn boot(now: u32, read_ms: u64) -> Boot {
+    Boot {
+        count: 1,
+        uptime_ms: now,
+        read_ms: i64::try_from(read_ms).unwrap(),
+    }
+}
 
 fn open() -> Sim {
     let flash = Flash::memory();
@@ -120,7 +127,13 @@ fn day(ntp: NtpServer, phone_off_ms: i64, hours: u32) -> Day {
             let state = sim.platform().clock_state(now);
             let read = view(state, ntp);
             let spacing = Duration::from_secs(30 * 60);
-            match memo.read(&read, BOOT, ClientRole::Owner, at(phone(now)), spacing) {
+            match memo.read(
+                &read,
+                boot(now, phone(now)),
+                ClientRole::Owner,
+                at(phone(now)),
+                spacing,
+            ) {
                 ClockCheck::Sync => {
                     memo.sent(at(phone(now)));
                     day.syncs += 1;
@@ -180,7 +193,7 @@ fn a_phone_off_by_more_than_the_error_never_syncs_a_valid_clock() {
         let read = view(state, NtpServer::Off);
         let check = memo.read(
             &read,
-            BOOT,
+            boot(now, START + u64::from(now) + off),
             ClientRole::Owner,
             at(START + u64::from(now) + off),
             Duration::from_secs(30 * 60),
@@ -273,7 +286,13 @@ fn contest(phone_off_ms: i64, hours: u32) -> Contest {
                 ..view(sim.platform().clock_state(now), gateway)
             };
             let spacing = Duration::from_secs(30 * 60);
-            match memo.read(&read, BOOT, ClientRole::Owner, at(phone(now)), spacing) {
+            match memo.read(
+                &read,
+                boot(now, phone(now)),
+                ClientRole::Owner,
+                at(phone(now)),
+                spacing,
+            ) {
                 ClockCheck::Sync => {
                     memo.sent(at(phone(now)));
                     contest.syncs += 1;
