@@ -201,6 +201,10 @@ It is the same app, started with `flutter run -d macos`, or built with `flutter 
 - **A backup is saved through a save dialog** in place of the share sheet, at the install's end and from the settings' backups. That has not been tried on a Mac.
 - **The microphone is asked for on the first recording.** The app expects macOS to ask then, but the prompt has not been seen: in the runs so far, all started by `flutter test`, macOS refused the microphone and the camera without asking. If it is refused, the meal call says where to allow it (System Settings › Privacy & Security › Microphone). A WAV file works in its place.
 
+## Desktop installers
+
+The desktops ship as unsigned installers: a disk image, an AppImage and a `.deb`, and a Windows installer. [Desktop packages](packaging/README.md) says how to build and check them, and the [owner guide](../../docs/guide/before-you-start.md#get-the-app-on-a-computer) how an owner opens them.
+
 ## Installing, updating and restoring on a computer
 
 The desktops go through the same state machines and the same Rust runs as Android, with three differences. None has been run on a feeder: every one is host-tested with fakes only, and the Windows parts have not been run on Windows.
