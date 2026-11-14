@@ -10,8 +10,10 @@ publish.workspace = true
 [dependencies]
 wellfed-formats.workspace = true
 thiserror.workspace = true
-# Builds the unicorn C library with cmake.
-unicorn-engine = "=2.1.5"
+# Builds the unicorn C library with cmake. Only the 32-bit ARM backend: the
+# others go unused, and the 64-bit ones need 16-byte atomics from libatomic that
+# GCC on aarch64 hosts leaves unresolved.
+unicorn-engine = { version = "=2.1.5", default-features = false, features = ["arch_arm"] }
 
 [dev-dependencies]
 wellfed-core.workspace = true
