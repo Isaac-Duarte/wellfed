@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:wellfed/platform/desktop_awake.dart';
@@ -26,6 +29,10 @@ abstract interface class AlertPorts {
 
   /// Mute `target` or unmute it; notifications of what is muted come off.
   Future<void> mute(MuteTarget target, {required bool muted, required List<KnownFeeder> feeders});
+
+  /// Whether this is a computer, which checks every feeder each minute while
+  /// the app is open (`AlertWatch`) and has no "instant while home".
+  bool get whileOpen;
 
   /// Turn "instant while home" on or off. Whether Android went along.
   Future<bool> setInstant({required bool on});
@@ -82,17 +89,34 @@ enum RoundFailures {
   thrown,
 }
 
+/// The last delivery this engine started: a round, a dismissal, a mute or
+/// the open alerts posted at once.
+Future<void> _delivering = Future.value();
+
+/// On a computer, run `work` once every delivery this engine started before
+/// it has ended. A delivery hands over every change Rust still holds
+/// unconfirmed, so two at once (a screen's check during the minute's round)
+/// would each post the same notice. A failed one lets the next go on. A
+/// phone's app engine runs no rounds of its own, so it goes as it always did.
+Future<T> oneDeliveryAtATime<T>(Future<T> Function() work) {
+  if (!onDesktopHost) return work();
+  final Future<T> run = _delivering.then((_) => work());
+  _delivering = run.then<void>((_) {}, onError: (Object _) {});
+  return run;
+}
+
 /// One round of catch-ups with `feeders`, as `key`, with the app's files in
 /// `dir`, on the network `network` says the phone is on. Each feeder's
 /// changes are posted and confirmed before the next, and one that fails leaves the
-/// others their turn ([feederRound]).
+/// others their turn ([feederRound]). Rounds and other deliveries in one
+/// engine go one at a time ([oneDeliveryAtATime]).
 Future<void> catchUpRound({
   required ClientKey key,
   required String dir,
   required List<KnownFeeder> feeders,
   required Future<PhoneNetwork> Function() network,
   required RoundFailures failures,
-}) async {
+}) => oneDeliveryAtATime(() async {
   await Notices.sweep(dir);
   final PhoneNetwork here = await network();
   await feederRound(feeders, failures, (feeder) async {
@@ -115,7 +139,7 @@ Future<void> catchUpRound({
     }
     await Notices.deliver(dir: dir, identity: feeder.identity, name: feeder.name, changes: done.changes);
   });
-}
+});
 
 /// Run `one` for each of `feeders` in turn. One that throws (the bridge's
 /// error, or its panic) is logged and the round goes on: another feeder's
@@ -145,7 +169,7 @@ Future<void> feederRound(
 /// The app engine's channel to the Kotlin side of alerts.
 const alertsChannel = MethodChannel('io.github.isaacduarte.wellfed/alerts');
 
-/// [AlertPorts] on Android, as this phone's `_key`.
+/// [AlertPorts] on Android or a computer, as this app's `_key`.
 class AppAlertPorts implements AlertPorts {
   /// Ports for the phone with `_key`.
   const AppAlertPorts(this._key);
@@ -160,46 +184,52 @@ class AppAlertPorts implements AlertPorts {
   @override
   Future<void> check(List<KnownFeeder> feeders) async {
     final String dir = await _dir();
-    await catchUpRound(
-      key: _key,
-      dir: dir,
-      feeders: feeders,
-      network: () async => phoneNetwork(await alertsChannel.invokeMapMethod<Object?, Object?>('network')),
-      failures: RoundFailures.thrown,
-    );
+    await catchUpRound(key: _key, dir: dir, feeders: feeders, network: _network, failures: RoundFailures.thrown);
   }
 
+  /// How this phone or computer is connected now.
+  static Future<PhoneNetwork> _network() async => onDesktopHost
+      ? computerNetwork()
+      : phoneNetwork(await alertsChannel.invokeMapMethod<Object?, Object?>('network'));
+
   @override
-  Future<void> dismiss(KnownFeeder feeder, NoticeView notice) async {
+  Future<void> dismiss(KnownFeeder feeder, NoticeView notice) => oneDeliveryAtATime(() async {
     final String dir = await _dir();
     final List<NoticeChange> changes = await dismissNotice(dir: dir, identity: feeder.identity, id: notice.id);
     await Notices.deliver(dir: dir, identity: feeder.identity, name: feeder.name, changes: changes);
-  }
+  });
 
   @override
   Future<AlertSettingsView> settings() async => alertSettings(dir: await _dir());
 
   @override
-  Future<void> mute(MuteTarget target, {required bool muted, required List<KnownFeeder> feeders}) async {
-    final String dir = await _dir();
-    for (final FeederNotices each in await setMute(dir: dir, mute: target, muted: muted)) {
-      final String name = feeders.where((feeder) => feeder.identity == each.identity).firstOrNull?.name ?? 'Feeder';
-      await Notices.deliver(dir: dir, identity: each.identity, name: name, changes: each.changes);
-    }
-  }
+  Future<void> mute(MuteTarget target, {required bool muted, required List<KnownFeeder> feeders}) =>
+      oneDeliveryAtATime(() async {
+        final String dir = await _dir();
+        for (final FeederNotices each in await setMute(dir: dir, mute: target, muted: muted)) {
+          final String name = feeders.where((feeder) => feeder.identity == each.identity).firstOrNull?.name ?? 'Feeder';
+          await Notices.deliver(dir: dir, identity: each.identity, name: name, changes: each.changes);
+        }
+      });
+
+  @override
+  bool get whileOpen => onDesktopHost;
 
   @override
   Future<bool> setInstant({required bool on}) async {
+    if (onDesktopHost) return false;
     final bool went = await alertsChannel.invokeMethod<bool>('instant', on) ?? false;
     await saveInstant(dir: await _dir(), enabled: on && went);
     return went;
   }
 
   @override
-  Future<bool> instantRunning() async => await alertsChannel.invokeMethod<bool>('instantRunning') ?? false;
+  Future<bool> instantRunning() async =>
+      !onDesktopHost && (await alertsChannel.invokeMethod<bool>('instantRunning') ?? false);
 
   @override
-  Future<bool> resumeInstant() async => await alertsChannel.invokeMethod<bool>('instant', true) ?? false;
+  Future<bool> resumeInstant() async =>
+      !onDesktopHost && (await alertsChannel.invokeMethod<bool>('instant', true) ?? false);
 
   @override
   Future<bool> notificationsAllowed() => Notices.allowed();
@@ -211,11 +241,13 @@ class AppAlertPorts implements AlertPorts {
   Future<bool> askForNotifications(List<KnownFeeder> feeders) async {
     switch (await _notificationAsk()) {
       case NotificationAsk.openSettings:
-        // Back from them, the screens read Android's word again.
-        await alertsChannel.invokeMethod<void>('notificationSettings');
+        // Back from them, the screens read the system's word again.
+        await _openNotificationSettings();
         return false;
       case NotificationAsk.request:
         return _request(feeders);
+      case NotificationAsk.unavailable:
+        return false;
     }
   }
 
@@ -240,11 +272,16 @@ Future<T> _asked<T>(Future<T> Function() ask) async {
 
 /// What the alert screens' button does while notifications are off.
 enum NotificationAsk {
-  /// "Allow notifications": Android's own request.
+  /// "Allow notifications": Android's or macOS's own request.
   request,
 
-  /// "Open notification settings": the app's page in Android's settings.
+  /// "Open notification settings": the app's page in Android's settings, or
+  /// the system's notification settings on a computer.
   openSettings,
+
+  /// No button: this computer can't post at all, as a Linux desktop with no
+  /// notification server can't.
+  unavailable,
 }
 
 /// Ask Android's dialog only while it can still show: from Android 13, and
@@ -254,10 +291,39 @@ enum NotificationAsk {
 NotificationAsk notificationAskFor({required bool sdkAtLeast33, required bool refusedBefore}) =>
     sdkAtLeast33 && !refusedBefore ? NotificationAsk.request : NotificationAsk.openSettings;
 
-Future<NotificationAsk> _notificationAsk() async => notificationAskFor(
-  sdkAtLeast33: (await alertsChannel.invokeMethod<int>('sdk') ?? 0) >= 33,
-  refusedBefore: await notificationsRefused(dir: await AppAlertPorts._dir()),
-);
+/// What the button does on this host. macOS asks as Android 13 does, until
+/// the owner refuses once; Windows has only its settings; Linux has no
+/// settings to open, so its button goes once no server answers.
+Future<NotificationAsk> _notificationAsk() async {
+  if (await Notices.unavailable()) return NotificationAsk.unavailable;
+  return switch (NoticeHost.current) {
+    NoticeHost.android => notificationAskFor(
+      sdkAtLeast33: (await alertsChannel.invokeMethod<int>('sdk') ?? 0) >= 33,
+      refusedBefore: await notificationsRefused(dir: await AppAlertPorts._dir()),
+    ),
+    NoticeHost.macos => notificationAskFor(
+      sdkAtLeast33: true,
+      refusedBefore: await notificationsRefused(dir: await AppAlertPorts._dir()),
+    ),
+    NoticeHost.linux || NoticeHost.windows => NotificationAsk.openSettings,
+  };
+}
+
+/// The system's notification settings: Android's page for the app, macOS's
+/// Notifications pane, or Windows's notification settings. Linux has no one
+/// place, and never offers this.
+Future<void> _openNotificationSettings() async {
+  switch (NoticeHost.current) {
+    case NoticeHost.android:
+      await alertsChannel.invokeMethod<void>('notificationSettings');
+    case NoticeHost.macos:
+      await Process.run('open', ['x-apple.systempreferences:com.apple.preference.notifications']);
+    case NoticeHost.windows:
+      await Process.run('explorer.exe', ['ms-settings:notifications']);
+    case NoticeHost.linux:
+      break;
+  }
+}
 
 /// Android's request, then what it answered: the open alerts post once it
 /// allows, and a refusal is noted for good. `null`, Android could not ask
@@ -277,14 +343,14 @@ Future<bool> _request(List<KnownFeeder> feeders) => _asked(() async {
 
 /// Post every change still to make for `feeders`, with no catch-up. A
 /// feeder not in `feeders` keeps its own for its next catch-up.
-Future<void> postPending(List<KnownFeeder> feeders) async {
+Future<void> postPending(List<KnownFeeder> feeders) => oneDeliveryAtATime(() async {
   final String dir = await AppAlertPorts._dir();
   for (final FeederNotices each in await pendingNotices(dir: dir)) {
     final KnownFeeder? feeder = feeders.where((feeder) => feeder.identity == each.identity).firstOrNull;
     if (feeder == null) continue;
     await Notices.deliver(dir: dir, identity: each.identity, name: feeder.name, changes: each.changes);
   }
-}
+});
 
 /// Ask Android once, unprompted, to let alerts through: when this phone first
 /// has a feeder of its own to hear from. After that only the owner asks, from
@@ -333,6 +399,21 @@ Future<void> startAlerts() async {
     debugPrint('alerts did not start: ${error.message ?? error.code}');
   } on BridgeError catch (error) {
     debugPrint('alerts did not start: ${error.message}');
+  }
+}
+
+/// Set a computer's alerts going as the app opens: Notices ready, and what an
+/// earlier `alerts.json` left showing swept. The catch-ups themselves run in
+/// `AlertWatch` once the app has its key and feeders.
+///
+/// Anything at all that fails here is logged and the app opens: a computer's
+/// notifications are never a reason for it not to.
+Future<void> startComputerAlerts() async {
+  try {
+    await Notices.init();
+    await Notices.sweep(await AppAlertPorts._dir());
+  } on Object catch (error) {
+    debugPrint('alerts did not start: $error');
   }
 }
 

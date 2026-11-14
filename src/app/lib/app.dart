@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:wellfed/platform/alert_ports.dart';
+import 'package:wellfed/platform/alert_watch.dart';
+import 'package:wellfed/platform/app_window.dart';
 import 'package:wellfed/platform/feeder_ports.dart';
 import 'package:wellfed/platform/host.dart';
 import 'package:wellfed/platform/install_ports.dart';
@@ -237,9 +239,15 @@ Route<Object?>? _top(NavigatorState navigator) {
 }
 
 class WellfedApp extends StatefulWidget {
-  const WellfedApp({super.key, required this.app});
+  const WellfedApp({super.key, required this.app, this.alerts = false});
 
   final AppState app;
+
+  /// Whether this app follows alerts: `main` turns it on where they run (on
+  /// Android, where the phone watches in the background, and on a computer,
+  /// which watches while the app is open). Off, the app starts no catch-ups
+  /// and touches no notification plugin, as a test of the app's shell wants.
+  final bool alerts;
 
   @override
   State<WellfedApp> createState() => _WellfedAppState();
@@ -253,11 +261,14 @@ class _WellfedAppState extends State<WellfedApp> {
   late final _fleet = FeederFleet(widget.app, _feederPorts);
   late final AppLifecycleListener _lifecycle;
 
-  /// Alerts at home: Android only, where this phone watches in the
-  /// background.
-  static final bool _alerts = Platform.isAndroid;
+  late final bool _alerts = widget.alerts;
   late final _alertPorts = AppAlertPorts(widget.app.key);
   StreamSubscription<String>? _taps;
+
+  /// A computer's catch-ups, which end with the app.
+  late final AlertWatch? _watch = _alerts && onDesktopHost
+      ? AlertWatch.computer(widget.app.key, () => widget.app.feeders)
+      : null;
 
   @override
   void initState() {
@@ -273,6 +284,7 @@ class _WellfedAppState extends State<WellfedApp> {
       _taps = Notices.tapped.listen(_openAlerts);
       unawaited(Notices.launchedFor().then((identity) => identity == null ? null : _openAlerts(identity)));
     }
+    _watch?.start();
   }
 
   /// A computer's window closing, or the app quitting, mid-run asks first:
@@ -295,7 +307,12 @@ class _WellfedAppState extends State<WellfedApp> {
     _watched = now;
   }
 
-  void _openAlerts(String identity) => unawaited(_router.push('/alerts/$identity'));
+  void _openAlerts(String identity) {
+    // A computer's window may be behind others, or minimized, when its
+    // notification is tapped.
+    if (onDesktopHost) unawaited(AppWindow.front());
+    unawaited(_router.push('/alerts/$identity'));
+  }
 
   late final GoRouter _router = wellfedRouter(
     // With no feeders at all, the welcome.
@@ -323,7 +340,7 @@ class _WellfedAppState extends State<WellfedApp> {
         ? (context, identity) {
             final KnownFeeder? known = widget.app.feeders.where((feeder) => feeder.identity == identity).firstOrNull;
             if (known == null) {
-              return const Scaffold(body: Center(child: Text('This phone no longer knows that feeder.')));
+              return Scaffold(body: Center(child: Text('This $deviceName no longer knows that feeder.')));
             }
             return AlertsScreen(
               name: known.name,
@@ -362,6 +379,7 @@ class _WellfedAppState extends State<WellfedApp> {
   @override
   void dispose() {
     unawaited(_taps?.cancel());
+    _watch?.stop();
     if (_alerts) widget.app.removeListener(_feedersChanged);
     _lifecycle.dispose();
     _router.dispose();

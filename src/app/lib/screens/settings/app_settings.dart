@@ -154,7 +154,7 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
                 'Alerts',
                 SettingsLink(
                   'Alerts at home',
-                  'Notifications, instant checks and what to mute',
+                  isDesktop ? 'Notifications and what to mute' : 'Notifications, instant checks and what to mute',
                   first: true,
                   onTap: () => unawaited(context.push('/alert-settings')),
                 ),

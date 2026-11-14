@@ -1,6 +1,7 @@
 import 'package:wellfed/platform/alert_ports.dart' show NotificationAsk;
 import 'package:wellfed/src/rust/api/alerts.dart';
 import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/state/form_factor.dart';
 
 /// What a notice says: a title and a sentence or two.
 typedef NoticeWords = ({String title, String body});
@@ -139,8 +140,20 @@ String kindName(NoticeKind kind) => switch (kind) {
 };
 
 /// The words on the button that lets alerts through while notifications are
-/// off, for what it does.
-String notificationAskLabel(NotificationAsk ask) => switch (ask) {
+/// off, for what it does; `null` when there is nothing to press.
+String? notificationAskLabel(NotificationAsk ask) => switch (ask) {
   NotificationAsk.request => 'Allow notifications',
   NotificationAsk.openSettings => 'Open notification settings',
+  NotificationAsk.unavailable => null,
+};
+
+/// Why notifications are off, and what that leaves: on a phone, Android
+/// keeps them off; on a computer, its settings do, or it has no notification
+/// service at all, as a Linux desktop may not.
+String notificationsOffWords(NotificationAsk ask) => switch (ask) {
+  NotificationAsk.unavailable => "This computer has no notification service running, so alerts only list here. Wellfed still checks while it's open.",
+  NotificationAsk.request || NotificationAsk.openSettings =>
+    isDesktop
+        ? "This computer's settings keep Wellfed's notifications off, so alerts only list here."
+        : 'Android is keeping alerts off this phone, so they only list here.',
 };

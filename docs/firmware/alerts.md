@@ -2,7 +2,7 @@
 
 This page explains how the feeder decides what is wrong and how a client reads it. It is for contributors. An alert only reports: no rule feeds, retries or changes anything.
 
-The feeder is the only thing that knows what is wrong, so it decides. It keeps a small table of open alerts in RAM, and every client reads that table, so a phone, the CLI and Home Assistant can't disagree. `wellfed alerts` prints it. The Android app catches up with the table at home and notifies each alert once, clearing the notification when the feeder clears the alert ([the app's alerts](../../src/app/README.md#alerts)); Home Assistant shows them ([Home Assistant](../../src/integrations/homeassistant/README.md#what-you-get)). None of them judges an alert: their one judgement of their own is that they can't reach the feeder.
+The feeder is the only thing that knows what is wrong, so it decides. It keeps a small table of open alerts in RAM, and every client reads that table, so a phone, the CLI and Home Assistant can't disagree. `wellfed alerts` prints it. The app catches up with the table at home, on Android in the background and on a computer while it is open, and notifies each alert once, clearing the notification when the feeder clears the alert ([the app's alerts](../../src/app/README.md#alerts)); Home Assistant shows them ([Home Assistant](../../src/integrations/homeassistant/README.md#what-you-get)). None of them judges an alert: their one judgement of their own is that they can't reach the feeder.
 
 ## One failed meal
 

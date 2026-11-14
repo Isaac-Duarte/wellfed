@@ -26,7 +26,8 @@ use crate::api::keys::ClientKey;
 use crate::api::store::SetAside;
 use crate::catch_up::{self, Target};
 
-/// How the phone is connected, as Android says.
+/// How the phone or computer is connected, as Android or
+/// [`computer_network`] says.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PhoneNetwork {
     /// On a Wi-Fi network this app may use now, by its IPv4 gateway and
@@ -36,6 +37,13 @@ pub enum PhoneNetwork {
     /// handing out another resolver, would otherwise make home look like
     /// another network, where a failed catch-up counts for nothing.
     Wifi { gateway: String, subnet: String },
+    /// A computer on the IPv4 network `network` (`address/prefix`), the one
+    /// its default route leaves by ([`crate::network`]), cable or Wi-Fi.
+    Lan { network: String },
+    /// A computer online on a network it can't name: a full-tunnel VPN with
+    /// no single LAN beside it ([`crate::network`]). A catch-up still dials,
+    /// but learns no home and counts no failure.
+    Unnamed,
     /// Off Wi-Fi, or Android keeps this app off the network for now: a
     /// catch-up that fails here says nothing about the feeder.
     Elsewhere,
@@ -45,6 +53,10 @@ pub enum PhoneNetwork {
 /// under another form matches no network, so the phone learns it again the
 /// next time the feeder answers.
 const FINGERPRINT_FORM: &str = "gateway-subnet:";
+
+/// What every fingerprint of a computer's network starts with. A phone's
+/// and a computer's never match, and each keeps its own alerts file.
+const LAN_FORM: &str = "lan:";
 
 impl PhoneNetwork {
     /// A digest of the network's addresses, so the file keeps none of them. A
@@ -56,8 +68,30 @@ impl PhoneNetwork {
                 "{FINGERPRINT_FORM}{}",
                 sha256(&canonical_of(&(gateway, subnet))?)
             ))),
-            Self::Elsewhere => Ok(None),
+            Self::Lan { network } => Ok(Some(format!(
+                "{LAN_FORM}{}",
+                sha256(&canonical_of(network)?)
+            ))),
+            Self::Unnamed | Self::Elsewhere => Ok(None),
         }
+    }
+
+    /// Whether the phone or computer is on a network at all, so a catch-up
+    /// dials where the feeder last answered.
+    fn online(&self) -> bool {
+        !matches!(self, Self::Elsewhere)
+    }
+}
+
+/// The network this computer is on, for a desktop's catch-ups: the one its
+/// default route leaves by, or past a VPN the LAN beside it. With no IPv4
+/// default route (none at all, or an IPv6-only uplink) it is away from
+/// every feeder's home, so a catch-up dials only an address the owner gave.
+pub fn computer_network() -> PhoneNetwork {
+    match crate::network::default_route() {
+        crate::network::Route::Network(network) => PhoneNetwork::Lan { network },
+        crate::network::Route::Unnamed => PhoneNetwork::Unnamed,
+        crate::network::Route::None => PhoneNetwork::Elsewhere,
     }
 }
 
@@ -280,6 +314,7 @@ pub async fn catch_up_with(
         known: known.as_deref(),
         attempt: &attempt,
         network: network.fingerprint()?,
+        online: network.online(),
     };
     let (end, changes) = catch_up::catch_up(Path::new(&dir), &target, Timestamp::now).await?;
     Ok(CatchUp {
@@ -644,5 +679,31 @@ fn detail(alert: Alert) -> NoticeDetail {
         | Alert::FoodLow
         | Alert::BatteryBelowFloor
         | Alert::PlansStuck => NoticeDetail::Plain,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_computers_network_is_its_own_and_never_a_phones() {
+        let lan = |network: &str| PhoneNetwork::Lan {
+            network: network.into(),
+        };
+        let wifi = PhoneNetwork::Wifi {
+            gateway: "192.168.1.1".into(),
+            subnet: "192.168.1.0/24".into(),
+        };
+
+        let home = lan("192.168.1.0/24").fingerprint().unwrap();
+        assert_eq!(home, lan("192.168.1.0/24").fingerprint().unwrap());
+        assert_ne!(home, lan("10.0.0.0/24").fingerprint().unwrap());
+        assert_ne!(home, wifi.fingerprint().unwrap());
+        assert!(home.unwrap().starts_with(LAN_FORM));
+        assert_eq!(PhoneNetwork::Elsewhere.fingerprint().unwrap(), None);
+        assert_eq!(PhoneNetwork::Unnamed.fingerprint().unwrap(), None);
+        assert!(PhoneNetwork::Unnamed.online());
+        assert!(!PhoneNetwork::Elsewhere.online());
     }
 }

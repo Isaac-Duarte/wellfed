@@ -35,6 +35,7 @@ pub mod install;
 #[cfg(test)]
 mod kept_enums;
 mod link;
+mod network;
 pub mod requests;
 pub mod restore;
 mod route;

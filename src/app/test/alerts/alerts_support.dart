@@ -51,6 +51,10 @@ class FakeAlertPorts implements AlertPorts {
   bool allowed = true;
   bool instantRefused = false;
 
+  /// A computer's ports: every minute while open, and no instant mode.
+  @override
+  bool whileOpen = false;
+
   /// Whether instant mode runs, and whether Android starts it again.
   bool running = false;
   bool resumes = true;
@@ -152,6 +156,8 @@ class FakeAlertPorts implements AlertPorts {
         asked.add(feeders);
         if (!grants) ask = NotificationAsk.openSettings;
         return allowed = grants;
+      case NotificationAsk.unavailable:
+        return false;
     }
   }
 }

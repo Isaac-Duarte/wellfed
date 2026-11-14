@@ -5,6 +5,7 @@ import 'package:wellfed/src/rust/api/alerts.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/alerts/alert_words.dart';
 import 'package:wellfed/state/alerts/alerts.dart';
+import 'package:wellfed/state/form_factor.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
@@ -32,7 +33,7 @@ class AlertsScreen extends StatefulWidget {
 class _AlertsScreenState extends State<AlertsScreen> {
   late final FeederAlertsController _alerts = widget.newController();
 
-  // Back from Android's settings, notifications may be on now.
+  // Back from the system's settings, notifications may be on now.
   late final AppLifecycleListener _lifecycle;
 
   @override
@@ -106,24 +107,26 @@ class _List extends StatelessWidget {
       children: [
         Text(switch (shown.reachedMs) {
           final int at => 'Last checked ${atMomentTextMs(context, at)}.',
-          null => 'Not checked yet: this phone checks at home.',
+          null =>
+            isDesktop
+                ? 'Not checked yet: this computer checks at home while Wellfed is open.'
+                : 'Not checked yet: this phone checks at home.',
         }, style: muted),
         const SizedBox(height: Space.s3),
         if (!shown.notificationsAllowed) ...[
-          const Notice(
+          Notice(
             tone: Tone.warning,
             glyph: Glyph.warning,
             lead: 'Notifications are off.',
-            text: 'Android is keeping alerts off this phone, so they only list here.',
+            text: notificationsOffWords(shown.notificationAsk),
           ),
-          const SizedBox(height: Space.s2),
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: FilledButton(
-              onPressed: () => unawaited(alerts.allowNotifications()),
-              child: Text(notificationAskLabel(shown.notificationAsk)),
+          if (notificationAskLabel(shown.notificationAsk) case final String label) ...[
+            const SizedBox(height: Space.s2),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: FilledButton(onPressed: () => unawaited(alerts.allowNotifications()), child: Text(label)),
             ),
-          ),
+          ],
           const SizedBox(height: Space.s3),
         ],
         if (shown.problem case final String problem) ...[
@@ -216,7 +219,7 @@ class _Alert extends StatelessWidget {
               ),
             ),
             IconButton(
-              tooltip: 'Dismiss on this phone',
+              tooltip: 'Dismiss on this $deviceName',
               icon: StrokeIcon(Glyph.close, size: 20, color: c.textMuted),
               onPressed: onDismiss,
             ),

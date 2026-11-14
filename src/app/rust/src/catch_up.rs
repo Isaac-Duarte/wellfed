@@ -63,9 +63,12 @@ pub(crate) struct Target<'a> {
     /// Where the app last reached it.
     pub(crate) known: Option<&'a str>,
     pub(crate) attempt: &'a Attempt,
-    /// A fingerprint of the Wi-Fi network the phone is on, or `None` off
-    /// Wi-Fi.
+    /// A fingerprint of the network the phone or computer is on, or `None`
+    /// off Wi-Fi or on a network it can't name.
     pub(crate) network: Option<String>,
+    /// Whether it is on a network at all. On one it can't name it dials,
+    /// but with no fingerprint learns no home and counts no failure.
+    pub(crate) online: bool,
 }
 
 /// What the session found.
@@ -108,7 +111,7 @@ pub(crate) async fn catch_up(
     .map(str::to_owned);
     // Off Wi-Fi the feeder is out of reach, unless the owner gave an address
     // for a route to it, such as a VPN's.
-    let address = tried.filter(|_| target.network.is_some() || target.manual.is_some());
+    let address = tried.filter(|_| target.online || target.manual.is_some());
 
     let visit = match &address {
         Some(address) => visit(address, target, &watch).await,
@@ -118,7 +121,7 @@ pub(crate) async fn catch_up(
         (Visit::Table(..), _) => CatchUpEnd::Read,
         (Visit::Unchanged(_), _) => CatchUpEnd::Unchanged,
         (Visit::Answered, _) => CatchUpEnd::Answered,
-        (Visit::NoAnswer, None) if target.network.is_none() => CatchUpEnd::Away,
+        (Visit::NoAnswer, None) if !target.online => CatchUpEnd::Away,
         (Visit::NoAnswer, _) if *target.attempt == Attempt::First => CatchUpEnd::Unanswered,
         (Visit::NoAnswer, _) => CatchUpEnd::Failed,
     };

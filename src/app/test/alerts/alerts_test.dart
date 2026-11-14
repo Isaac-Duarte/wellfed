@@ -229,7 +229,10 @@ void main() {
       expect(shown.muted(kinds[0]), isFalse);
 
       await settings.setInstant(on: true);
-      expect((settings.state as AlertSettingsShown).instant, isTrue);
+      expect(
+        (settings.state as AlertSettingsShown).watching,
+        isA<PhoneWatching>().having((w) => w.instant, 'instant', isTrue),
+      );
     });
 
     test('instant mode Android refuses stays off and says so', () async {
@@ -239,7 +242,7 @@ void main() {
       await settings.load();
       await settings.setInstant(on: true);
       final shown = settings.state as AlertSettingsShown;
-      expect(shown.instant, isFalse);
+      expect(shown.watching, isA<PhoneWatching>().having((w) => w.instant, 'instant', isFalse));
       expect(shown.problem, contains("Android didn't let it start"));
     });
 
@@ -285,7 +288,10 @@ void main() {
       final settings = AlertSettingsController(ports, FakeBook());
       addTearDown(settings.dispose);
       await settings.load();
-      expect((settings.state as AlertSettingsShown).instantRunning, isTrue);
+      expect(
+        (settings.state as AlertSettingsShown).watching,
+        isA<PhoneWatching>().having((w) => w.running, 'running', isTrue),
+      );
       expect(ports.instant, isTrue);
 
       ports
@@ -293,8 +299,9 @@ void main() {
         ..resumes = false;
       await settings.load();
       final shown = settings.state as AlertSettingsShown;
-      expect(shown.instant, isTrue, reason: 'still on in the settings');
-      expect(shown.instantRunning, isFalse);
+      final watching = shown.watching as PhoneWatching;
+      expect(watching.instant, isTrue, reason: 'still on in the settings');
+      expect(watching.running, isFalse);
     });
 
     testWidgets('instant mode that is not running says when it comes back', (tester) async {
