@@ -1,16 +1,18 @@
-//! One catch-up with one feeder: a short read-only session that reads the
-//! status, reads the alert table if the status shows it moved, and applies it
-//! to the feeder's [`Watch`] in `alerts.json`. Dart only starts one, from the
-//! periodic job, the "instant while home" service or a screen, and posts what
-//! it returns.
+//! One catch-up with one feeder: a short session that reads the status,
+//! reads the alert table if the status shows it moved, and applies it to the
+//! feeder's [`Watch`] in `alerts.json`, and that may send one write, a clock
+//! sync. Dart only starts one, from the periodic job, the "instant while
+//! home" service or a screen, and posts what it returns.
 //!
-//! A catch-up reads, and syncs the clock when the feeder's time view asks
-//! for it. It reaches the session only through [`Read`], whose ops are the
-//! time view, the status and the alert table, and [`keep_clock`], whose one
-//! op is the clock sync, so no path from here can send a feed, another write
-//! or a retry. The sync is what keeps a feeder with no time server set while
-//! the app is closed: see [`wellfed_client::time::check`]. Its spacing and
-//! refusals are the phone's, shared with its sessions ([`crate::clock`]).
+//! It reaches the session through two paths and no other: [`Read`], whose
+//! ops are reads only (the time view, the status and the alert table), and
+//! [`keep_clock`], a separate step whose one op is the clock sync, sent only
+//! when [`wellfed_client::time::AutoSync`] allows it. So no path from here
+//! can send a feed, another write or a retry. The sync is what keeps a
+//! feeder with no time server set while the app is closed. Its spacing (one
+//! automatic sync per feeder every [`crate::clock::SYNC_AGAIN`]) and its
+//! refusals are kept per feeder in `alerts.json` and shared with the
+//! sessions ([`crate::clock`]), so they hold however often catch-ups run.
 //!
 //! A catch-up is short and never left open: [`SITTING`] bounds it, and a
 //! catch-up that runs out of time counts as one that heard nothing.

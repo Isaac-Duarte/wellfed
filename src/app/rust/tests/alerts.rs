@@ -9,10 +9,12 @@
 //!   phone is away and nothing counts;
 //! - a computer on its network reads the table as a phone does, and one on
 //!   a network it can't name still dials;
-//! - nothing a catch-up sends is a write but the clock sync: the feeder's
-//!   journal holds only the owner's own feed, and a clock that is not set
-//!   is set once, and a set one left alone; with a time server named, only
-//!   once the clock has read unset across two minutes of catch-ups.
+//! - nothing a catch-up sends is a write but the clock sync, on any network
+//!   the phone or computer is on: every store, the clients and the feeds
+//!   stay as they were, and the clock's sync count moves only when the clock
+//!   rule allowed a sync for the view the catch-up read. A clock that is not
+//!   set is set once, and a set one left alone; with a time server named,
+//!   only once the clock has read unset across two minutes of catch-ups.
 
 use std::rc::Rc;
 use std::time::Duration;
@@ -356,6 +358,97 @@ fn with_a_time_server_a_catch_up_gives_it_two_minutes_before_setting_the_clock()
 
         sim.stop().await;
     });
+}
+
+/// Everything on the feeder a write could change but the clock: each
+/// store's view, the clients, the time settings and the feeds reserved.
+async fn writable_state(sim: &Running, flash: &Rc<Flash>) -> (Vec<Answer>, String, u64) {
+    let mut owner = Connection::open(
+        &Keypair::from_secret(OWNER),
+        sim.identity,
+        sim.address,
+        [0xa4; 32],
+    )
+    .await
+    .unwrap();
+    let mut views = Vec::new();
+    for (id, op) in [
+        (4, Op::GetSettings),
+        (5, Op::GetPlans),
+        (6, Op::GetCalibration),
+        (7, Op::GetCall),
+        (8, Op::ListClients),
+    ] {
+        views.push(owner.ask([id; 16], &op).await.unwrap());
+    }
+    let time = time(sim).await;
+    let settings = format!("{:?} {:?} {:?}", time.generation, time.zone, time.ntp);
+    (views, settings, feeding::reserved(flash).unwrap())
+}
+
+/// On every network a phone can be on, a catch-up writes nothing but the
+/// clock sync, and that only when the clock rule allowed one for the time
+/// view it read: with no time server an unset clock is synced at once, with
+/// one it waits, and a set clock is left alone.
+#[test]
+fn a_catch_up_on_any_network_writes_nothing_but_a_sync_the_rule_allowed() {
+    // A phone on its Wi-Fi or a computer on its LAN, a computer on a
+    // network it can't name, which still dials, and a device off the
+    // network, which doesn't.
+    let networks = [home(), PhoneNetwork::Unnamed, PhoneNetwork::Elsewhere];
+    for network in networks {
+        for server in [NtpServer::Off, NtpServer::Gateway { port: 123 }] {
+            bounded(async {
+                let kept = tempfile::tempdir().unwrap();
+                let dir = kept.path().display().to_string();
+                let flash: Rc<Flash> = Flash::memory();
+                let sim = Running::start(&flash, Some(*Keypair::from_secret(OWNER).public())).await;
+                let identity = hex(&sim.identity);
+                know(&dir, &[&identity]);
+                ntp(&sim, server).await;
+
+                for round in 0..3 {
+                    let before = time(&sim).await;
+                    let state = writable_state(&sim, &flash).await;
+                    let allowed = wellfed_client::time::check(
+                        &before,
+                        wellfed_model::ClientRole::Owner,
+                        jiff::Timestamp::now(),
+                        None,
+                    ) == wellfed_client::time::ClockCheck::Sync;
+
+                    let caught =
+                        catch_up(&dir, &sim, &identity, Attempt::First, network.clone()).await;
+                    // Off Wi-Fi with no address learned, it never dials.
+                    let reached = matches!(caught.end, CatchUpEnd::Read | CatchUpEnd::Unchanged);
+                    assert!(
+                        reached || caught.end == CatchUpEnd::Away,
+                        "{network:?}: {caught:?}"
+                    );
+
+                    let after = time(&sim).await;
+                    assert_eq!(
+                        writable_state(&sim, &flash).await,
+                        state,
+                        "{network:?} {server:?} round {round}: nothing but the clock written"
+                    );
+                    let synced = after.syncs - before.syncs;
+                    assert!(synced <= 1, "{network:?} {server:?} round {round}");
+                    assert!(
+                        synced == 0 || allowed,
+                        "{network:?} {server:?} round {round}: a sync the rule refused"
+                    );
+                    let expected = reached && server == NtpServer::Off && round == 0;
+                    assert_eq!(
+                        synced == 1,
+                        expected,
+                        "{network:?} {server:?} round {round}"
+                    );
+                }
+                sim.stop().await;
+            });
+        }
+    }
 }
 
 #[test]
