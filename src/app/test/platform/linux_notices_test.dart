@@ -1,3 +1,7 @@
+// The Linux plugin loads libc.so.6 when it is built, so this runs on Linux only.
+@TestOn('linux')
+library;
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
