@@ -48,7 +48,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1911243474;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 963778175;
 
 // Section: executor
 
@@ -3373,6 +3373,38 @@ fn wire__crate__api__install__check_image_impl(
                 let output_ok = Ok::<_, ()>(crate::api::install::check_image(api_dir))?;
                 std::result::Result::Ok(output_ok)
             })())
+        },
+    )
+}
+fn wire__crate__api__alerts__computer_network_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "computer_network",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok = Ok::<_, ()>(crate::api::alerts::computer_network())?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
         },
     )
 }
@@ -8714,6 +8746,15 @@ impl SseDecode for crate::api::alerts::PhoneNetwork {
                 };
             }
             1 => {
+                let mut var_network = <String>::sse_decode(deserializer);
+                return crate::api::alerts::PhoneNetwork::Lan {
+                    network: var_network,
+                };
+            }
+            2 => {
+                return crate::api::alerts::PhoneNetwork::Unnamed;
+            }
+            3 => {
                 return crate::api::alerts::PhoneNetwork::Elsewhere;
             }
             _ => {
@@ -10397,49 +10438,50 @@ fn pde_ffi_dispatcher_primary_impl(
         64 => wire__crate__api__store__app_store_default_impl(port, ptr, rust_vec_len, data_len),
         66 => wire__crate__api__store__appearance_default_impl(port, ptr, rust_vec_len, data_len),
         67 => wire__crate__api__alerts__catch_up_with_impl(port, ptr, rust_vec_len, data_len),
-        71 => wire__crate__api__alerts__confirm_notices_impl(port, ptr, rust_vec_len, data_len),
-        72 => wire__crate__api__alerts__dismiss_notice_impl(port, ptr, rust_vec_len, data_len),
-        75 => wire__crate__api__alerts__feeder_alerts_impl(port, ptr, rust_vec_len, data_len),
-        78 => wire__crate__api__alerts__forget_alerts_impl(port, ptr, rust_vec_len, data_len),
-        84 => wire__crate__api__init_app_impl(port, ptr, rust_vec_len, data_len),
-        87 => wire__crate__api__join__join_feeder_impl(port, ptr, rust_vec_len, data_len),
-        90 => wire__crate__api__store__load_store_impl(port, ptr, rust_vec_len, data_len),
-        91 => wire__crate__api__alerts__note_notifications_refused_impl(
+        71 => wire__crate__api__alerts__computer_network_impl(port, ptr, rust_vec_len, data_len),
+        72 => wire__crate__api__alerts__confirm_notices_impl(port, ptr, rust_vec_len, data_len),
+        73 => wire__crate__api__alerts__dismiss_notice_impl(port, ptr, rust_vec_len, data_len),
+        76 => wire__crate__api__alerts__feeder_alerts_impl(port, ptr, rust_vec_len, data_len),
+        79 => wire__crate__api__alerts__forget_alerts_impl(port, ptr, rust_vec_len, data_len),
+        85 => wire__crate__api__init_app_impl(port, ptr, rust_vec_len, data_len),
+        88 => wire__crate__api__join__join_feeder_impl(port, ptr, rust_vec_len, data_len),
+        91 => wire__crate__api__store__load_store_impl(port, ptr, rust_vec_len, data_len),
+        92 => wire__crate__api__alerts__note_notifications_refused_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        92 => wire__crate__api__alerts__notifications_offer_due_impl(
+        93 => wire__crate__api__alerts__notifications_offer_due_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        93 => {
+        94 => {
             wire__crate__api__alerts__notifications_offered_impl(port, ptr, rust_vec_len, data_len)
         }
-        94 => {
+        95 => {
             wire__crate__api__alerts__notifications_refused_impl(port, ptr, rust_vec_len, data_len)
         }
-        95 => {
+        96 => {
             wire__crate__api__bluetooth__open_bluetooth_link_impl(port, ptr, rust_vec_len, data_len)
         }
-        96 => wire__crate__api__store__open_store_impl(port, ptr, rust_vec_len, data_len),
-        98 => wire__crate__api__alerts__pending_notices_impl(port, ptr, rust_vec_len, data_len),
-        99 => {
+        97 => wire__crate__api__store__open_store_impl(port, ptr, rust_vec_len, data_len),
+        99 => wire__crate__api__alerts__pending_notices_impl(port, ptr, rust_vec_len, data_len),
+        100 => {
             wire__crate__api__restore__read_restore_feeder_impl(port, ptr, rust_vec_len, data_len)
         }
-        101 => wire__crate__api__alerts__save_instant_impl(port, ptr, rust_vec_len, data_len),
-        104 => wire__crate__api__alerts__set_mute_impl(port, ptr, rust_vec_len, data_len),
-        105 => wire__crate__api__feeder__settings_changes_default_impl(
+        102 => wire__crate__api__alerts__save_instant_impl(port, ptr, rust_vec_len, data_len),
+        105 => wire__crate__api__alerts__set_mute_impl(port, ptr, rust_vec_len, data_len),
+        106 => wire__crate__api__feeder__settings_changes_default_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        106 => wire__crate__api__setup__settle_setup_impl(port, ptr, rust_vec_len, data_len),
-        111 => wire__crate__api__store__swap_store_impl(port, ptr, rust_vec_len, data_len),
+        107 => wire__crate__api__setup__settle_setup_impl(port, ptr, rust_vec_len, data_len),
+        112 => wire__crate__api__store__swap_store_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -10504,31 +10546,31 @@ fn pde_ffi_dispatcher_sync_impl(
         68 => wire__crate__api__restore__check_backup_impl(ptr, rust_vec_len, data_len),
         69 => wire__crate__api__install__check_build_impl(ptr, rust_vec_len, data_len),
         70 => wire__crate__api__install__check_image_impl(ptr, rust_vec_len, data_len),
-        73 => wire__crate__api__router__feed_due_seconds_impl(ptr, rust_vec_len, data_len),
-        74 => wire__crate__api__store__feeder_address_impl(ptr, rust_vec_len, data_len),
-        76 => wire__crate__api__install__feeder_answered_impl(ptr, rust_vec_len, data_len),
-        77 => wire__crate__api__store__fingerprint_impl(ptr, rust_vec_len, data_len),
-        79 => wire__crate__api__install__forget_install_impl(ptr, rust_vec_len, data_len),
-        80 => wire__crate__api__restore__forget_restore_key_impl(ptr, rust_vec_len, data_len),
-        81 => wire__crate__api__alerts__hold_alerts_impl(ptr, rust_vec_len, data_len),
-        82 => wire__crate__api__store__identity_bytes_impl(ptr, rust_vec_len, data_len),
-        83 => wire__crate__api__store__identity_hex_impl(ptr, rust_vec_len, data_len),
-        85 => wire__crate__api__install__install_request_open_impl(ptr, rust_vec_len, data_len),
-        86 => wire__crate__api__join__invite_feeder_impl(ptr, rust_vec_len, data_len),
-        88 => wire__crate__api__install__kept_backup_impl(ptr, rust_vec_len, data_len),
-        89 => wire__crate__api__install__kept_backups_impl(ptr, rust_vec_len, data_len),
-        97 => wire__crate__api__install__pending_install_impl(ptr, rust_vec_len, data_len),
-        100 => wire__crate__api__install__route_source_impl(ptr, rust_vec_len, data_len),
-        102 => wire__crate__api__install__set_aside_backup_impl(ptr, rust_vec_len, data_len),
-        103 => wire__crate__api__install__set_aside_ledgers_impl(ptr, rust_vec_len, data_len),
-        107 => wire__crate__api__router__settled_feed_impl(ptr, rust_vec_len, data_len),
-        108 => wire__crate__api__setup__setup_control_impl(ptr, rust_vec_len, data_len),
-        109 => wire__crate__api__setup__setup_service_impl(ptr, rust_vec_len, data_len),
-        110 => wire__crate__api__store__store_notice_read_impl(ptr, rust_vec_len, data_len),
-        112 => wire__crate__api__feeder__time_zones_impl(ptr, rust_vec_len, data_len),
-        113 => wire__crate__api__update__unknown_end_impl(ptr, rust_vec_len, data_len),
-        114 => wire__crate__api__update__update_offer_impl(ptr, rust_vec_len, data_len),
-        115 => wire__crate__api__feeder__use_data_directory_impl(ptr, rust_vec_len, data_len),
+        74 => wire__crate__api__router__feed_due_seconds_impl(ptr, rust_vec_len, data_len),
+        75 => wire__crate__api__store__feeder_address_impl(ptr, rust_vec_len, data_len),
+        77 => wire__crate__api__install__feeder_answered_impl(ptr, rust_vec_len, data_len),
+        78 => wire__crate__api__store__fingerprint_impl(ptr, rust_vec_len, data_len),
+        80 => wire__crate__api__install__forget_install_impl(ptr, rust_vec_len, data_len),
+        81 => wire__crate__api__restore__forget_restore_key_impl(ptr, rust_vec_len, data_len),
+        82 => wire__crate__api__alerts__hold_alerts_impl(ptr, rust_vec_len, data_len),
+        83 => wire__crate__api__store__identity_bytes_impl(ptr, rust_vec_len, data_len),
+        84 => wire__crate__api__store__identity_hex_impl(ptr, rust_vec_len, data_len),
+        86 => wire__crate__api__install__install_request_open_impl(ptr, rust_vec_len, data_len),
+        87 => wire__crate__api__join__invite_feeder_impl(ptr, rust_vec_len, data_len),
+        89 => wire__crate__api__install__kept_backup_impl(ptr, rust_vec_len, data_len),
+        90 => wire__crate__api__install__kept_backups_impl(ptr, rust_vec_len, data_len),
+        98 => wire__crate__api__install__pending_install_impl(ptr, rust_vec_len, data_len),
+        101 => wire__crate__api__install__route_source_impl(ptr, rust_vec_len, data_len),
+        103 => wire__crate__api__install__set_aside_backup_impl(ptr, rust_vec_len, data_len),
+        104 => wire__crate__api__install__set_aside_ledgers_impl(ptr, rust_vec_len, data_len),
+        108 => wire__crate__api__router__settled_feed_impl(ptr, rust_vec_len, data_len),
+        109 => wire__crate__api__setup__setup_control_impl(ptr, rust_vec_len, data_len),
+        110 => wire__crate__api__setup__setup_service_impl(ptr, rust_vec_len, data_len),
+        111 => wire__crate__api__store__store_notice_read_impl(ptr, rust_vec_len, data_len),
+        113 => wire__crate__api__feeder__time_zones_impl(ptr, rust_vec_len, data_len),
+        114 => wire__crate__api__update__unknown_end_impl(ptr, rust_vec_len, data_len),
+        115 => wire__crate__api__update__update_offer_impl(ptr, rust_vec_len, data_len),
+        116 => wire__crate__api__feeder__use_data_directory_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -13287,7 +13329,11 @@ impl flutter_rust_bridge::IntoDart for crate::api::alerts::PhoneNetwork {
                 subnet.into_into_dart().into_dart(),
             ]
             .into_dart(),
-            crate::api::alerts::PhoneNetwork::Elsewhere => [1.into_dart()].into_dart(),
+            crate::api::alerts::PhoneNetwork::Lan { network } => {
+                [1.into_dart(), network.into_into_dart().into_dart()].into_dart()
+            }
+            crate::api::alerts::PhoneNetwork::Unnamed => [2.into_dart()].into_dart(),
+            crate::api::alerts::PhoneNetwork::Elsewhere => [3.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -18106,8 +18152,15 @@ impl SseEncode for crate::api::alerts::PhoneNetwork {
                 <String>::sse_encode(gateway, serializer);
                 <String>::sse_encode(subnet, serializer);
             }
-            crate::api::alerts::PhoneNetwork::Elsewhere => {
+            crate::api::alerts::PhoneNetwork::Lan { network } => {
                 <i32>::sse_encode(1, serializer);
+                <String>::sse_encode(network, serializer);
+            }
+            crate::api::alerts::PhoneNetwork::Unnamed => {
+                <i32>::sse_encode(2, serializer);
+            }
+            crate::api::alerts::PhoneNetwork::Elsewhere => {
+                <i32>::sse_encode(3, serializer);
             }
             _ => {
                 unimplemented!("");
