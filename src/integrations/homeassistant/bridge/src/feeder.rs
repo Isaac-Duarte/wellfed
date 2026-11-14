@@ -59,6 +59,13 @@
 //!     first.
 //! - **Revocation.** A key the feeder no longer knows ends the session for
 //!   good: it is reported once and the thread stops reconnecting.
+//! - **The clock.** While the status reads the feeder's clock invalid (after
+//!   a power cut, or once it expired with no time server), the session gives
+//!   it Home Assistant's clock and zone, at most every [`CLOCK_EVERY`]. Home
+//!   Assistant joins as a member, and a member's sync sets only a clock that
+//!   is not set: it neither moves a valid one's trusted interval nor teaches
+//!   its rate ([`wellfed_client::time::sync_due`]). A sync is not a feed, but
+//!   it goes once all the same: one whose answer is lost waits its turn.
 
 use std::collections::{HashMap, VecDeque};
 use std::net::SocketAddr;
@@ -117,6 +124,12 @@ const ANSWERED_TAIL: usize = 64;
 /// meanwhile are other lost feeds' settlements, a handful at most. A week
 /// of feeds is far fewer.
 const ANSWERED_MOST: usize = 1024;
+/// How often at most the session syncs a clock the feeder says it needs.
+/// A meal the feeder holds while its clock is invalid still runs once it is
+/// set within 15 minutes of the meal's minute (the missed-meal rule), so a
+/// sync tried every 5 minutes gets two more tries in that window when one
+/// does not land. A sync that lands ends the asking at once.
+pub(crate) const CLOCK_EVERY: Duration = Duration::from_secs(5 * 60);
 /// How long a write may wait for the session before it is refused unsent.
 /// A press reaches an idle session within milliseconds; one that waited
 /// longer stood behind a connect or a slow write, and by then the owner
@@ -444,6 +457,9 @@ struct Memory {
     alerts: Option<Tracker>,
     /// What holds feeds back besides this client's own lost feeds.
     holds: Holds,
+    /// When a session last sent the feeder a clock sync, so a reconnecting
+    /// session does not send one sooner than [`CLOCK_EVERY`].
+    clock_synced: Option<Instant>,
 }
 
 impl Memory {
@@ -816,6 +832,8 @@ enum Outstanding {
     },
     /// A read, and how many requests the session had asked when it went.
     Read(Read, u64),
+    /// A sync of the feeder's clock.
+    Clock,
 }
 
 struct Session<'a> {
@@ -912,6 +930,7 @@ impl<'a> Session<'a> {
         };
         let newest = status.last_event;
         self.memory.facts.status = Some(status);
+        self.clock_due()?;
         for read in [Read::Settings, Read::Plans, Read::Time, Read::Calibration] {
             if self.serves(read) {
                 self.read(read)?;
@@ -1222,6 +1241,17 @@ impl<'a> Session<'a> {
                 self.settle()
             }
             Some(Outstanding::Read(read, asked)) => self.fact(read, asked, answer),
+            // A sync that landed changed the time and the status; one that
+            // did not changes nothing, and the next turn after
+            // `CLOCK_EVERY` tries again.
+            Some(Outstanding::Clock) => match answer {
+                Some(Answer::Done { .. }) if self.serves(Read::Time) => {
+                    self.read(Read::Time)?;
+                    self.read(Read::Status)
+                }
+                Some(Answer::Done { .. }) => self.read(Read::Status),
+                _ => Ok(()),
+            },
             None => Ok(()),
         }
     }
@@ -1337,6 +1367,7 @@ impl<'a> Session<'a> {
         match (read, answer) {
             (Read::Status, Some(Answer::Status(status))) => {
                 facts.status = Some(status);
+                self.clock_due()?;
                 self.alerts_due()?;
                 self.idle(asked)?;
             }
@@ -1387,6 +1418,42 @@ impl<'a> Session<'a> {
             Some(_) => Ok(()),
             None => self.state(),
         }
+    }
+
+    /// Sync the feeder's clock if the status read last says it is not set,
+    /// this role may, none is out and the last went [`CLOCK_EVERY`] ago.
+    fn clock_due(&mut self) -> Step {
+        let unset = self
+            .memory
+            .facts
+            .status
+            .as_ref()
+            .is_some_and(|status| status.clock.is_none());
+        let rested = self
+            .memory
+            .clock_synced
+            .is_none_or(|at| at.elapsed() >= CLOCK_EVERY);
+        let out = self
+            .pending
+            .values()
+            .any(|pending| matches!(pending, Outstanding::Clock));
+        if !unset || !rested || out {
+            return Ok(());
+        }
+
+        let sync = Op::TimeSync(wellfed_client::time::sync(
+            jiff::Timestamp::now(),
+            &TimeZone::system(),
+        ));
+        if !sync.allowed(self.role) {
+            return Ok(());
+        }
+        let id = random().map_err(lost)?;
+        self.connection.request(id, &sync).map_err(lost)?;
+        self.asked += 1;
+        self.memory.clock_synced = Some(Instant::now());
+        self.pending.insert(id, Outstanding::Clock);
+        Ok(())
     }
 
     /// Read the alert table when the status shows it moved since the last
@@ -1980,7 +2047,7 @@ mod tests {
             .values()
             .filter_map(|pending| match pending {
                 Outstanding::Read(read, asked) => Some((*asked, *read)),
-                Outstanding::Write { .. } => None,
+                Outstanding::Write { .. } | Outstanding::Clock => None,
             })
             .collect();
         reads.sort_by_key(|(asked, _)| *asked);
@@ -2021,6 +2088,52 @@ mod tests {
             }
             session.turn().unwrap();
             assert_eq!(reads(&session), [Read::Status]);
+        });
+    }
+
+    /// The clock syncs the session has out.
+    fn clock_syncs(session: &Session<'_>) -> usize {
+        session
+            .pending
+            .values()
+            .filter(|pending| matches!(pending, Outstanding::Clock))
+            .count()
+    }
+
+    /// A clock the status reads unset is synced one at a time, and once
+    /// one went, not again within `CLOCK_EVERY`, landed or not.
+    #[test]
+    fn a_clock_sync_goes_one_at_a_time_and_no_sooner_than_its_cadence() {
+        use wellfed_feeder_sim::harness::Threaded;
+
+        let sim = Threaded::start(*wellfed_session::noise::Keypair::from_secret(OWNER).public());
+        runtime().block_on(async {
+            let (updates, _heard) = std_mpsc::channel();
+            let mut memory = Memory::default();
+            let mut session = owner_session(&sim, &mut memory, &updates).await;
+            let Answer::Status(status) = session
+                .connection
+                .ask(random().unwrap(), &Op::Status)
+                .await
+                .unwrap()
+            else {
+                panic!("no status");
+            };
+            assert!(status.clock.is_none(), "a fresh feeder needs the time");
+            session.memory.facts.status = Some(status);
+
+            session.clock_due().unwrap();
+            session.clock_due().unwrap();
+            assert_eq!(clock_syncs(&session), 1, "one out at a time");
+
+            // As if its answer came without the clock set.
+            session.pending.clear();
+            session.clock_due().unwrap();
+            assert_eq!(clock_syncs(&session), 0, "not again so soon");
+
+            session.memory.clock_synced = Instant::now().checked_sub(CLOCK_EVERY);
+            session.clock_due().unwrap();
+            assert_eq!(clock_syncs(&session), 1, "again once its turn comes");
         });
     }
 

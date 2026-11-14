@@ -325,11 +325,7 @@ fn roles_dart() -> String {
             (name, may)
         })
         .collect();
-    let sets: BTreeSet<&Vec<usize>> = rows
-        .iter()
-        .chain(&invites)
-        .map(|(_, may)| may)
-        .collect();
+    let sets: BTreeSet<&Vec<usize>> = rows.iter().chain(&invites).map(|(_, may)| may).collect();
 
     let mut out = String::from(
         "// Generated from wellfed_proto::access by src/app/rust/tests/protocol.rs; do not edit.\n\n\

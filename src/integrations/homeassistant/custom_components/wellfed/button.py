@@ -1,4 +1,8 @@
-"""The feeder's buttons: feed, cancel, reset the desiccant, chime, restart."""
+"""The feeder's buttons: feed, cancel, reset the desiccant, chime.
+
+There is no restart: the feeder lets only an owner restart it, and Home
+Assistant joins as a member.
+"""
 
 from __future__ import annotations
 

@@ -210,7 +210,6 @@ async fn read(
     // status read next.
     let _ = keep_clock(&mut connection).await;
 
-
     let Answer::Status(status) = ask(&mut connection, Read::Status).await? else {
         return Ok(Visit::Answered);
     };

@@ -12,7 +12,9 @@
 //! - a write while the feeder is gone is refused unsent, never held, and a
 //!   revoked key stops the session;
 //! - a write refused before it went leaves the session, and a feed still
-//!   out on it, as they were.
+//!   out on it, as they were;
+//! - a clock the feeder does not have is set by the member's sync, once, and
+//!   a set one is left alone.
 
 mod support;
 
@@ -201,6 +203,40 @@ const BREAKFAST: Plan = Plan {
     enabled: true,
     call: 0,
 };
+
+/// The feeder's time view, read by its owner.
+fn time(sim: &Threaded) -> wellfed_model::TimeView {
+    let Answer::Time(time) = owner(sim, &Op::GetTime) else {
+        panic!("no time view");
+    };
+    time
+}
+
+#[test]
+fn a_clock_the_feeder_lacks_is_set_once_and_a_set_one_left_alone() {
+    let (sim, key) = joined();
+    assert_eq!(time(&sim).clock_ms, None, "a fresh feeder needs the time");
+
+    let feeder = session(&sim, key, sim.address, Clocks::DEFAULT);
+    let deadline = Instant::now() + WAIT;
+    let set = loop {
+        let time = time(&sim);
+        if time.clock_ms.is_some() {
+            break time;
+        }
+        assert!(Instant::now() < deadline, "the clock set within {WAIT:?}");
+        std::thread::sleep(Duration::from_millis(200));
+    };
+    assert_eq!(set.last, Some(wellfed_model::TimeSource::Client));
+    assert_eq!(set.syncs, 1);
+
+    // Each status read finds the clock set, and sends nothing more.
+    for _ in 0..3 {
+        feeder.refresh();
+        state_where(&feeder, |state| state.status.clock_ms.is_some());
+    }
+    assert_eq!(time(&sim).syncs, 1, "a set clock is left alone");
+}
 
 #[test]
 fn the_session_feeds_to_its_fed_event_and_sets_the_lock() {

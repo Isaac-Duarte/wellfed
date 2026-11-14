@@ -8,7 +8,7 @@ Code: `wellfed-core/src/clock/` (`wall.rs`, `zone.rs`, `ntp.rs`), `wellfed-hal/s
 
 ## Sources
 
-- **A client's sync** (`Op::TimeSync`, inside a Noise session) carries the time, the zone's offset now and its next change. `wellfed time` sends this computer's clock and zone.
+- **A client's sync** (`Op::TimeSync`, inside a Noise session) carries the time, the zone's offset now and its next change. The app and Home Assistant send their host's clock and zone when the time view asks for it ([the cadence](#the-clock)), and `wellfed time` sends this computer's.
 - **NTP** from the loop ([below](#ntp)), when the time settings name a server. Offline means no server and no cloud, not no network: the default server is the DHCP gateway, which many home routers answer for.
 
 A fix is a time and how far off it could be. A client sync counts 1 s for its trip across the LAN. An NTP answer counts half its round trip less the server's processing, plus the server's root delay and dispersion, plus 3 ms of rounding.
@@ -36,8 +36,10 @@ The SysTimer itself has measured 2 ppm on one NTP poll and 8 to 18 ppm over the 
 
 **The cadence this gives:**
 
-- **With NTP** (the gateway by default) nothing is needed. Polls every 17 minutes keep the reading, and at each expiry the next answer (within 64 s) re-sets it inside the old interval, so the clock reads invalid for up to a minute each time.
-- **Without NTP,** a client must sync it about every 6 h until an owner's syncs have taught the rate, then at least weekly. A home without a router that answers NTP can set a public pool's address (`wellfed time --ntp IP[:PORT]`; hostnames are not resolved yet). Today the app syncs only after pairing and when the clock is lost, and Home Assistant never does, so nothing in the beta keeps this cadence: a home without NTP points the feeder at a time server.
+- **With NTP** (the gateway by default) nothing is needed. Polls every 17 minutes keep the reading, and at each expiry the next answer (within 64 s) re-sets it inside the old interval, so the clock reads invalid for up to a minute each time. An owner's app that checks in re-anchors it first (below), which ends those minutes.
+- **Without NTP,** a client must sync it about every 6 h until an owner's syncs have taught the rate, then at least weekly. An owner's app keeps that cadence by itself while it reaches the feeder: `wellfed_client::time::sync_due` asks an owner's client to sync once the reported error reaches half of `MAX_ERROR_MS` (`OWNER_SYNC_ERROR_MS`, 60 s). That is about 3.3 h after a fix while unlearned, halfway to expiry, and about 3.5 days once learned. The app checks on each read of the time in a session (every minute) and from Android's periodic catch-up (about every 15 minutes, far less in Doze), and sends one sync at most every 30 minutes a session. Each sync is measured against the first owner's sync since the rate was forgotten, so the syncs from about 11 hours on teach the rate.
+- **A member's or Home Assistant's client** syncs only a clock that reads invalid, since its sync can only narrow a valid one. Home Assistant tries at most every 5 minutes while its status reads the clock invalid, so a meal the clock held still runs within the [missed-meal rule](#missed-meal-rule)'s 15 minutes.
+- So a home without NTP stays set while an owner's app reaches the feeder every few hours. Otherwise it can set a public pool's address (`wellfed time --ntp IP[:PORT]`; hostnames are not resolved yet), or choose one on the app's Clock screen.
 
 **Drift learning** comes from owners' syncs only:
 
@@ -81,7 +83,7 @@ A client turns the owner's IANA name into the rule with `wellfed_client::time::r
 - A footer only describes the zone after its file's last listed transition. So a zone that lists irregular changes ahead is refused (`RuleError::Irregular`) and stays on the syncs' offsets. No zone in the current tzdb is (host-tested over every zone).
 - Every footer fits the 48 bytes the store keeps.
 
-Without a zone setting, local time comes from the last client sync's offset and next change, which is correct across one change. A rule wins over a sync's offsets. `wellfed time --zone America/Denver` (or `--zone system`) sets it, and `--clear-zone` clears it.
+Without a zone setting, local time comes from the last client sync's offset and next change, which is correct across one change. A rule wins over a sync's offsets. The app's Clock screen sets it to the phone's zone, or to any zone the owner searches for in the bundled tzdb's names (`wellfed_client::time::zones`, each area and place and `UTC`), and clears it. `wellfed time --zone America/Denver` (or `--zone system`) sets it, and `--clear-zone` clears it.
 
 ## NTP
 
@@ -161,4 +163,5 @@ So a forward jump, a restart or a long unsynced spell runs only occurrences at m
 - **SysTimer rate.** Observed but rough: the supervision probe read the SysTimer about 475 ppm slow over one 60 s probe, about ±1,000 ppm.
 - **Host and simulation.** Modeled (October 26): the error-bound clock and its rules; the review's attacks (an hourly edge answerer, a multi-day walk, a poisoned drift rate, a boot-time baseline, a kiss-o'-death flood), each with a regression test; the zone parser over every tzdb zone; the NTP exchange, including a denying server on the firmware's loop; the carry and resume (`wall_clock.rs`, and through the fake RAM and RTC in `wellfed-hal`'s `clock.rs`); an erase during an NTP exchange; and the missed-meal rule.
 - **A host tzdb newer than the bundled one.** Modeled (November 11, 2026, `wellfed-client`'s `time.rs` tests): a daylight rule checked in winter against a fixed host offset was refused at its April change, through `rule` too, and rules matching their zone (a fixed offset, Sydney's southern seasons) agreed.
+- **Clients keeping the cadence.** Simulated (November 13, 2026): `sync_due`'s rule by error and role, and the app session's 30-minute spacing (unit tests); an owner's catch-up setting a fresh simulated feeder's clock once and leaving it set at the next (`src/app/rust/tests/alerts.rs`); Home Assistant's bridge, a member, setting it once and sending nothing more while the status reads it set, and its 5-minute spacing. Not yet run on the feeder: an app's syncs over a day teaching the rate with no NTP.
 - **NTP answers a day ahead.** Simulated (November 11, 2026): answers a day ahead of an owner-synced clock, twice the three-miss run, were all refused, and the clock read invalid after the third (`wall_clock.rs`). On the feeder's loop in `wellfed-feeder-sim`, breakfast fed once, held while the clock needed the time, and was not fed again after the owner's sync.

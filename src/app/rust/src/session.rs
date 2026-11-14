@@ -1101,11 +1101,19 @@ mod tests {
 
         assert!(sync_due(&grown, ClientRole::Owner, None));
         assert!(!sync_due(&after_a_power_cut(), ClientRole::Owner, None));
-        assert!(!sync_due(&grown, ClientRole::Owner, Some(Duration::from_secs(29 * 60))));
+        assert!(!sync_due(
+            &grown,
+            ClientRole::Owner,
+            Some(Duration::from_secs(29 * 60))
+        ));
         assert!(sync_due(&grown, ClientRole::Owner, Some(SYNC_AGAIN)));
         assert!(!sync_due(&grown, ClientRole::Member, None));
         assert!(sync_due(&lost, ClientRole::Member, None));
-        assert!(!sync_due(&lost, ClientRole::Member, Some(Duration::from_secs(60))));
+        assert!(!sync_due(
+            &lost,
+            ClientRole::Member,
+            Some(Duration::from_secs(60))
+        ));
     }
 
     #[test]

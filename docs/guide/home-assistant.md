@@ -47,6 +47,8 @@ Every state comes from the feeder itself, never from the last button you pressed
 | **Alerts** sensor | How many of the feeder's alerts are open, each listed in its attributes with its kind and level. |
 | **Alert** event | Fires as each alert opens or clears, with the same key both times. |
 
+Home Assistant also keeps the feeder's clock from staying lost. When the feeder says it needs the time, after a power cut or with no time server, Home Assistant gives it its own time and zone, trying again every 5 minutes until it takes. A meal held by a lost clock still runs if the time comes back within 15 minutes of it. Home Assistant can't keep a clock from running out in the first place, since only an owner's time does that ([when something is down](everyday-use.md#when-something-is-down)).
+
 The **wellfed.feed** action feeds a feeder from an automation and answers the feeder's number for the feed. **wellfed.cancel_feed** stops a feed. Every event the feeder records also fires `wellfed_event`, which an automation can trigger on.
 
 ### Example: feed at sunrise on weekends

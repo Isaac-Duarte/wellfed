@@ -254,7 +254,11 @@ fn a_catch_up_sets_a_clock_that_is_not_set_and_leaves_a_set_one() {
         let sim = Running::start(&flash, Some(*Keypair::from_secret(OWNER).public())).await;
         let identity = hex(&sim.identity);
         know(&dir, &[&identity]);
-        assert_eq!(time(&sim).await.clock_ms, None, "a fresh feeder needs the time");
+        assert_eq!(
+            time(&sim).await.clock_ms,
+            None,
+            "a fresh feeder needs the time"
+        );
 
         let first = catch_up(&dir, &sim, &identity, Attempt::First, home()).await;
         assert_eq!(first.end, CatchUpEnd::Read);

@@ -60,7 +60,7 @@ flowchart LR
 | --- | --- |
 | Lock or unlock the buttons | Hold Lock for 5 seconds, or tap **Buttons locked** or **Buttons unlocked** beside the drawing on Today |
 | Feed one portion | Press Dispense on an unlocked panel |
-| Start Bluetooth setup | On an unlocked panel, hold Lock, then Mic, for 5 seconds. No feed runs during setup, which ends after 15 idle minutes, so an accidental hold can skip a meal. The app can't end it sooner |
+| Start Bluetooth setup | On an unlocked panel, hold Lock, then Mic, for 5 seconds. No feed runs during setup, which ends after 15 idle minutes, so an accidental hold can skip a meal. To end it sooner, an owner taps **Restart the feeder** in the feeder's **Settings** |
 | Add this phone back when no phone can reach the feeder | On an unlocked panel, hold Lock, then Dispense, for 5 seconds. Then, within 2 minutes, choose **Recover a feeder** in the app, and key in the code it shows |
 | Erase people, Wi-Fi, meals, settings and history | On an unlocked panel, hold Reset for 5 seconds |
 
@@ -122,19 +122,19 @@ Your feeder needs the time to run meals, and it has no battery-backed clock. "No
 
 "Dispense works" always means on an unlocked panel, and the panel is locked after a restart. While the feeder is trying to rejoin Wi-Fi, a press can be refused and the warning light flashes, and during an outage it keeps trying. Press again a little later. A meal is retried by itself within its 15 minutes.
 
-After a power cut, your plans come back but the clock doesn't. If your router answers, the clock is set soon after the feeder rejoins Wi-Fi. Otherwise, open the app on the same Wi-Fi: it gives the feeder your phone's time when it connects to a feeder with no clock, and Today offers **Set the time from this phone**.
+After a power cut, your plans come back but the clock doesn't. If your router answers, the clock is set soon after the feeder rejoins Wi-Fi. Otherwise, open the app on the same Wi-Fi: it gives the feeder your phone's time when it connects to a feeder with no clock, and Today offers **Set the time from this phone**. Home Assistant gives it the time within about 5 minutes, and an Android phone's background check does too.
 
-The feeder also needs your time zone, since meals are set in local time. The app stores your phone's zone when you set a feeder up; **Settings** → **Clock** shows it, and offers **Use this phone's zone** when the feeder keeps a different one. Without one, the feeder uses the offset a phone last gave it, which a power cut erases: the clock comes back right from the router or a time server, but every meal holds until a phone gives the offset again. The app does that as soon as it connects, and the **Today** tab says **Meals are on hold** until then.
+The feeder also needs your time zone, since meals are set in local time. The app stores your phone's zone when you set a feeder up. **Settings** → **Clock** shows it and offers **Use this phone's zone** when the feeder keeps a different one. **Choose a zone…** searches for any other zone by city or region, and **Clear the zone** removes it. Without one, the feeder uses the offset a phone last gave it, which a power cut erases: the clock comes back right from the router or a time server, but every meal holds until a phone gives the offset again. The app does that as soon as it connects, and the **Today** tab says **Meals are on hold** until then.
 
 When the time returns, a meal less than 15 minutes late runs, and an older one is missed. On a day with a long outage, feed your pet another way.
 
-Even with your router answering, the clock reads invalid for up to a minute about every 6.6 hours, until the next poll sets it again. A meal due in that minute runs once it's back.
+The feeder trusts its own clock for about 6.6 hours after it was last set. With only your router answering, the clock reads invalid for up to a minute about that often, until the next poll sets it again. A meal due in that minute runs once it's back.
 
-A longer limit, about a week, needs two clock syncs from an owner about 11 hours apart, and the feeder forgets it on every restart. The app gives the feeder the time only when its clock is lost, and Home Assistant never does, so neither teaches it this. Plan on the 6.6 hours.
+An owner's app keeps the clock set by itself. Each time it connects, and on Android from its background check every 15 minutes or so while the phone is on the feeder's Wi-Fi, it gives the feeder your phone's time once the feeder's own error estimate passes a minute. That's about every 3.3 hours at first. After about 11 hours of these, the feeder has learned how fast its clock runs, and then holds the time for about a week. It forgets that at every restart and learns it again. A member's app and Home Assistant set the clock only when it's lost, since the feeder trusts only an owner's time to move a clock that's still set.
 
 An owner chooses where the time comes from, with **Get the time from** on the **Clock** screen: **Your router**, **A time server** or **Phones only**. An address has to be an IP address, since names aren't looked up. Many home routers don't answer with the time. When yours doesn't, the feeder's **Today** tab offers Cloudflare's public time server, or phones only. Either choice ends the offer. Out of the box the feeder asks only your router, so it contacts nothing outside your network unless you choose it. **A time server** also lists public time servers from Cloudflare and Google to pick with one tap.
 
-**Phones only** needs something to set the clock at least every 6 hours or so, and nothing in the beta does that. The app sets the clock only once it's lost, when you open the app, and by then meals are already holding. Home Assistant doesn't set it at all. Choose your router or a time server instead.
+**Phones only** works when an owner's app reaches the feeder at least every 6 hours or so: an Android phone that's home most of the day, or the app left open on a computer at home. Android runs its background check less often while the phone sleeps, and a phone away from home can't reach the feeder. If the clock is lost anyway, Home Assistant or any phone sets it again once it reaches the feeder, and a meal less than 15 minutes late still runs. If nothing of yours stays home, choose your router or a time server.
 
 ## Alerts
 
@@ -157,11 +157,9 @@ The feeder itself runs no VPN, so the computer at home forwards to it. Its addre
 
 ## People and invites
 
-An owner can do everything. A member can feed, edit meals and settings, and lock the buttons. In the app, the Wi-Fi, clock, meal call, people and firmware screens show only for an owner. A feeder lists up to eight phones, computers and keys in all.
+An owner can do everything. A member can feed, edit meals and settings, lock the buttons, and invite other members. In the app, the Wi-Fi, clock, meal call and firmware screens show only for an owner, and only an owner can remove people or restart the feeder. A feeder lists up to eight phones, computers and keys in all.
 
-Open **Settings**, then **People**, and tap **Invite someone**. Choose **Member** or **Owner**, then show the code or share the link. On their phone, on the same Wi-Fi, they choose **Add a feeder**, then **Join with an invite**. Remove someone from the same screen, and their connection closes at once.
-
-Only an owner can invite from the app. The feeder would take an invite for a member from a member too, but the app shows **People** only to owners.
+Open **Settings**, then **People**, and tap **Invite someone**. An owner chooses **Member** or **Owner**. A member's invite is always for a member. Then show the code or share the link. On their phone, on the same Wi-Fi, they choose **Add a feeder**, then **Join with an invite**. An owner removes someone from the same screen, and their connection closes at once.
 
 An invite works once and runs out after 10 minutes, or sooner if the feeder restarts. Treat it like a password until then. [Who can talk to your feeder](how-it-works/access.md) explains the rest.
 
@@ -183,5 +181,6 @@ A new build runs on trial, and if it doesn't start properly the feeder goes back
 - **Observed, October 29, 2026.** One dry food weighed 7.11 g a portion, across two runs with a refill between them. Eight 1-portion feeds from a hopper near empty dropped 1.7, 11.4, 6.5, 7.0, 6.0, 3.0, 1.9 and 0 g while the food read low.
 - **Observed, once, October 28, 2026.** A meal due with no clock after a cold boot held, and was recorded as missed when the time came back 16 minutes later.
 - **Observed, October 28, 2026.** On batteries, Wi-Fi went off after 5 seconds and a Dispense press fed a portion on the same feeder. Twenty cycles of mains away and back each rejoined Wi-Fi. See [power](../firmware/power.md).
+- **Simulated, November 13, 2026.** An owner's app and its background check set a simulated feeder's lost clock and left a fresh one alone, and Home Assistant set a lost one as a member. The 3.3-hour cadence and the week a learned clock holds are the clock's arithmetic; a day of the app's syncs with no time server hasn't run on the feeder.
 - **Modeled.** The clock's expiry after a long uptime and its drift learning haven't run on the feeder, and the battery floor has run only in simulation. See [clock](../firmware/clock.md) and [power](../firmware/power.md).
 - The screenshots are from an October 31 run. They're cropped, and nothing in them needed painting over.
