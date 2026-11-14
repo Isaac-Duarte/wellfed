@@ -20,8 +20,8 @@ use wellfed_formats::canonical::sha256;
 use wellfed_formats::require;
 
 use super::{
-    APP, APP_ID, Error, Options, Version, at, copy_tree, flutter_build, output, require_built,
-    require_listed, source_date_epoch, status, template,
+    APP, APP_ID, Dotted, Error, Options, Version, at, copy_tree, flutter_build, output,
+    require_built, require_listed, source_date_epoch, status, template,
 };
 
 /// The release bundle, relative to the app.
