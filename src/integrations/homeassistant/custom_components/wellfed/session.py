@@ -115,10 +115,15 @@ def event_data(identity: bytes, event: bridge.Event) -> dict[str, object]:
 
 
 def open_feeder(
-    data: Mapping[str, Any], pending: list[bridge.Pending], answered: list[int], unread: bool
+    data: Mapping[str, Any],
+    pending: list[bridge.Pending],
+    answered: list[int],
+    unread: bool,
+    zone: str,
 ) -> bridge.Feeder:
     """The bridge's session for an entry's data, handed the feeds the last run
-    left unsettled, and whether the store did not read."""
+    left unsettled, whether the store did not read, and Home Assistant's time
+    zone, which a clock sync gives the feeder and local times are read in."""
     return bridge.Feeder(
         bytes.fromhex(data[CONF_SECRET]),
         bytes.fromhex(data[CONF_IDENTITY]),
@@ -126,6 +131,7 @@ def open_feeder(
         pending,
         answered,
         unread,
+        zone,
     )
 
 

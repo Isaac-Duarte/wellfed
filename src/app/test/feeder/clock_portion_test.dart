@@ -181,6 +181,63 @@ void main() {
       expect(find.text("The feeder can't follow that time zone."), findsOneWidget);
     });
 
+    testWidgets('a phone that agrees with the feeder says nothing about it', (tester) async {
+      await show(tester);
+
+      expect(find.textContaining('disagree about the time'), findsNothing);
+      expect(find.text('Set the time from this phone'), findsNothing);
+    });
+
+    testWidgets("an owner's phone that disagrees says so and sets the time only when asked", (tester) async {
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
+      session.status(
+        fakeCard(
+          time: const TimeInfo(
+            generation: 8,
+            writable: true,
+            ntp: NtpView.off(),
+            clockMs: 1000,
+            errorMs: 400,
+            syncs: 1,
+            last: TimeSource.owner,
+            phoneAheadMs: 5 * 60000,
+          ),
+        ),
+      );
+      await showTab(tester, ClockScreen(feeder: feeder));
+      session.requests.clear();
+
+      expect(find.textContaining('This phone and the feeder disagree about the time.'), findsOneWidget);
+      expect(find.textContaining('This phone is 5 min ahead of the feeder'), findsOneWidget);
+      expect(session.requests, isEmpty);
+
+      await tapIn(tester, find.text('Set the time from this phone'));
+      expect(session.requests, [const FeederRequest.syncClock(), const FeederRequest.getTime()]);
+    });
+
+    testWidgets('a member whose phone disagrees is told an owner can set it', (tester) async {
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
+      session.status(
+        fakeCard(
+          time: const TimeInfo(
+            generation: 8,
+            writable: false,
+            ntp: NtpView.gateway(port: 123),
+            clockMs: 1000,
+            errorMs: 400,
+            syncs: 1,
+            last: TimeSource.ntp,
+            phoneAheadMs: -3 * 3600000,
+          ),
+        ),
+      );
+      await showTab(tester, ClockScreen(feeder: feeder));
+
+      expect(find.textContaining('This phone is 3 h behind the feeder'), findsOneWidget);
+      expect(find.textContaining('An owner can set it'), findsOneWidget);
+      expect(find.text('Set the time from this phone'), findsNothing);
+    });
+
     testWidgets('coming to the screen reads the time again', (tester) async {
       final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       session.status(fakeCard(time: time));

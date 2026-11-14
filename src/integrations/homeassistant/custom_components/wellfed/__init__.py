@@ -140,7 +140,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: WellfedConfigEntry) -> b
     await store.load()
     try:
         feeder = await hass.async_add_executor_job(
-            open_feeder, entry.data, store.pending, store.answered, store.unread
+            open_feeder,
+            entry.data,
+            store.pending,
+            store.answered,
+            store.unread,
+            hass.config.time_zone,
         )
     except bridge.WellfedError as error:
         raise ConfigEntryError(translation_domain=DOMAIN, translation_key="bad_entry") from error

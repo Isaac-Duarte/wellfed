@@ -9,7 +9,8 @@
 //! time view, the status and the alert table, and [`keep_clock`], whose one
 //! op is the clock sync, so no path from here can send a feed, another write
 //! or a retry. The sync is what keeps a feeder with no time server set while
-//! the app is closed: see [`wellfed_client::time::sync_due`].
+//! the app is closed: see [`wellfed_client::time::check`]. Its spacing and
+//! refusals are the phone's, shared with its sessions ([`crate::clock`]).
 //!
 //! A catch-up is short and never left open: [`SITTING`] bounds it, and a
 //! catch-up that runs out of time counts as one that heard nothing.
@@ -28,8 +29,9 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use tokio::time::timeout;
 use wellfed_client::alerts::{Change, Context, Cursor, FeederClock, Watch};
+use wellfed_client::time::{AutoSync, ClockCheck};
 use wellfed_connect::{Connection, Error};
-use wellfed_model::{Answer, Hex, Op};
+use wellfed_model::{Answer, Hex, Op, Refusal};
 use wellfed_session::noise::Keypair;
 
 use crate::alerts::{self, Sitting};
@@ -118,8 +120,9 @@ pub(crate) async fn catch_up(
     // for a route to it, such as a VPN's.
     let address = tried.filter(|_| target.online || target.manual.is_some());
 
+    let mut clock = crate::clock::load(Some(dir), &identity).await;
     let visit = match &address {
-        Some(address) => visit(address, target, &watch).await,
+        Some(address) => visit(address, target, &watch, &mut clock).await,
         None => Visit::NoAnswer,
     };
     let end = match (&visit, &address) {
@@ -167,6 +170,8 @@ pub(crate) async fn catch_up(
         })
     })
     .await??;
+    // After the change above, which made the feeder's entry if it had none.
+    crate::clock::store(Some(dir), &identity, &clock).await;
     Ok((end, changes))
 }
 
@@ -180,14 +185,14 @@ async fn pending(dir: &Path, identity: &str) -> Result<Vec<Change>, BridgeError>
 }
 
 /// The session itself, bounded by [`SITTING`].
-async fn visit(address: &str, target: &Target<'_>, watch: &Watch) -> Visit {
+async fn visit(address: &str, target: &Target<'_>, watch: &Watch, clock: &mut AutoSync) -> Visit {
     let Ok(address) = wellfed_connect::parse_address(address) else {
         return Visit::NoAnswer;
     };
     let Ok(ephemeral) = random() else {
         return Visit::NoAnswer;
     };
-    match timeout(SITTING, read(address, target, watch, ephemeral)).await {
+    match timeout(SITTING, read(address, target, watch, ephemeral, clock)).await {
         Ok(Ok(visit)) => visit,
         // The feeder's own refusal: it is there.
         Ok(Err(Error::UnknownKey | Error::Version(_) | Error::Full | Error::Legacy)) => {
@@ -202,13 +207,14 @@ async fn read(
     target: &Target<'_>,
     watch: &Watch,
     ephemeral: [u8; 32],
+    clock: &mut AutoSync,
 ) -> Result<Visit, Error> {
     let mut connection = Connection::open(target.keys, target.identity, address, ephemeral).await?;
     let epoch = connection.epoch();
     // What the clock steps hear changes nothing here: a sync that did not
     // land waits for the next catch-up, and a link that broke fails the
     // status read next.
-    let _ = keep_clock(&mut connection).await;
+    let _ = keep_clock(&mut connection, clock).await;
 
     let Answer::Status(status) = ask(&mut connection, Read::Status).await? else {
         return Ok(Visit::Answered);
@@ -239,23 +245,31 @@ async fn read(
     Ok(Visit::Table(cursor, Box::new(view), clock))
 }
 
-/// Sync the feeder's clock if its time view asks this key's role to, before
-/// the status, so the status and the alert table read after say whether it
-/// took. The sync goes once; one whose answer is lost is not sent again.
-async fn keep_clock(connection: &mut Connection) -> Result<(), Error> {
+/// Sync the feeder's clock if its time view and the phone's memo `clock`
+/// ask this key's role to, before the status, so the status and the alert
+/// table read after say whether it took. The sync goes once; one whose
+/// answer is lost is not sent again, and one refused is not sent again
+/// until the clock's view moves on.
+async fn keep_clock(connection: &mut Connection, clock: &mut AutoSync) -> Result<(), Error> {
     let Answer::Time(time) = ask(connection, Read::Time).await? else {
         return Ok(());
     };
-    if !wellfed_client::time::sync_due(&time, connection.role()) {
+    let now = Timestamp::now();
+    let role = connection.role();
+    if clock.read(&time, role, now, crate::clock::SYNC_AGAIN) != ClockCheck::Sync {
         return Ok(());
     }
 
-    let sync = wellfed_client::time::sync(Timestamp::now(), &TimeZone::system());
+    let sync = wellfed_client::time::sync(now, &TimeZone::system());
     let id = random().map_err(|_| Error::Timeout)?;
-    connection
+    clock.sent(now);
+    let answer = connection
         .ask(id, &Op::TimeSync(sync))
         .await
         .map_err(wellfed_connect::AskError::into_error)?;
+    if answer == Answer::Refused(Refusal::Time) {
+        clock.refused(&time);
+    }
     Ok(())
 }
 

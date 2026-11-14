@@ -11,7 +11,8 @@
 //!   a network it can't name still dials;
 //! - nothing a catch-up sends is a write but the clock sync: the feeder's
 //!   journal holds only the owner's own feed, and a clock that is not set
-//!   is set once, and a set one left alone.
+//!   is set once, and a set one left alone; with a time server named, only
+//!   once the clock has read unset across two minutes of catch-ups.
 
 use std::rc::Rc;
 use std::time::Duration;
@@ -29,7 +30,7 @@ use wellfed_feeder_sim::feeding;
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness::{Running, local};
 use wellfed_feeder_sim::serve::{Control, FeedFault};
-use wellfed_model::{Answer, EventBody, FeederEvent, Op, Pushed};
+use wellfed_model::{Answer, EventBody, FeederEvent, NtpServer, Op, Pushed, TimeChanges};
 use wellfed_session::noise::Keypair;
 
 const OWNER: [u8; 32] = [0x21; 32];
@@ -245,8 +246,55 @@ async fn time(sim: &Running) -> wellfed_model::TimeView {
     time
 }
 
+/// The owner sets the feeder's time source.
+async fn ntp(sim: &Running, server: NtpServer) {
+    let base = time(sim).await.generation;
+    let mut owner = Connection::open(
+        &Keypair::from_secret(OWNER),
+        sim.identity,
+        sim.address,
+        [0xa3; 32],
+    )
+    .await
+    .unwrap();
+    let changes = TimeChanges {
+        zone: None,
+        ntp: Some(server),
+    };
+    let answer = owner
+        .ask([3; 16], &Op::PutTime { base, changes })
+        .await
+        .unwrap();
+    assert!(matches!(answer, Answer::Done { .. }), "{answer:?}");
+}
+
+/// Move the start of the invalid run `alerts.json` keeps back by `by_ms`, as
+/// though the catch-ups that saw it were that much further apart.
+fn backdate_invalid_run(dir: &str, by_ms: i64) {
+    let path = format!("{dir}/alerts.json");
+    let mut file: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let mut moved = 0;
+    let mut stack = vec![&mut file];
+    while let Some(value) = stack.pop() {
+        match value {
+            serde_json::Value::Object(fields) => {
+                if let Some(since) = fields.get_mut("since_ms") {
+                    *since = (since.as_i64().unwrap() - by_ms).into();
+                    moved += 1;
+                }
+                stack.extend(fields.values_mut());
+            }
+            serde_json::Value::Array(items) => stack.extend(items.iter_mut()),
+            _ => {}
+        }
+    }
+    assert_eq!(moved, 1, "one feeder's clock reads invalid");
+    std::fs::write(&path, serde_json::to_vec(&file).unwrap()).unwrap();
+}
+
 #[test]
-fn a_catch_up_sets_a_clock_that_is_not_set_and_leaves_a_set_one() {
+fn with_no_time_server_a_catch_up_sets_a_clock_at_once_and_leaves_a_set_one() {
     bounded(async {
         let kept = tempfile::tempdir().unwrap();
         let dir = kept.path().display().to_string();
@@ -254,6 +302,7 @@ fn a_catch_up_sets_a_clock_that_is_not_set_and_leaves_a_set_one() {
         let sim = Running::start(&flash, Some(*Keypair::from_secret(OWNER).public())).await;
         let identity = hex(&sim.identity);
         know(&dir, &[&identity]);
+        ntp(&sim, NtpServer::Off).await;
         assert_eq!(
             time(&sim).await.clock_ms,
             None,
@@ -267,11 +316,44 @@ fn a_catch_up_sets_a_clock_that_is_not_set_and_leaves_a_set_one() {
         assert_eq!(set.last, Some(wellfed_model::TimeSource::Owner));
         assert_eq!(set.syncs, 1);
 
-        // Its error is a second or so, far from halfway to expiry.
+        // Its error is a second or so, far from the minute an owner's phone
+        // waits for, and the last sync was moments ago.
         catch_up(&dir, &sim, &identity, Attempt::First, home()).await;
         assert_eq!(time(&sim).await.syncs, 1, "a set clock is left alone");
 
         assert_eq!(feeding::reserved(&flash), Ok(0), "no feed");
+        sim.stop().await;
+    });
+}
+
+#[test]
+fn with_a_time_server_a_catch_up_gives_it_two_minutes_before_setting_the_clock() {
+    bounded(async {
+        let kept = tempfile::tempdir().unwrap();
+        let dir = kept.path().display().to_string();
+        let flash: Rc<Flash> = Flash::memory();
+        let sim = Running::start(&flash, Some(*Keypair::from_secret(OWNER).public())).await;
+        let identity = hex(&sim.identity);
+        know(&dir, &[&identity]);
+        assert!(
+            !matches!(time(&sim).await.ntp, NtpServer::Off),
+            "a fresh feeder asks its router"
+        );
+
+        // The router may answer within moments: the first read only notes
+        // that the clock wanted the time, and so does one soon after.
+        catch_up(&dir, &sim, &identity, Attempt::First, home()).await;
+        catch_up(&dir, &sim, &identity, Attempt::First, home()).await;
+        let waiting = time(&sim).await;
+        assert_eq!((waiting.clock_ms, waiting.syncs), (None, 0), "{waiting:?}");
+
+        // Two minutes on, by the run alerts.json keeps, the router hasn't.
+        backdate_invalid_run(&dir, 2 * 60_000);
+        catch_up(&dir, &sim, &identity, Attempt::First, home()).await;
+        let set = time(&sim).await;
+        assert!(set.clock_ms.is_some(), "{set:?}");
+        assert_eq!(set.syncs, 1);
+
         sim.stop().await;
     });
 }

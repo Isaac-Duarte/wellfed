@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::Mutex;
 use wellfed_client::alerts::{Change, Mutes, Watch};
+use wellfed_client::time::AutoSync;
 use wellfed_formats::kept;
 
 use crate::api::alerts::{AlertHold, PostedNotice};
@@ -70,7 +71,8 @@ impl Versioned for AlertState {
     const VERSION: u32 = 1;
 
     /// What a newer minor added: the settings and their mutes, each
-    /// feeder's entry by identity with its watch and reach, each sweep hold
+    /// feeder's entry by identity with its watch and reach and its clock
+    /// syncs with their refusal, each sweep hold
     /// by id, and the notice while it names the same file. A watch's
     /// notices hold tagged enums and are not carried into.
     fn carry(old: &Value, new: &mut Value) {
@@ -87,6 +89,14 @@ impl Versioned for AlertState {
                 kept::carry(old, new);
                 if let Some((old, new)) = kept::both(old, new, "/reach") {
                     kept::carry(old, new);
+                }
+            }
+            if let Some((old, new)) = kept::both(old, new, "/clock") {
+                kept::carry(old, new);
+                for nested in ["/invalid", "/refused_on"] {
+                    if let Some((old, new)) = kept::both(old, new, nested) {
+                        kept::carry(old, new);
+                    }
                 }
             }
         }
@@ -121,6 +131,9 @@ pub(crate) struct Watched {
     /// where the app last did; only the app writes that one.
     pub(crate) address: Option<String>,
     pub(crate) watch: Watch,
+    /// This phone's automatic clock syncs of the feeder, its sessions' and
+    /// its catch-ups' ([`crate::clock`]); `None` before the first.
+    pub(crate) clock: Option<AutoSync>,
 }
 
 impl AlertState {
@@ -148,6 +161,7 @@ impl AlertState {
                 identity: identity.to_owned(),
                 address: None,
                 watch: Watch::default(),
+                clock: None,
             });
         }
         self.watched_mut(identity)
@@ -422,9 +436,11 @@ mod tests {
     };
 
     use serde::Serialize;
+    use wellfed_client::time::{InvalidRun, ViewMark};
     use wellfed_model::{
         Alert, AlertKey, AlertKind, AlertLevel, AlertsView, Blocked, ClientRole, EnrollPath,
-        FeedOutcome, FeedReason, Generation, Hex, MissedReason, OpenAlert, Source, UpdateStop,
+        FeedOutcome, FeedReason, Generation, Hex, MissedReason, OpenAlert, Source, TimeSource,
+        UpdateStop,
     };
 
     use super::*;
@@ -645,6 +661,7 @@ mod tests {
             identity: KITCHEN.into(),
             address: None,
             watch: Watch::default(),
+            clock: None,
         });
 
         let (cursor, view) = table(1, &[food]);
@@ -730,6 +747,18 @@ mod tests {
                         reached: Some(at(20)),
                     },
                 },
+                clock: Some(AutoSync {
+                    sent_ms: Some(1_800_000_000_000),
+                    invalid: Some(InvalidRun {
+                        since_ms: 1_800_000_060_000,
+                        syncs: 3,
+                    }),
+                    refused_on: Some(ViewMark {
+                        valid: false,
+                        syncs: 3,
+                        last: Some(TimeSource::Owner),
+                    }),
+                }),
             }],
             set_aside: Some(SetAside {
                 kind: StoreKind::Alerts,
@@ -1358,6 +1387,7 @@ mod tests {
                     identity: "ab".into(),
                     address: Some("10.0.0.2:4433".into()),
                     watch: Watch::default(),
+                    clock: None,
                 });
             })
             .await
@@ -1398,6 +1428,9 @@ mod tests {
             "/data/feeders/0",
             "/data/feeders/0/watch",
             "/data/feeders/0/watch/reach",
+            "/data/feeders/0/clock",
+            "/data/feeders/0/clock/invalid",
+            "/data/feeders/0/clock/refused_on",
             "/data/sweeping/0",
             "/data/set_aside",
         ];

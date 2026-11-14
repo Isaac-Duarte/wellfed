@@ -16,6 +16,14 @@ use flutter_rust_bridge::frb;
 
 use crate::api::router::NotSentReason;
 
+/// Name the app's data directory, where the phone keeps what it knows of
+/// each feeder, once a process: its sessions keep their memo of the clock
+/// syncs there, beside the catch-ups'. Before this they keep it in memory.
+#[frb(sync)]
+pub fn use_data_directory(dir: String) {
+    crate::clock::use_dir(std::path::PathBuf::from(dir));
+}
+
 /// The time zones an owner picks from for the feeder, as IANA names, sorted.
 /// Choosing one sends [`ZoneChange::Named`], whose rule is checked then.
 #[frb(sync)]
@@ -261,6 +269,10 @@ pub struct TimeInfo {
     /// When it was last set, by this phone's clock.
     pub last_at_ms: Option<i64>,
     pub ntp_last: Option<NtpResult>,
+    /// How far this phone's clock was ahead of the feeder's when it was
+    /// read, when that is more than the feeder's error allows: one of the
+    /// two is wrong, and nothing sets the clock by itself.
+    pub phone_ahead_ms: Option<i64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -61,11 +61,16 @@
 //!   good: it is reported once and the thread stops reconnecting.
 //! - **The clock.** While the status reads the feeder's clock invalid (after
 //!   a power cut, or once it expired with no time server), the session gives
-//!   it Home Assistant's clock and zone, at most every [`CLOCK_EVERY`]. Home
-//!   Assistant joins as a member, and a member's sync sets only a clock that
-//!   is not set: it neither moves a valid one's trusted interval nor teaches
-//!   its rate ([`wellfed_client::time::sync_due`]). A sync is not a feed, but
-//!   it goes once all the same: one whose answer is lost waits its turn.
+//!   it Home Assistant's clock and zone ([`Target::zone`]) by the rule every
+//!   client shares ([`wellfed_client::time::AutoSync`]): at once with no
+//!   time server, and otherwise once it has read invalid for two minutes, so
+//!   the feeder's own NTP goes first; never within [`CLOCK_EVERY`] of the
+//!   last, across sessions; and not again on a view the feeder refused one
+//!   on until the clock moves on. Home Assistant joins as a member, and a
+//!   member's sync sets only a clock that is not set: it neither moves a
+//!   valid one's trusted interval nor teaches its rate. A sync is not a
+//!   feed, but it goes once all the same: one whose answer is lost waits its
+//!   turn.
 
 use std::collections::{HashMap, VecDeque};
 use std::net::SocketAddr;
@@ -79,11 +84,12 @@ use tokio::sync::{mpsc, oneshot};
 use wellfed_client::alerts::{Cursor as AlertCursor, FeederClock};
 use wellfed_client::history::{Backlog, Entry, Feed};
 use wellfed_client::settle::{self, After, Lost};
+use wellfed_client::time::{AutoSync, ClockCheck};
 use wellfed_client::today::Facts;
 use wellfed_connect::{Connection, Cursor, Received, Timing};
 use wellfed_model::{
     AlertsView, Answer, Blocked, CalibrationView, ClientRole, CoreEvent, EventBody, FeederEvent,
-    FeederSettingsPatch, Op, Pushed, Readiness, Settings, Skew, Status,
+    FeederSettingsPatch, Op, Pushed, Readiness, Refusal, Settings, Skew, Status, TimeView,
 };
 
 use crate::Error;
@@ -246,6 +252,11 @@ pub struct Target {
     pub identity: [u8; 32],
     /// An address, or `None` to find the feeder over mDNS at each connect.
     pub address: Option<String>,
+    /// Home Assistant's own time zone, not the host's: a container runs in
+    /// UTC whatever zone the owner set. A clock sync gives the feeder its
+    /// offsets, and the state's local times (today's portions, the next
+    /// meal) are read in it.
+    pub zone: TimeZone,
 }
 
 /// A handle on the session thread. Dropping it ends the session.
@@ -457,9 +468,22 @@ struct Memory {
     alerts: Option<Tracker>,
     /// What holds feeds back besides this client's own lost feeds.
     holds: Holds,
-    /// When a session last sent the feeder a clock sync, so a reconnecting
-    /// session does not send one sooner than [`CLOCK_EVERY`].
-    clock_synced: Option<Instant>,
+    /// The automatic clock syncs so far: when the last went, so a
+    /// reconnecting session sends none sooner than [`CLOCK_EVERY`], how
+    /// long the clock has read invalid, and a refusal's view.
+    clock: AutoSync,
+    /// [`Target::zone`].
+    zone: Zone,
+}
+
+/// [`Target::zone`] as [`Memory`] keeps it: UTC until a run names it.
+#[derive(Clone, Debug)]
+struct Zone(TimeZone);
+
+impl Default for Zone {
+    fn default() -> Self {
+        Self(TimeZone::UTC)
+    }
 }
 
 impl Memory {
@@ -682,6 +706,7 @@ async fn run(
     fingerprint.copy_from_slice(&key.public()[..4]);
     let mut memory = Memory::carried(carried, shared);
     memory.alerts = Some(Tracker::new(fingerprint));
+    memory.zone = Zone(target.zone.clone());
     // A lost feed carried from the last run that still holds feeds back is
     // announced again, so the integration's repairs say so: one not yet
     // reported as pending, and one reported as still unknown, whose repair
@@ -832,8 +857,8 @@ enum Outstanding {
     },
     /// A read, and how many requests the session had asked when it went.
     Read(Read, u64),
-    /// A sync of the feeder's clock.
-    Clock,
+    /// A sync of the feeder's clock, sent on the view `on`.
+    Clock { on: Box<TimeView> },
 }
 
 struct Session<'a> {
@@ -1025,8 +1050,11 @@ impl<'a> Session<'a> {
         if self.backlog.is_some() {
             return Ok(());
         }
-        let zone = TimeZone::system();
-        match State::of(&self.memory.facts, self.memory.calibration.as_ref(), &zone) {
+        match State::of(
+            &self.memory.facts,
+            self.memory.calibration.as_ref(),
+            &self.memory.zone.0,
+        ) {
             Some(state) => self.send(Update::state(state)),
             None => Ok(()),
         }
@@ -1241,15 +1269,20 @@ impl<'a> Session<'a> {
                 self.settle()
             }
             Some(Outstanding::Read(read, asked)) => self.fact(read, asked, answer),
-            // A sync that landed changed the time and the status; one that
-            // did not changes nothing, and the next turn after
+            // A sync that landed changed the time and the status; one the
+            // feeder refused as out of range goes no more until the clock
+            // moves on; any other changes nothing, and the next turn after
             // `CLOCK_EVERY` tries again.
-            Some(Outstanding::Clock) => match answer {
+            Some(Outstanding::Clock { on }) => match answer {
                 Some(Answer::Done { .. }) if self.serves(Read::Time) => {
                     self.read(Read::Time)?;
                     self.read(Read::Status)
                 }
                 Some(Answer::Done { .. }) => self.read(Read::Status),
+                Some(Answer::Refused(Refusal::Time)) => {
+                    self.memory.clock.refused(&on);
+                    Ok(())
+                }
                 _ => Ok(()),
             },
             None => Ok(()),
@@ -1376,7 +1409,12 @@ impl<'a> Session<'a> {
                 facts.settings = Some(settings);
             }
             (Read::Plans, Some(Answer::Plans(plans))) => facts.plans = Some(plans),
-            (Read::Time, Some(Answer::Time(time))) => facts.time = Some(time),
+            // At connect the status comes before the time view, which the
+            // clock's rule needs too.
+            (Read::Time, Some(Answer::Time(time))) => {
+                facts.time = Some(time);
+                self.clock_due()?;
+            }
             (Read::Calibration, Some(Answer::Calibration(view))) => {
                 self.memory.calibration = Some(view);
             }
@@ -1420,39 +1458,45 @@ impl<'a> Session<'a> {
         }
     }
 
-    /// Sync the feeder's clock if the status read last says it is not set,
-    /// this role may, none is out and the last went [`CLOCK_EVERY`] ago.
+    /// Sync the feeder's clock when the shared rule says this client should
+    /// ([`AutoSync::read`]): for Home Assistant, a member, a clock the status
+    /// reads invalid, at once with no time server and otherwise once it has
+    /// read invalid for two minutes, so the feeder's own NTP goes first.
+    /// One at a time, and once one went, none within [`CLOCK_EVERY`] nor on
+    /// the view a sync was refused on.
     fn clock_due(&mut self) -> Step {
-        let unset = self
-            .memory
-            .facts
-            .status
-            .as_ref()
-            .is_some_and(|status| status.clock.is_none());
-        let rested = self
-            .memory
-            .clock_synced
-            .is_none_or(|at| at.elapsed() >= CLOCK_EVERY);
+        let facts = &self.memory.facts;
+        let (Some(status), Some(time)) = (facts.status.as_ref(), facts.time.as_ref()) else {
+            return Ok(());
+        };
+        // The status is read every turn and the time view only when the
+        // clock moves: the status says whether it is set now.
+        let view = TimeView {
+            clock_ms: status
+                .clock
+                .and_then(|at| u64::try_from(at.as_millisecond()).ok()),
+            ..time.clone()
+        };
+        let now = jiff::Timestamp::now();
+        let check = self.memory.clock.read(&view, self.role, now, CLOCK_EVERY);
         let out = self
             .pending
             .values()
-            .any(|pending| matches!(pending, Outstanding::Clock));
-        if !unset || !rested || out {
+            .any(|pending| matches!(pending, Outstanding::Clock { .. }));
+        if check != ClockCheck::Sync || out {
             return Ok(());
         }
 
-        let sync = Op::TimeSync(wellfed_client::time::sync(
-            jiff::Timestamp::now(),
-            &TimeZone::system(),
-        ));
+        let sync = Op::TimeSync(wellfed_client::time::sync(now, &self.memory.zone.0));
         if !sync.allowed(self.role) {
             return Ok(());
         }
         let id = random().map_err(lost)?;
         self.connection.request(id, &sync).map_err(lost)?;
         self.asked += 1;
-        self.memory.clock_synced = Some(Instant::now());
-        self.pending.insert(id, Outstanding::Clock);
+        self.memory.clock.sent(now);
+        self.pending
+            .insert(id, Outstanding::Clock { on: Box::new(view) });
         Ok(())
     }
 
@@ -2047,7 +2091,7 @@ mod tests {
             .values()
             .filter_map(|pending| match pending {
                 Outstanding::Read(read, asked) => Some((*asked, *read)),
-                Outstanding::Write { .. } | Outstanding::Clock => None,
+                Outstanding::Write { .. } | Outstanding::Clock { .. } => None,
             })
             .collect();
         reads.sort_by_key(|(asked, _)| *asked);
@@ -2096,14 +2140,120 @@ mod tests {
         session
             .pending
             .values()
-            .filter(|pending| matches!(pending, Outstanding::Clock))
+            .filter(|pending| matches!(pending, Outstanding::Clock { .. }))
             .count()
     }
 
-    /// A clock the status reads unset is synced one at a time, and once
-    /// one went, not again within `CLOCK_EVERY`, landed or not.
+    /// Read the status and the time view into the session's facts, as its
+    /// turns do.
+    async fn read_clock(session: &mut Session<'_>) {
+        let Answer::Status(status) = session
+            .connection
+            .ask(random().unwrap(), &Op::Status)
+            .await
+            .unwrap()
+        else {
+            panic!("no status");
+        };
+        let Answer::Time(time) = session
+            .connection
+            .ask(random().unwrap(), &Op::GetTime)
+            .await
+            .unwrap()
+        else {
+            panic!("no time view");
+        };
+        session.memory.facts.status = Some(status);
+        session.memory.facts.time = Some(time);
+    }
+
+    /// Answer everything the session has out, as its loop would.
+    async fn drain(session: &mut Session<'_>) {
+        while !session.pending.is_empty() {
+            let received = session.connection.receive(Duration::from_secs(10));
+            match received.await.unwrap() {
+                Received::Answer { id, answer } => session.answered(id, answer).unwrap(),
+                Received::Pushed(_) => {}
+            }
+        }
+    }
+
+    /// With no time server, a clock the status reads unset is synced one at
+    /// a time, never within `CLOCK_EVERY` of the last sync, even one an
+    /// earlier session sent, and not again once it landed.
     #[test]
     fn a_clock_sync_goes_one_at_a_time_and_no_sooner_than_its_cadence() {
+        use wellfed_feeder_sim::harness::Threaded;
+        use wellfed_model::{NtpServer, TimeChanges};
+
+        let sim = Threaded::start(*wellfed_session::noise::Keypair::from_secret(OWNER).public());
+        runtime().block_on(async {
+            let (updates, _heard) = std_mpsc::channel();
+            let mut memory = Memory::default();
+            // A session before this one sent a sync a minute ago, whose
+            // answer it never heard.
+            let a_minute_ago = jiff::Timestamp::now() - jiff::SignedDuration::from_secs(60);
+            memory.clock.sent(a_minute_ago);
+            let mut session = owner_session(&sim, &mut memory, &updates).await;
+            read_clock(&mut session).await;
+            let changes = TimeChanges {
+                zone: None,
+                ntp: Some(NtpServer::Off),
+            };
+            let base = session.memory.facts.time.as_ref().unwrap().generation;
+            let put = Op::PutTime { base, changes };
+            let answer = session.connection.ask(random().unwrap(), &put).await;
+            assert!(matches!(answer, Ok(Answer::Done { .. })), "{answer:?}");
+            read_clock(&mut session).await;
+            assert!(
+                session
+                    .memory
+                    .facts
+                    .status
+                    .as_ref()
+                    .unwrap()
+                    .clock
+                    .is_none(),
+                "a fresh feeder needs the time"
+            );
+
+            session.clock_due().unwrap();
+            assert_eq!(
+                clock_syncs(&session),
+                0,
+                "not within CLOCK_EVERY of the last"
+            );
+
+            let a_turn_ago =
+                jiff::Timestamp::now() - jiff::SignedDuration::try_from(CLOCK_EVERY).unwrap();
+            session.memory.clock.sent(a_turn_ago);
+            session.clock_due().unwrap();
+            session.clock_due().unwrap();
+            assert_eq!(clock_syncs(&session), 1, "one out at a time");
+
+            // Its answer lands, and the reads it asks for find the clock set.
+            drain(&mut session).await;
+            assert!(
+                session
+                    .memory
+                    .facts
+                    .status
+                    .as_ref()
+                    .unwrap()
+                    .clock
+                    .is_some()
+            );
+            session.clock_due().unwrap();
+            assert_eq!(clock_syncs(&session), 0, "a set clock is left alone");
+            assert_eq!(session.memory.facts.time.as_ref().unwrap().syncs, 1);
+        });
+    }
+
+    /// With a time server named, the session leaves an unset clock to it for
+    /// two minutes of reads before it syncs one.
+    #[test]
+    fn with_a_time_server_a_clock_sync_waits_two_minutes() {
+        use wellfed_client::time::{INVALID_WAIT_MS, InvalidRun};
         use wellfed_feeder_sim::harness::Threaded;
 
         let sim = Threaded::start(*wellfed_session::noise::Keypair::from_secret(OWNER).public());
@@ -2111,29 +2261,42 @@ mod tests {
             let (updates, _heard) = std_mpsc::channel();
             let mut memory = Memory::default();
             let mut session = owner_session(&sim, &mut memory, &updates).await;
-            let Answer::Status(status) = session
-                .connection
-                .ask(random().unwrap(), &Op::Status)
-                .await
-                .unwrap()
-            else {
-                panic!("no status");
-            };
-            assert!(status.clock.is_none(), "a fresh feeder needs the time");
-            session.memory.facts.status = Some(status);
+            read_clock(&mut session).await;
+            assert!(
+                session
+                    .memory
+                    .facts
+                    .status
+                    .as_ref()
+                    .unwrap()
+                    .clock
+                    .is_none()
+            );
 
             session.clock_due().unwrap();
             session.clock_due().unwrap();
-            assert_eq!(clock_syncs(&session), 1, "one out at a time");
+            assert_eq!(clock_syncs(&session), 0, "the router goes first");
 
-            // As if its answer came without the clock set.
-            session.pending.clear();
+            // Two minutes of reads on, it still reads unset.
+            let run = session.memory.clock.invalid.unwrap();
+            session.memory.clock.invalid = Some(InvalidRun {
+                since_ms: run.since_ms - INVALID_WAIT_MS,
+                ..run
+            });
             session.clock_due().unwrap();
-            assert_eq!(clock_syncs(&session), 0, "not again so soon");
+            assert_eq!(clock_syncs(&session), 1);
 
-            session.memory.clock_synced = Instant::now().checked_sub(CLOCK_EVERY);
-            session.clock_due().unwrap();
-            assert_eq!(clock_syncs(&session), 1, "again once its turn comes");
+            drain(&mut session).await;
+            assert!(
+                session
+                    .memory
+                    .facts
+                    .status
+                    .as_ref()
+                    .unwrap()
+                    .clock
+                    .is_some()
+            );
         });
     }
 

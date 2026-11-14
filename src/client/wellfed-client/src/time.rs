@@ -21,9 +21,12 @@
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
+use std::time::Duration;
 use wellfed_core::clock::zone::{Rule, Zone};
 use wellfed_core_feeder::schedule;
-use wellfed_model::{ClientRole, NextMeal, Plan, Plans, TimeSync, TimeView};
+
+use serde::{Deserialize, Serialize};
+use wellfed_model::{ClientRole, NextMeal, NtpServer, Plan, Plans, TimeSource, TimeSync, TimeView};
 
 /// How far ahead a rule must agree with its zone.
 const AGREE_S: i64 = 10 * 366 * 86_400;
@@ -49,43 +52,222 @@ pub fn sync(now: Timestamp, zone: &TimeZone) -> TimeSync {
 }
 
 /// The feeder's reported error at which an owner's client syncs a valid
-/// clock: half of [`MAX_ERROR_MS`], the error past which it reads invalid.
+/// clock that keeps no time server: half of [`MAX_ERROR_MS`], the error past
+/// which it reads invalid.
 ///
 /// The error grows at the rate bound from the last trusted fix: 5,000 ppm
 /// before the rate is learned, so this comes about 3.3 hours after an
 /// owner's sync and leaves as long again before the clock expires at about
 /// 6.6. A client that checks in every few hours (the app's sessions, or
 /// Android's periodic check, which Doze can space an hour or more apart)
-/// so meets it before expiry. Each sync is measured against the first
-/// owner's sync since the rate was forgotten, so the syncs after about 11
-/// hours of them teach the rate; the bound then drops to 200 ppm, and the
-/// error reaches this about every 3.5 days. Syncing sooner would teach
-/// nothing more: only the span from that first sync narrows the rate.
+/// so meets it before expiry. Each sync is measured against the first sync
+/// of the same owner's key since the rate was forgotten, so that key's syncs
+/// after about 11 hours of them teach the rate; the bound then drops to
+/// 200 ppm, and the error reaches this about every 3.5 days.
+///
+/// A clock that asks a time server is left to it: NTP never re-anchors a
+/// valid clock, so an owner's sync would, at the phone's time, and a phone
+/// some seconds off would put the next answers outside the interval and
+/// contest the clock.
 ///
 /// [`MAX_ERROR_MS`]: wellfed_core::clock::wall::MAX_ERROR_MS
 pub const OWNER_SYNC_ERROR_MS: u64 = wellfed_core::clock::wall::MAX_ERROR_MS / 2;
 
-/// Whether a client holding `role` should sync the feeder's clock now, by
-/// its time view. Anyone's sync sets an invalid clock. On a valid one only
-/// an owner's moves the trusted interval and teaches the rate; a member's
-/// or the server's may only narrow it, so they leave a valid clock alone.
-pub fn sync_due(view: &TimeView, role: ClientRole) -> bool {
-    match (view.clock_ms, view.error_ms) {
-        (None, _) => true,
-        (Some(_), Some(error_ms)) => {
-            role == ClientRole::Owner && u64::from(error_ms) >= OWNER_SYNC_ERROR_MS
-        }
-        (Some(_), None) => false,
+/// Room beside the feeder's own error for the trips a time view and a sync
+/// each make across the LAN (a sync counts 1 s of its own): a client whose
+/// clock is within the feeder's error and this of the feeder's agrees with it.
+pub const AGREE_MARGIN_MS: u64 = 2_000;
+
+/// How long a client watches a clock read invalid, while a time server is
+/// named, before it sets the clock itself. Once the clock needs the time,
+/// NTP asks within 64 s and may re-set it only inside the old interval; a
+/// client's sync of an invalid clock is held to nothing. Two reads this far
+/// apart that both find it invalid mean NTP did not set it.
+pub const INVALID_WAIT_MS: i64 = 120_000;
+
+/// What a client should do about the feeder's clock, by its time view.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClockCheck {
+    Leave,
+    Sync,
+    /// The client's clock and the feeder's are further apart than the
+    /// feeder's error allows: one of them is wrong, and nothing is sent by
+    /// itself. An owner may still set the time by hand.
+    Disagrees {
+        /// The client's clock less the feeder's.
+        client_ahead_ms: i64,
+    },
+}
+
+/// How far the client's clock (`now`, as the view was read) is ahead of the
+/// feeder's, when that is more than the feeder's reported error and
+/// [`AGREE_MARGIN_MS`] allow; `None` when they agree or the clock is invalid.
+pub fn clock_disagreement(view: &TimeView, now: Timestamp) -> Option<i64> {
+    let clock = i64::try_from(view.clock_ms?).ok()?;
+    let error = u64::from(view.error_ms?);
+    let ahead = now.as_millisecond().saturating_sub(clock);
+    (ahead.unsigned_abs() > error.saturating_add(AGREE_MARGIN_MS)).then_some(ahead)
+}
+
+/// What a client holding `role` should do on reading `view` at its own
+/// `now`. `invalid_since` is when this client first found the clock invalid
+/// in its run of reads that all did, this one included.
+///
+/// - A clock with no time server that reads invalid is set by anyone.
+/// - One that asks a time server is set only once it has read invalid for
+///   [`INVALID_WAIT_MS`], so NTP's own re-set at each expiry, held to the
+///   old interval, comes first.
+/// - A valid clock is synced only by an owner, only with no time server,
+///   and once its error reaches [`OWNER_SYNC_ERROR_MS`]: a member's sync
+///   could only narrow it.
+/// - Never one the client disagrees with ([`clock_disagreement`]).
+pub fn check(
+    view: &TimeView,
+    role: ClientRole,
+    now: Timestamp,
+    invalid_since: Option<Timestamp>,
+) -> ClockCheck {
+    let no_server = view.ntp == NtpServer::Off;
+    let Some(_) = view.clock_ms else {
+        let waited = invalid_since.is_some_and(|since| {
+            now.as_millisecond().saturating_sub(since.as_millisecond()) >= INVALID_WAIT_MS
+        });
+        return if no_server || waited {
+            ClockCheck::Sync
+        } else {
+            ClockCheck::Leave
+        };
+    };
+    if let Some(client_ahead_ms) = clock_disagreement(view, now) {
+        return ClockCheck::Disagrees { client_ahead_ms };
+    }
+    let grown = view
+        .error_ms
+        .is_some_and(|error| u64::from(error) >= OWNER_SYNC_ERROR_MS);
+    if role == ClientRole::Owner && no_server && grown {
+        ClockCheck::Sync
+    } else {
+        ClockCheck::Leave
     }
 }
 
-/// The zone names an owner picks from, sorted: each bundled name of an
-/// area and a place (`America/Denver`), and `UTC`. The tzdb's older
-/// spellings (`EST5EDT`, `GMT+3`, `Etc/…`) are left out; [`rule`] still
-/// takes them by name.
+/// What a client keeps about its automatic syncs of one feeder, across its
+/// sessions: when it last sent one, when it first saw the clock invalid in
+/// its current run of reads, and the view a sync was refused on.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AutoSync {
+    /// When this client last sent an automatic sync, Unix milliseconds.
+    pub sent_ms: Option<i64>,
+    /// The run of invalid reads the clock is in, as this client saw it.
+    pub invalid: Option<InvalidRun>,
+    /// The view a sync was refused on (`Refused(Time)`): none goes again
+    /// until the clock's view moves on from it.
+    pub refused_on: Option<ViewMark>,
+}
+
+/// A run of reads that all found the clock invalid with no fix between them:
+/// the first one's time, and the feeder's sync count then, which any fix
+/// since would have moved. Reads hours apart, Doze's, may both find it
+/// invalid around a valid spell; the count tells them apart.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InvalidRun {
+    /// Unix milliseconds.
+    pub since_ms: i64,
+    pub syncs: u32,
+}
+
+/// What tells one state of the feeder's clock from the next: whether it
+/// reads valid, how many fixes it took and the last one's source.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ViewMark {
+    pub valid: bool,
+    pub syncs: u32,
+    pub last: Option<TimeSource>,
+}
+
+impl ViewMark {
+    pub fn of(view: &TimeView) -> Self {
+        Self {
+            valid: view.clock_ms.is_some(),
+            syncs: view.syncs,
+            last: view.last,
+        }
+    }
+}
+
+impl AutoSync {
+    /// What to do on reading `view` at `now`, as [`check`] says, but sending
+    /// no sync within `spacing` of the last one sent, nor while a refused
+    /// one's view stands. It notes the clock's run of invalid reads.
+    pub fn read(
+        &mut self,
+        view: &TimeView,
+        role: ClientRole,
+        now: Timestamp,
+        spacing: Duration,
+    ) -> ClockCheck {
+        let now_ms = now.as_millisecond();
+        self.invalid = match (view.clock_ms, self.invalid) {
+            (None, Some(run)) if run.syncs == view.syncs => Some(run),
+            (None, _) => Some(InvalidRun {
+                since_ms: now_ms,
+                syncs: view.syncs,
+            }),
+            (Some(_), _) => None,
+        };
+        if self
+            .refused_on
+            .is_some_and(|mark| mark != ViewMark::of(view))
+        {
+            self.refused_on = None;
+        }
+
+        let since = self
+            .invalid
+            .and_then(|run| Timestamp::from_millisecond(run.since_ms).ok());
+        let spacing_ms = i64::try_from(spacing.as_millis()).unwrap_or(i64::MAX);
+        // A last sync ahead of now is a client clock that stepped back:
+        // its spacing says nothing.
+        let rested = self
+            .sent_ms
+            .is_none_or(|sent| !(0..spacing_ms).contains(&now_ms.saturating_sub(sent)));
+        match check(view, role, now, since) {
+            ClockCheck::Sync if !rested || self.refused_on.is_some() => ClockCheck::Leave,
+            other => other,
+        }
+    }
+
+    /// An automatic sync went out at `now`.
+    pub fn sent(&mut self, now: Timestamp) {
+        self.sent_ms = Some(now.as_millisecond());
+    }
+
+    /// The feeder refused a sync sent on `view` as out of range.
+    pub fn refused(&mut self, view: &TimeView) {
+        self.refused_on = Some(ViewMark::of(view));
+    }
+
+    /// The later of what two clients' processes kept: the last sync either
+    /// sent, and `newer`'s reading of the clock.
+    #[must_use]
+    pub fn merged(&self, newer: &Self) -> Self {
+        Self {
+            sent_ms: self.sent_ms.max(newer.sent_ms),
+            ..newer.clone()
+        }
+    }
+}
+
+/// The zone names an owner picks from, sorted: tzdb's `zone.tab`, one zone
+/// for each region of each country (`America/Denver`, `Europe/Amsterdam`),
+/// those the bundled tzdb holds, and `UTC`. The older names `backward`
+/// keeps (`US/Pacific`, `Asia/Calcutta`) and the POSIX-style ones
+/// (`EST5EDT`, `Etc/GMT+3`) are not offered; [`rule`] still takes them.
 pub fn zones() -> Vec<&'static str> {
-    let mut names: Vec<&'static str> = jiff_tzdb::available()
-        .filter(|name| *name == "UTC" || (name.contains('/') && !name.starts_with("Etc/")))
+    let mut names: Vec<&'static str> = include_str!("zones.txt")
+        .lines()
+        .filter(|name| jiff_tzdb::get(name).is_some())
+        .chain(["UTC"])
         .collect();
     names.sort_unstable();
     names.dedup();
@@ -540,12 +722,17 @@ mod tests {
         assert_eq!(disagreement(rule, &sydney, now), None);
     }
 
-    fn view(clock_ms: Option<u64>, error_ms: Option<u32>) -> TimeView {
+    /// 2026-10-26T00:00:00Z in milliseconds, as a client reads it.
+    const NOW_MS: u64 = 1_793_059_200_000;
+
+    /// A time view read at [`NOW_MS`]: the feeder's clock `clock_ms` with
+    /// error `error_ms`, asking `ntp`.
+    fn view(clock_ms: Option<u64>, error_ms: Option<u32>, ntp: NtpServer) -> TimeView {
         TimeView {
             generation: Generation(1),
             writable: true,
             zone: None,
-            ntp: wellfed_model::NtpServer::Off,
+            ntp,
             clock_ms,
             error_ms,
             offset_s: None,
@@ -553,31 +740,115 @@ mod tests {
             rate_bound_ppb: 5_000_000,
             learned: false,
             syncs: 1,
-            last: Some(wellfed_model::TimeSource::Owner),
+            last: Some(TimeSource::Owner),
             last_age_s: Some(0),
             ntp_last: None,
         }
     }
 
-    /// Anyone sets an invalid clock; only an owner re-sets a valid one,
-    /// and only once its error reaches half the validity limit.
+    const OFF: NtpServer = NtpServer::Off;
+    const GATEWAY: NtpServer = NtpServer::Gateway { port: 123 };
+
+    fn now() -> Timestamp {
+        Timestamp::from_millisecond(i64::try_from(NOW_MS).unwrap()).unwrap()
+    }
+
+    fn later(ms: i64) -> Timestamp {
+        Timestamp::from_millisecond(now().as_millisecond() + ms).unwrap()
+    }
+
+    /// With no time server, anyone sets an invalid clock, and only an owner
+    /// re-sets a valid one, once its error reaches half the validity limit.
     #[test]
-    fn a_sync_is_due_by_the_error_and_the_role() {
-        let invalid = view(None, None);
+    fn with_no_time_server_an_owner_keeps_the_clock_and_anyone_sets_it() {
+        let half = u32::try_from(OWNER_SYNC_ERROR_MS).unwrap();
+        let invalid = view(None, None, OFF);
         for role in [ClientRole::Owner, ClientRole::Member, ClientRole::Server] {
-            assert!(sync_due(&invalid, role), "{role:?}");
+            assert_eq!(
+                check(&invalid, role, now(), None),
+                ClockCheck::Sync,
+                "{role:?}"
+            );
         }
 
-        let fresh = view(Some(1_793_000_000_000), Some(1_000));
-        let half = u32::try_from(OWNER_SYNC_ERROR_MS).unwrap();
-        let grown = view(Some(1_793_000_000_000), Some(half));
-        assert!(!sync_due(&fresh, ClientRole::Owner));
-        assert!(!sync_due(&view(Some(1), Some(half - 1)), ClientRole::Owner));
-        assert!(sync_due(&grown, ClientRole::Owner));
+        let fresh = view(Some(NOW_MS), Some(1_000), OFF);
+        let grown = view(Some(NOW_MS), Some(half), OFF);
+        assert_eq!(
+            check(&fresh, ClientRole::Owner, now(), None),
+            ClockCheck::Leave
+        );
+        assert_eq!(
+            check(
+                &view(Some(NOW_MS), Some(half - 1), OFF),
+                ClientRole::Owner,
+                now(),
+                None
+            ),
+            ClockCheck::Leave
+        );
+        assert_eq!(
+            check(&grown, ClientRole::Owner, now(), None),
+            ClockCheck::Sync
+        );
         for role in [ClientRole::Member, ClientRole::Server, ClientRole::Unknown] {
-            assert!(!sync_due(&grown, role), "{role:?}");
+            assert_eq!(
+                check(&grown, role, now(), None),
+                ClockCheck::Leave,
+                "{role:?}"
+            );
         }
-        assert!(!sync_due(&view(Some(1), None), ClientRole::Owner));
+    }
+
+    /// NTP never re-anchors a valid clock, so an owner's sync would, at the
+    /// phone's time: a clock asking a time server is left to it, however
+    /// far its error grew.
+    #[test]
+    fn a_clock_asking_a_time_server_is_left_to_it_while_valid() {
+        let half = u32::try_from(OWNER_SYNC_ERROR_MS).unwrap();
+        let grown = view(Some(NOW_MS), Some(half), GATEWAY);
+        assert_eq!(
+            check(&grown, ClientRole::Owner, now(), None),
+            ClockCheck::Leave
+        );
+    }
+
+    /// With a time server, an invalid clock is NTP's to re-set within its
+    /// old interval first: a client sets it only once two reads two minutes
+    /// apart both find it invalid.
+    #[test]
+    fn with_a_time_server_an_invalid_clock_waits_two_minutes() {
+        let invalid = view(None, None, GATEWAY);
+        let role = ClientRole::Member;
+        assert_eq!(check(&invalid, role, now(), None), ClockCheck::Leave);
+        assert_eq!(check(&invalid, role, now(), Some(now())), ClockCheck::Leave);
+        let first = later(-INVALID_WAIT_MS + 1);
+        assert_eq!(check(&invalid, role, now(), Some(first)), ClockCheck::Leave);
+        let first = later(-INVALID_WAIT_MS);
+        assert_eq!(check(&invalid, role, now(), Some(first)), ClockCheck::Sync);
+    }
+
+    /// A client further from the feeder than the feeder's error allows
+    /// sends nothing by itself, whichever of the two is wrong.
+    #[test]
+    fn a_client_that_disagrees_with_the_clock_sends_nothing() {
+        let half = u32::try_from(OWNER_SYNC_ERROR_MS).unwrap();
+        // The feeder claims 61 s; the phone is 64 s ahead of it.
+        let grown = view(Some(NOW_MS - 64_000), Some(half + 1_000), OFF);
+        assert_eq!(
+            check(&grown, ClientRole::Owner, now(), None),
+            ClockCheck::Disagrees {
+                client_ahead_ms: 64_000
+            }
+        );
+        assert_eq!(clock_disagreement(&grown, now()), Some(64_000));
+
+        // Within its error and the margin, it agrees.
+        let close = view(Some(NOW_MS + 62_000), Some(half + 1_000), OFF);
+        assert_eq!(clock_disagreement(&close, now()), None);
+        assert_eq!(
+            check(&close, ClientRole::Owner, now(), None),
+            ClockCheck::Sync
+        );
     }
 
     /// At the unlearned bound the error reaches the sync point about 3.3
@@ -593,17 +864,154 @@ mod tests {
         assert_eq!(after_s(LEARNED_FLOOR_PPM), 300_000, "3.5 days");
     }
 
-    /// The names offered are sorted, unique, and each one makes a rule.
+    /// The memo notes the run of invalid reads, so the two-minute wait counts
+    /// from the first, and a new run starts once the clock read valid.
+    #[test]
+    fn the_memo_counts_the_wait_from_the_first_invalid_read() {
+        let mut memo = AutoSync::default();
+        let invalid = view(None, None, GATEWAY);
+        let spacing = Duration::from_secs(300);
+        let role = ClientRole::Member;
+        assert_eq!(memo.read(&invalid, role, now(), spacing), ClockCheck::Leave);
+        assert_eq!(
+            memo.read(&invalid, role, later(60_000), spacing),
+            ClockCheck::Leave
+        );
+        assert_eq!(
+            memo.read(&invalid, role, later(INVALID_WAIT_MS), spacing),
+            ClockCheck::Sync
+        );
+
+        // NTP set it, and it lapsed again: the wait starts over.
+        let valid = view(Some(NOW_MS), Some(1_000), GATEWAY);
+        memo.read(&valid, role, later(INVALID_WAIT_MS), spacing);
+        assert_eq!(memo.invalid, None);
+        assert_eq!(
+            memo.read(&invalid, role, later(INVALID_WAIT_MS + 1_000), spacing),
+            ClockCheck::Leave
+        );
+    }
+
+    /// Two reads hours apart that both find the clock invalid, with a fix
+    /// between them that no read saw: the sync count moved, so the second
+    /// starts a run of its own rather than ending a long one.
+    #[test]
+    fn a_fix_between_two_invalid_reads_starts_a_new_run() {
+        let mut memo = AutoSync::default();
+        let invalid = view(None, None, GATEWAY);
+        let spacing = Duration::from_secs(300);
+        let role = ClientRole::Owner;
+        memo.read(&invalid, role, now(), spacing);
+        let fixed_since = TimeView {
+            syncs: 2,
+            ..invalid.clone()
+        };
+        let hours = later(7 * 3_600_000);
+        assert_eq!(
+            memo.read(&fixed_since, role, hours, spacing),
+            ClockCheck::Leave
+        );
+        assert_eq!(
+            memo.invalid,
+            Some(InvalidRun {
+                since_ms: hours.as_millisecond(),
+                syncs: 2
+            })
+        );
+    }
+
+    /// One sync each spacing, whether or not it landed; a clock stepped back
+    /// below the last sync waits for nothing.
+    #[test]
+    fn the_memo_spaces_its_syncs() {
+        let mut memo = AutoSync::default();
+        let invalid = view(None, None, OFF);
+        let spacing = Duration::from_secs(300);
+        let role = ClientRole::Member;
+        assert_eq!(memo.read(&invalid, role, now(), spacing), ClockCheck::Sync);
+        memo.sent(now());
+        assert_eq!(
+            memo.read(&invalid, role, later(299_999), spacing),
+            ClockCheck::Leave
+        );
+        assert_eq!(
+            memo.read(&invalid, role, later(300_000), spacing),
+            ClockCheck::Sync
+        );
+        assert_eq!(
+            memo.read(&invalid, role, later(-1), spacing),
+            ClockCheck::Sync
+        );
+    }
+
+    /// A refused sync is not sent again on the same view, only once the
+    /// clock moved on (another fix, or a change of validity).
+    #[test]
+    fn a_refused_sync_waits_for_the_view_to_change() {
+        let mut memo = AutoSync::default();
+        let invalid = view(None, None, OFF);
+        let spacing = Duration::from_secs(300);
+        let role = ClientRole::Member;
+        memo.sent(now());
+        memo.refused(&invalid);
+        assert_eq!(
+            memo.read(&invalid, role, later(3_600_000), spacing),
+            ClockCheck::Leave
+        );
+
+        let moved = TimeView {
+            syncs: 2,
+            ..invalid.clone()
+        };
+        assert_eq!(
+            memo.read(&moved, role, later(3_600_000), spacing),
+            ClockCheck::Sync
+        );
+        assert_eq!(memo.refused_on, None);
+    }
+
+    /// Two processes' memos keep the later sync and the newer reading.
+    #[test]
+    fn merged_memos_keep_the_later_sync() {
+        let old = AutoSync {
+            sent_ms: Some(2),
+            invalid: Some(InvalidRun {
+                since_ms: 1,
+                syncs: 1,
+            }),
+            refused_on: None,
+        };
+        let newer = AutoSync {
+            sent_ms: Some(1),
+            invalid: None,
+            refused_on: None,
+        };
+        let merged = old.merged(&newer);
+        assert_eq!(merged.sent_ms, Some(2));
+        assert_eq!(merged.invalid, None);
+    }
+
+    /// The names offered are sorted and unique, hold no `backward` alias,
+    /// and each one makes a rule.
     #[test]
     fn every_zone_offered_is_a_place_with_a_rule() {
         let now = Timestamp::from_second(NOW).unwrap();
         let names = zones();
         assert!(names.len() > 300, "{} zones", names.len());
         assert!(names.windows(2).all(|pair| pair[0] < pair[1]));
-        assert!(names.contains(&"America/Denver"));
-        assert!(names.contains(&"UTC"));
-        assert!(!names.iter().any(|name| name.starts_with("Etc/")));
-        assert!(!names.contains(&"EST5EDT"));
+        for kept in ["America/Denver", "Europe/Amsterdam", "Asia/Kolkata", "UTC"] {
+            assert!(names.contains(&kept), "{kept}");
+        }
+        for alias in [
+            "US/Pacific",
+            "Asia/Calcutta",
+            "America/Buenos_Aires",
+            "Europe/Kiev",
+            "EST5EDT",
+            "Etc/GMT+3",
+        ] {
+            assert!(!names.contains(&alias), "{alias}");
+        }
 
         let refused: Vec<&str> = names
             .iter()
@@ -611,6 +1019,14 @@ mod tests {
             .filter(|name| rule(name, now, None).is_err())
             .collect();
         assert!(refused.len() <= 4, "{refused:?}");
+    }
+
+    /// Nearly every name the list holds is one the bundled tzdb knows, so a
+    /// list from another tzdb release loses no more than a rename or two.
+    #[test]
+    fn the_list_names_zones_the_bundle_holds() {
+        let listed = include_str!("zones.txt").lines().count();
+        assert!(zones().len() + 3 >= listed, "{} of {listed}", zones().len());
     }
 
     /// Every zone's rule fits the feeder and agrees with jiff at every

@@ -98,6 +98,7 @@ fn connect(schema: u32) -> (Update, usize) {
     let target = Target {
         identity: *Keypair::from_secret(FEEDER).public(),
         address: Some(address.to_string()),
+        zone: jiff::tz::TimeZone::UTC,
     };
     let feeder = Feeder::start(
         ClientKey::generate().unwrap(),

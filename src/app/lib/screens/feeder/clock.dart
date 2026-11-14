@@ -14,6 +14,7 @@ import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
 import 'package:wellfed/widgets/replies.dart';
 import 'package:wellfed/widgets/settings_list.dart';
 import 'package:wellfed/widgets/when.dart';
@@ -62,6 +63,18 @@ class _ClockScreenState extends State<ClockScreen> {
     if (mounted) setState(() => _asking = false);
   }
 
+  /// The owner's call when this phone and the feeder disagree: nothing sends
+  /// this phone's time by itself then, as either could be the one that's wrong.
+  Future<void> _sync() async {
+    setState(() => _asking = true);
+    final FeederReply reply = await widget.feeder.ask(const FeederRequest.syncClock());
+    if (!mounted) return;
+    showProblem(context, reply);
+
+    await widget.feeder.ask(const FeederRequest.getTime());
+    if (mounted) setState(() => _asking = false);
+  }
+
   Future<void> _pickZone() async {
     final String? zone = await Navigator.of(context).push<String>(
       MaterialPageRoute<String>(
@@ -106,6 +119,14 @@ class _ClockScreenState extends State<ClockScreen> {
           padding: EdgeInsets.fromLTRB(Space.s4, Space.s3, Space.s4, Space.s4 + MediaQuery.paddingOf(context).bottom),
           children: [
             _Readout(feeder: widget.feeder),
+            if (time?.phoneAheadMs case final int ahead? when widget.feeder.state.cardIsCurrent) ...[
+              const SizedBox(height: Space.s3),
+              _Disagreement(
+                aheadMs: ahead,
+                owner: time?.writable ?? false,
+                onSync: can ? () => unawaited(_sync()) : null,
+              ),
+            ],
             const SizedBox(height: Space.s5),
             SettingsSection(
               'Time zone',
@@ -164,6 +185,47 @@ class _ClockScreenState extends State<ClockScreen> {
       );
     },
   );
+}
+
+/// This phone's clock and the feeder's are further apart than the feeder's
+/// error allows, so one of them is wrong. The app leaves the feeder's alone
+/// until an owner, who can check this phone's time, sets it with [onSync];
+/// anyone else is told to ask one.
+class _Disagreement extends StatelessWidget {
+  const _Disagreement({required this.aheadMs, required this.owner, required this.onSync});
+
+  final int aheadMs;
+  final bool owner;
+  final VoidCallback? onSync;
+
+  @override
+  Widget build(BuildContext context) {
+    final String by = _gapText(aheadMs.abs());
+    final String side = aheadMs > 0 ? 'ahead of' : 'behind';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Notice(
+          tone: Tone.warning,
+          lead: 'This $deviceName and the feeder disagree about the time.',
+          text: !owner
+              ? "This $deviceName is $by $side the feeder, so it won't set the feeder's clock. An owner can set it from their phone."
+              : "This $deviceName is $by $side the feeder, so it won't set the feeder's clock by itself. Check this "
+                    "$deviceName's time first: if it's right, set the feeder's from it.",
+        ),
+        if (owner) ...[
+          const SizedBox(height: Space.s2),
+          OutlinedButton(onPressed: onSync, child: Text('Set the time from this $deviceName')),
+        ],
+      ],
+    );
+  }
+
+  static String _gapText(int ms) => ms < 120000
+      ? '${ms ~/ 1000} s'
+      : ms < 7200000
+      ? '${ms ~/ 60000} min'
+      : '${ms ~/ 3600000} h';
 }
 
 /// The feeder's time right now, large and ticking, and how far to trust it.

@@ -14,6 +14,12 @@ part 'feeder.freezed.dart';
 
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
+/// Name the app's data directory, where the phone keeps what it knows of
+/// each feeder, once a process: its sessions keep their memo of the clock
+/// syncs there, beside the catch-ups'. Before this they keep it in memory.
+void useDataDirectory({required String dir}) =>
+    RustLib.instance.api.crateApiFeederUseDataDirectory(dir: dir);
+
 /// The time zones an owner picks from for the feeder, as IANA names, sorted.
 /// Choosing one sends [`ZoneChange::Named`], whose rule is checked then.
 List<String> timeZones() => RustLib.instance.api.crateApiFeederTimeZones();
@@ -613,6 +619,11 @@ class TimeInfo {
   final PlatformInt64? lastAtMs;
   final NtpResult? ntpLast;
 
+  /// How far this phone's clock was ahead of the feeder's when it was
+  /// read, when that is more than the feeder's error allows: one of the
+  /// two is wrong, and nothing sets the clock by itself.
+  final PlatformInt64? phoneAheadMs;
+
   const TimeInfo({
     required this.generation,
     required this.writable,
@@ -628,6 +639,7 @@ class TimeInfo {
     this.last,
     this.lastAtMs,
     this.ntpLast,
+    this.phoneAheadMs,
   });
 
   @override
@@ -645,7 +657,8 @@ class TimeInfo {
       syncs.hashCode ^
       last.hashCode ^
       lastAtMs.hashCode ^
-      ntpLast.hashCode;
+      ntpLast.hashCode ^
+      phoneAheadMs.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -665,7 +678,8 @@ class TimeInfo {
           syncs == other.syncs &&
           last == other.last &&
           lastAtMs == other.lastAtMs &&
-          ntpLast == other.ntpLast;
+          ntpLast == other.ntpLast &&
+          phoneAheadMs == other.phoneAheadMs;
 }
 
 class TraceView {

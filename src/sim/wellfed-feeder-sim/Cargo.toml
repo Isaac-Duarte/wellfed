@@ -40,6 +40,8 @@ ed25519-dalek = "2"
 wellfed-feeder-sim = { path = ".", features = ["harness"] }
 sha2 = "0.10"
 wellfed-connect.workspace = true
+# The rule a client syncs the clock by, against the feeder's own clock.
+wellfed-client.workspace = true
 jiff.workspace = true
 wellfed-model.workspace = true
 wellfed-signed.workspace = true

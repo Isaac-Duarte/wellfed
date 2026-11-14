@@ -92,7 +92,10 @@ def _time(simulator: Simulator) -> dict[str, Any]:
 async def test_a_feeder_that_needs_the_time_is_given_it(
     hass: HomeAssistant, simulator: Simulator
 ) -> None:
+    # With no time server, nothing else will set it: the sync goes at once.
+    simulator.owner("time", "--ntp", "off")
     assert _time(simulator)["clock_ms"] is None, "a fresh feeder needs the time"
+    await hass.config.async_set_time_zone("Asia/Kolkata")
 
     entry = await _pair(hass, simulator)
     await _until(
@@ -105,6 +108,7 @@ async def test_a_feeder_that_needs_the_time_is_given_it(
     assert view["clock_ms"] is not None
     assert view["last"] == "client", "a member's sync"
     assert view["syncs"] == 1
+    assert view["offset_s"] == 5 * 3600 + 30 * 60, "Home Assistant's zone, not the host's"
 
 
 async def test_the_button_feeds_once_to_its_fed_event(

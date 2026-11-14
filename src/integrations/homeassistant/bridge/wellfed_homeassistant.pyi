@@ -405,13 +405,15 @@ class Feeder:
     """
     One feeder's session, on a thread of its own until this is dropped.
     """
-    def __new__(cls, /, secret: bytes, identity: bytes, address: str | None = None, pending: SupportsGetItem[int, Pending] = ..., answered: SupportsGetItem[int, SupportsIndex] = ..., unread: bool = False) -> Feeder:
+    def __new__(cls, /, secret: bytes, identity: bytes, address: str | None = None, pending: SupportsGetItem[int, Pending] = ..., answered: SupportsGetItem[int, SupportsIndex] = ..., unread: bool = False, zone: str | None = None) -> Feeder:
         """
         `pending` and `answered` are what the last run left: the feeds still
         unsettled, and the feed numbers the last `Answered` update listed.
         `unread` says the integration's store did not read, and the owner
         has not yet checked the bowls: every feed waits until
-        `bowls_checked`.
+        `bowls_checked`. `zone` is Home Assistant's time zone, an IANA
+        name: the feeder's clock syncs carry its offsets and local times
+        are read in it. One this build can't find reads as the host's.
         """
     def bowls_checked(self, /) -> None:
         """
