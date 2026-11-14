@@ -7737,8 +7737,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TimeInfo dco_decode_time_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 15)
-      throw Exception('unexpected arr length: expect 15 but see ${arr.length}');
+    if (arr.length != 16)
+      throw Exception('unexpected arr length: expect 16 but see ${arr.length}');
     return TimeInfo(
       generation: dco_decode_u_32(arr[0]),
       writable: dco_decode_bool(arr[1]),
@@ -7755,6 +7755,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       lastAtMs: dco_decode_opt_box_autoadd_i_64(arr[12]),
       ntpLast: dco_decode_opt_box_autoadd_ntp_result(arr[13]),
       phoneAheadMs: dco_decode_opt_box_autoadd_i_64(arr[14]),
+      serverDisagrees: dco_decode_bool(arr[15]),
     );
   }
 
@@ -12419,6 +12420,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_lastAtMs = sse_decode_opt_box_autoadd_i_64(deserializer);
     var var_ntpLast = sse_decode_opt_box_autoadd_ntp_result(deserializer);
     var var_phoneAheadMs = sse_decode_opt_box_autoadd_i_64(deserializer);
+    var var_serverDisagrees = sse_decode_bool(deserializer);
     return TimeInfo(
       generation: var_generation,
       writable: var_writable,
@@ -12435,6 +12437,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       lastAtMs: var_lastAtMs,
       ntpLast: var_ntpLast,
       phoneAheadMs: var_phoneAheadMs,
+      serverDisagrees: var_serverDisagrees,
     );
   }
 
@@ -16961,6 +16964,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_i_64(self.lastAtMs, serializer);
     sse_encode_opt_box_autoadd_ntp_result(self.ntpLast, serializer);
     sse_encode_opt_box_autoadd_i_64(self.phoneAheadMs, serializer);
+    sse_encode_bool(self.serverDisagrees, serializer);
   }
 
   @protected

@@ -61,7 +61,8 @@ impl Server {
             let outcome = Reply::Refused(Refusal::Forbidden);
             return Some(self.remember(memory, id, action, outcome));
         }
-        let by = Source::Client(fingerprint(&key));
+        let client = fingerprint(&key);
+        let by = Source::Client(client);
         let outcome = match action {
             Action::Feeder(action) => match device.feeder() {
                 Some(feeder) => {
@@ -78,7 +79,7 @@ impl Server {
                 Err(refusal) => Reply::Refused(refusal),
             },
             Action::TimeSync(fields) => {
-                match device.time_sync(fields, self.sync_origin(index, role), fingerprint(&key)) {
+                match device.time_sync(fields, self.sync_origin(index, role), client) {
                     TimeResult::Synced { jump_ms } => {
                         let jump_ms = jump_ms.map(saturate);
                         device.record(now_ms, EventBody::ClockSync { by, jump_ms });

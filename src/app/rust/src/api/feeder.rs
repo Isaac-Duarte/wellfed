@@ -273,6 +273,10 @@ pub struct TimeInfo {
     /// read, when that is more than the feeder's error allows: one of the
     /// two is wrong, and nothing sets the clock by itself.
     pub phone_ahead_ms: Option<i64>,
+    /// The clock reads invalid while its time server answers outside the
+    /// time it last trusted: the server or the time it was last set to is
+    /// wrong, and nothing sets the clock by itself.
+    pub server_disagrees: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -127,6 +127,11 @@ class _ClockScreenState extends State<ClockScreen> {
                 onSync: can ? () => unawaited(_sync()) : null,
               ),
             ],
+            if (time?.serverDisagrees ?? false)
+              if (widget.feeder.state.cardIsCurrent) ...[
+                const SizedBox(height: Space.s3),
+                _ServerDisagrees(owner: time?.writable ?? false, onSync: can ? () => unawaited(_sync()) : null),
+              ],
             const SizedBox(height: Space.s5),
             SettingsSection(
               'Time zone',
@@ -226,6 +231,38 @@ class _Disagreement extends StatelessWidget {
       : ms < 7200000
       ? '${ms ~/ 60000} min'
       : '${ms ~/ 3600000} h';
+}
+
+/// The clock reads invalid while the feeder's time server answers outside
+/// the time the clock last trusted: the server or that time is wrong, so
+/// no phone sets it by itself. The server's answer is taken once the
+/// clock's bound reaches it; an owner who checked this phone's time may
+/// set it sooner with [onSync].
+class _ServerDisagrees extends StatelessWidget {
+  const _ServerDisagrees({required this.owner, required this.onSync});
+
+  final bool owner;
+  final VoidCallback? onSync;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Notice(
+        tone: Tone.warning,
+        lead: "The feeder's time server disagrees with its clock.",
+        text: owner
+            ? 'One of them is wrong, so no $deviceName sets the clock by itself and meals wait. The feeder takes the '
+                  "server's time within an hour or so. If this $deviceName's time is right, you can set it now."
+            : 'One of them is wrong, so no $deviceName sets the clock by itself and meals wait. The feeder takes the '
+                  "server's time within an hour or so, or an owner can set it from their phone.",
+      ),
+      if (owner) ...[
+        const SizedBox(height: Space.s2),
+        OutlinedButton(onPressed: onSync, child: Text('Set the time from this $deviceName')),
+      ],
+    ],
+  );
 }
 
 /// The feeder's time right now, large and ticking, and how far to trust it.

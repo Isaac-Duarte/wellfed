@@ -541,6 +541,7 @@ impl TimeRead {
                 .map(|age| read_ms.saturating_sub(i64::from(age).saturating_mul(1000))),
             ntp_last: view.ntp_last,
             phone_ahead_ms: wellfed_client::time::clock_disagreement(view, self.read_at),
+            server_disagrees: wellfed_client::time::server_disagrees(view),
         }
     }
 }

@@ -26,7 +26,9 @@ use wellfed_core::clock::zone::{Rule, Zone};
 use wellfed_core_feeder::schedule;
 
 use serde::{Deserialize, Serialize};
-use wellfed_model::{ClientRole, NextMeal, NtpServer, Plan, Plans, TimeSource, TimeSync, TimeView};
+use wellfed_model::{
+    ClientRole, NextMeal, NtpResult, NtpServer, Plan, Plans, TimeSource, TimeSync, TimeView,
+};
 
 /// How far ahead a rule must agree with its zone.
 const AGREE_S: i64 = 10 * 366 * 86_400;
@@ -97,6 +99,24 @@ pub enum ClockCheck {
         /// The client's clock less the feeder's.
         client_ahead_ms: i64,
     },
+    /// The clock reads invalid because the feeder's time server answered,
+    /// and outside the interval the clock last trusted
+    /// ([`server_disagrees`]): the server or the time it was last set to is
+    /// wrong, and a client's sync, trusted while the clock is invalid, could
+    /// be the wrong side. Nothing is sent by itself; an owner may still set
+    /// the time by hand.
+    ServerDisagrees,
+}
+
+/// Whether the clock reads invalid while its time server is answering
+/// outside the interval it last trusted (`ntp_last: Bounded`): an expiry or
+/// a contest the server's answers did not settle. A phone that synced the
+/// clock seconds off and left NTP to miss would see this, and a sync of its
+/// own would only start the contest again.
+pub fn server_disagrees(view: &TimeView) -> bool {
+    view.clock_ms.is_none()
+        && view.ntp != NtpServer::Off
+        && view.ntp_last == Some(NtpResult::Bounded)
 }
 
 /// How far the client's clock (`now`, as the view was read) is ahead of the
@@ -116,7 +136,8 @@ pub fn clock_disagreement(view: &TimeView, now: Timestamp) -> Option<i64> {
 /// - A clock with no time server that reads invalid is set by anyone.
 /// - One that asks a time server is set only once it has read invalid for
 ///   [`INVALID_WAIT_MS`], so NTP's own re-set at each expiry, held to the
-///   old interval, comes first.
+///   old interval, comes first; and never while that server answers outside
+///   the interval ([`server_disagrees`]).
 /// - A valid clock is synced only by an owner, only with no time server,
 ///   and once its error reaches [`OWNER_SYNC_ERROR_MS`]: a member's sync
 ///   could only narrow it.
@@ -128,6 +149,9 @@ pub fn check(
     invalid_since: Option<Timestamp>,
 ) -> ClockCheck {
     let no_server = view.ntp == NtpServer::Off;
+    if server_disagrees(view) {
+        return ClockCheck::ServerDisagrees;
+    }
     let Some(_) = view.clock_ms else {
         let waited = invalid_since.is_some_and(|since| {
             now.as_millisecond().saturating_sub(since.as_millisecond()) >= INVALID_WAIT_MS
@@ -166,28 +190,37 @@ pub struct AutoSync {
 }
 
 /// A run of reads that all found the clock invalid with no fix between them:
-/// the first one's time, and the feeder's sync count then, which any fix
-/// since would have moved. Reads hours apart, Doze's, may both find it
-/// invalid around a valid spell; the count tells them apart.
+/// the first one's time, and the feeder's boot and sync count then, which a
+/// restart or any fix since would have moved. Reads hours apart, Doze's, may
+/// both find it invalid around a valid spell, or around a restart that
+/// counted its fixes from 0 again; the boot and the count tell them apart.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InvalidRun {
     /// Unix milliseconds.
     pub since_ms: i64,
+    /// The status's `boot_count`.
+    pub boot: u32,
     pub syncs: u32,
 }
 
-/// What tells one state of the feeder's clock from the next: whether it
-/// reads valid, how many fixes it took and the last one's source.
+/// What tells one state of the feeder's clock from the next: the boot,
+/// whether it reads valid, how many fixes it took this boot and the last
+/// one's source.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ViewMark {
+    /// The status's `boot_count`.
+    pub boot: u32,
     pub valid: bool,
     pub syncs: u32,
     pub last: Option<TimeSource>,
 }
 
 impl ViewMark {
-    pub fn of(view: &TimeView) -> Self {
+    /// `view` as read in the feeder's boot `boot` (the status's
+    /// `boot_count`).
+    pub fn of(view: &TimeView, boot: u32) -> Self {
         Self {
+            boot,
             valid: view.clock_ms.is_some(),
             syncs: view.syncs,
             last: view.last,
@@ -196,28 +229,31 @@ impl ViewMark {
 }
 
 impl AutoSync {
-    /// What to do on reading `view` at `now`, as [`check`] says, but sending
+    /// What to do on reading `view` at `now` in the feeder's boot `boot` (the
+    /// status's `boot_count`), as [`check`] says, but sending
     /// no sync within `spacing` of the last one sent, nor while a refused
     /// one's view stands. It notes the clock's run of invalid reads.
     pub fn read(
         &mut self,
         view: &TimeView,
+        boot: u32,
         role: ClientRole,
         now: Timestamp,
         spacing: Duration,
     ) -> ClockCheck {
         let now_ms = now.as_millisecond();
         self.invalid = match (view.clock_ms, self.invalid) {
-            (None, Some(run)) if run.syncs == view.syncs => Some(run),
+            (None, Some(run)) if run.boot == boot && run.syncs == view.syncs => Some(run),
             (None, _) => Some(InvalidRun {
                 since_ms: now_ms,
+                boot,
                 syncs: view.syncs,
             }),
             (Some(_), _) => None,
         };
         if self
             .refused_on
-            .is_some_and(|mark| mark != ViewMark::of(view))
+            .is_some_and(|mark| mark != ViewMark::of(view, boot))
         {
             self.refused_on = None;
         }
@@ -242,9 +278,10 @@ impl AutoSync {
         self.sent_ms = Some(now.as_millisecond());
     }
 
-    /// The feeder refused a sync sent on `view` as out of range.
-    pub fn refused(&mut self, view: &TimeView) {
-        self.refused_on = Some(ViewMark::of(view));
+    /// The feeder refused a sync sent on `view`, read in boot `boot`, as
+    /// out of range.
+    pub fn refused(&mut self, view: &TimeView, boot: u32) {
+        self.refused_on = Some(ViewMark::of(view, boot));
     }
 
     /// The later of what two clients' processes kept: the last sync either
@@ -724,6 +761,8 @@ mod tests {
 
     /// 2026-10-26T00:00:00Z in milliseconds, as a client reads it.
     const NOW_MS: u64 = 1_793_059_200_000;
+    /// The feeder's boot the views are read in.
+    const BOOT: u32 = 7;
 
     /// A time view read at [`NOW_MS`]: the feeder's clock `clock_ms` with
     /// error `error_ms`, asking `ntp`.
@@ -872,22 +911,31 @@ mod tests {
         let invalid = view(None, None, GATEWAY);
         let spacing = Duration::from_secs(300);
         let role = ClientRole::Member;
-        assert_eq!(memo.read(&invalid, role, now(), spacing), ClockCheck::Leave);
         assert_eq!(
-            memo.read(&invalid, role, later(60_000), spacing),
+            memo.read(&invalid, BOOT, role, now(), spacing),
             ClockCheck::Leave
         );
         assert_eq!(
-            memo.read(&invalid, role, later(INVALID_WAIT_MS), spacing),
+            memo.read(&invalid, BOOT, role, later(60_000), spacing),
+            ClockCheck::Leave
+        );
+        assert_eq!(
+            memo.read(&invalid, BOOT, role, later(INVALID_WAIT_MS), spacing),
             ClockCheck::Sync
         );
 
         // NTP set it, and it lapsed again: the wait starts over.
         let valid = view(Some(NOW_MS), Some(1_000), GATEWAY);
-        memo.read(&valid, role, later(INVALID_WAIT_MS), spacing);
+        memo.read(&valid, BOOT, role, later(INVALID_WAIT_MS), spacing);
         assert_eq!(memo.invalid, None);
         assert_eq!(
-            memo.read(&invalid, role, later(INVALID_WAIT_MS + 1_000), spacing),
+            memo.read(
+                &invalid,
+                BOOT,
+                role,
+                later(INVALID_WAIT_MS + 1_000),
+                spacing
+            ),
             ClockCheck::Leave
         );
     }
@@ -901,22 +949,99 @@ mod tests {
         let invalid = view(None, None, GATEWAY);
         let spacing = Duration::from_secs(300);
         let role = ClientRole::Owner;
-        memo.read(&invalid, role, now(), spacing);
+        memo.read(&invalid, BOOT, role, now(), spacing);
         let fixed_since = TimeView {
             syncs: 2,
             ..invalid.clone()
         };
         let hours = later(7 * 3_600_000);
         assert_eq!(
-            memo.read(&fixed_since, role, hours, spacing),
+            memo.read(&fixed_since, BOOT, role, hours, spacing),
             ClockCheck::Leave
         );
         assert_eq!(
             memo.invalid,
             Some(InvalidRun {
                 since_ms: hours.as_millisecond(),
+                boot: BOOT,
                 syncs: 2
             })
+        );
+    }
+
+    /// A restart counts the clock's fixes from 0 again: an invalid read in
+    /// the next boot with the same count starts a run of its own, and a
+    /// refusal from the boot before holds nothing back.
+    #[test]
+    fn a_restart_starts_a_new_run_and_ends_a_refusal() {
+        let mut memo = AutoSync::default();
+        let invalid = view(None, None, GATEWAY);
+        let spacing = Duration::from_secs(300);
+        let role = ClientRole::Member;
+        memo.read(&invalid, BOOT, role, now(), spacing);
+        memo.sent(now());
+        memo.refused(&invalid, BOOT);
+
+        let restarted = later(INVALID_WAIT_MS);
+        assert_eq!(
+            memo.read(&invalid, BOOT + 1, role, restarted, spacing),
+            ClockCheck::Leave,
+            "a new run waits its two minutes"
+        );
+        assert_eq!(memo.refused_on, None);
+        assert_eq!(
+            memo.invalid,
+            Some(InvalidRun {
+                since_ms: restarted.as_millisecond(),
+                boot: BOOT + 1,
+                syncs: 1
+            })
+        );
+    }
+
+    /// A time server that answers outside the interval the clock trusted
+    /// has the clock read invalid: no client sets it by itself then, owner
+    /// or member, however long it has read invalid. With no server named,
+    /// or a server that is silent, the usual rule stands.
+    #[test]
+    fn an_invalid_clock_its_server_disagrees_with_is_left_alone() {
+        let contested = TimeView {
+            ntp_last: Some(NtpResult::Bounded),
+            ..view(None, None, GATEWAY)
+        };
+        let long_ago = Some(later(-10 * INVALID_WAIT_MS));
+        assert!(server_disagrees(&contested));
+        for role in [ClientRole::Owner, ClientRole::Member] {
+            assert_eq!(
+                check(&contested, role, now(), long_ago),
+                ClockCheck::ServerDisagrees,
+                "{role:?}"
+            );
+        }
+
+        let silent = TimeView {
+            ntp_last: Some(NtpResult::Lost),
+            ..contested.clone()
+        };
+        assert_eq!(
+            check(&silent, ClientRole::Member, now(), long_ago),
+            ClockCheck::Sync
+        );
+        let no_server = TimeView {
+            ntp: OFF,
+            ..contested.clone()
+        };
+        assert_eq!(
+            check(&no_server, ClientRole::Member, now(), None),
+            ClockCheck::Sync
+        );
+        let valid = TimeView {
+            ntp_last: Some(NtpResult::Bounded),
+            ..view(Some(NOW_MS), Some(1_000), GATEWAY)
+        };
+        assert!(
+            !server_disagrees(&valid),
+            "a valid clock bounded the answer"
         );
     }
 
@@ -928,18 +1053,21 @@ mod tests {
         let invalid = view(None, None, OFF);
         let spacing = Duration::from_secs(300);
         let role = ClientRole::Member;
-        assert_eq!(memo.read(&invalid, role, now(), spacing), ClockCheck::Sync);
+        assert_eq!(
+            memo.read(&invalid, BOOT, role, now(), spacing),
+            ClockCheck::Sync
+        );
         memo.sent(now());
         assert_eq!(
-            memo.read(&invalid, role, later(299_999), spacing),
+            memo.read(&invalid, BOOT, role, later(299_999), spacing),
             ClockCheck::Leave
         );
         assert_eq!(
-            memo.read(&invalid, role, later(300_000), spacing),
+            memo.read(&invalid, BOOT, role, later(300_000), spacing),
             ClockCheck::Sync
         );
         assert_eq!(
-            memo.read(&invalid, role, later(-1), spacing),
+            memo.read(&invalid, BOOT, role, later(-1), spacing),
             ClockCheck::Sync
         );
     }
@@ -953,9 +1081,9 @@ mod tests {
         let spacing = Duration::from_secs(300);
         let role = ClientRole::Member;
         memo.sent(now());
-        memo.refused(&invalid);
+        memo.refused(&invalid, BOOT);
         assert_eq!(
-            memo.read(&invalid, role, later(3_600_000), spacing),
+            memo.read(&invalid, BOOT, role, later(3_600_000), spacing),
             ClockCheck::Leave
         );
 
@@ -964,7 +1092,7 @@ mod tests {
             ..invalid.clone()
         };
         assert_eq!(
-            memo.read(&moved, role, later(3_600_000), spacing),
+            memo.read(&moved, BOOT, role, later(3_600_000), spacing),
             ClockCheck::Sync
         );
         assert_eq!(memo.refused_on, None);
@@ -977,6 +1105,7 @@ mod tests {
             sent_ms: Some(2),
             invalid: Some(InvalidRun {
                 since_ms: 1,
+                boot: BOOT,
                 syncs: 1,
             }),
             refused_on: None,

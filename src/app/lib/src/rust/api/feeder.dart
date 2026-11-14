@@ -624,6 +624,11 @@ class TimeInfo {
   /// two is wrong, and nothing sets the clock by itself.
   final PlatformInt64? phoneAheadMs;
 
+  /// The clock reads invalid while its time server answers outside the
+  /// time it last trusted: the server or the time it was last set to is
+  /// wrong, and nothing sets the clock by itself.
+  final bool serverDisagrees;
+
   const TimeInfo({
     required this.generation,
     required this.writable,
@@ -640,6 +645,7 @@ class TimeInfo {
     this.lastAtMs,
     this.ntpLast,
     this.phoneAheadMs,
+    required this.serverDisagrees,
   });
 
   @override
@@ -658,7 +664,8 @@ class TimeInfo {
       last.hashCode ^
       lastAtMs.hashCode ^
       ntpLast.hashCode ^
-      phoneAheadMs.hashCode;
+      phoneAheadMs.hashCode ^
+      serverDisagrees.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -679,7 +686,8 @@ class TimeInfo {
           last == other.last &&
           lastAtMs == other.lastAtMs &&
           ntpLast == other.ntpLast &&
-          phoneAheadMs == other.phoneAheadMs;
+          phoneAheadMs == other.phoneAheadMs &&
+          serverDisagrees == other.serverDisagrees;
 }
 
 class TraceView {

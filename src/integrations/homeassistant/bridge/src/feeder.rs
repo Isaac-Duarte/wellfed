@@ -857,8 +857,9 @@ enum Outstanding {
     },
     /// A read, and how many requests the session had asked when it went.
     Read(Read, u64),
-    /// A sync of the feeder's clock, sent on the view `on`.
-    Clock { on: Box<TimeView> },
+    /// A sync of the feeder's clock, sent on the view `on` read in the
+    /// feeder's boot `boot`.
+    Clock { on: Box<TimeView>, boot: u32 },
 }
 
 struct Session<'a> {
@@ -955,7 +956,7 @@ impl<'a> Session<'a> {
         };
         let newest = status.last_event;
         self.memory.facts.status = Some(status);
-        self.clock_due()?;
+        self.status_read()?;
         for read in [Read::Settings, Read::Plans, Read::Time, Read::Calibration] {
             if self.serves(read) {
                 self.read(read)?;
@@ -1273,14 +1274,14 @@ impl<'a> Session<'a> {
             // feeder refused as out of range goes no more until the clock
             // moves on; any other changes nothing, and the next turn after
             // `CLOCK_EVERY` tries again.
-            Some(Outstanding::Clock { on }) => match answer {
+            Some(Outstanding::Clock { on, boot }) => match answer {
                 Some(Answer::Done { .. }) if self.serves(Read::Time) => {
                     self.read(Read::Time)?;
                     self.read(Read::Status)
                 }
                 Some(Answer::Done { .. }) => self.read(Read::Status),
                 Some(Answer::Refused(Refusal::Time)) => {
-                    self.memory.clock.refused(&on);
+                    self.memory.clock.refused(&on, boot);
                     Ok(())
                 }
                 _ => Ok(()),
@@ -1400,7 +1401,7 @@ impl<'a> Session<'a> {
         match (read, answer) {
             (Read::Status, Some(Answer::Status(status))) => {
                 facts.status = Some(status);
-                self.clock_due()?;
+                self.status_read()?;
                 self.alerts_due()?;
                 self.idle(asked)?;
             }
@@ -1458,6 +1459,26 @@ impl<'a> Session<'a> {
         }
     }
 
+    /// A status was read. While it reads the clock invalid the time view is
+    /// read again too, and the clock's rule runs on its answer: the view
+    /// says where the feeder asks for the time and what its server last
+    /// answered, which a time settings change moves with no event. A valid
+    /// clock's rule runs at once, which ends the memo's run of invalid
+    /// reads.
+    fn status_read(&mut self) -> Step {
+        let invalid = self
+            .memory
+            .facts
+            .status
+            .as_ref()
+            .is_some_and(|status| status.clock.is_none());
+        if invalid && self.serves(Read::Time) {
+            self.read(Read::Time)
+        } else {
+            self.clock_due()
+        }
+    }
+
     /// Sync the feeder's clock when the shared rule says this client should
     /// ([`AutoSync::read`]): for Home Assistant, a member, a clock the status
     /// reads invalid, at once with no time server and otherwise once it has
@@ -1469,8 +1490,8 @@ impl<'a> Session<'a> {
         let (Some(status), Some(time)) = (facts.status.as_ref(), facts.time.as_ref()) else {
             return Ok(());
         };
-        // The status is read every turn and the time view only when the
-        // clock moves: the status says whether it is set now.
+        // The status says whether the clock is set now; the time view is
+        // read again whenever it says not.
         let view = TimeView {
             clock_ms: status
                 .clock
@@ -1478,7 +1499,11 @@ impl<'a> Session<'a> {
             ..time.clone()
         };
         let now = jiff::Timestamp::now();
-        let check = self.memory.clock.read(&view, self.role, now, CLOCK_EVERY);
+        let boot = status.boot_count;
+        let check = self
+            .memory
+            .clock
+            .read(&view, boot, self.role, now, CLOCK_EVERY);
         let out = self
             .pending
             .values()
@@ -1495,8 +1520,13 @@ impl<'a> Session<'a> {
         self.connection.request(id, &sync).map_err(lost)?;
         self.asked += 1;
         self.memory.clock.sent(now);
-        self.pending
-            .insert(id, Outstanding::Clock { on: Box::new(view) });
+        self.pending.insert(
+            id,
+            Outstanding::Clock {
+                on: Box::new(view),
+                boot,
+            },
+        );
         Ok(())
     }
 
@@ -2246,6 +2276,48 @@ mod tests {
             session.clock_due().unwrap();
             assert_eq!(clock_syncs(&session), 0, "a set clock is left alone");
             assert_eq!(session.memory.facts.time.as_ref().unwrap().syncs, 1);
+        });
+    }
+
+    /// A time settings change writes no event, so the time view Home
+    /// Assistant holds can be stale: a status that reads the clock invalid
+    /// has it read again, and the rule runs on the fresh view. Here the
+    /// owner turned the time server off after it was read: the stale view
+    /// would wait two minutes, the fresh one syncs at once.
+    #[test]
+    fn an_invalid_clock_is_judged_on_a_fresh_time_view() {
+        use wellfed_feeder_sim::harness::Threaded;
+        use wellfed_model::{NtpServer, TimeChanges};
+
+        let sim = Threaded::start(*wellfed_session::noise::Keypair::from_secret(OWNER).public());
+        runtime().block_on(async {
+            let (updates, _heard) = std_mpsc::channel();
+            let mut memory = Memory::default();
+            let mut session = owner_session(&sim, &mut memory, &updates).await;
+            read_clock(&mut session).await;
+            let base = session.memory.facts.time.as_ref().unwrap().generation;
+            let changes = TimeChanges {
+                zone: None,
+                ntp: Some(NtpServer::Off),
+            };
+            let put = Op::PutTime { base, changes };
+            let answer = session.connection.ask(random().unwrap(), &put).await;
+            assert!(matches!(answer, Ok(Answer::Done { .. })), "{answer:?}");
+
+            session.status_read().unwrap();
+            assert_eq!(reads(&session), [Read::Time], "the view read again");
+            assert_eq!(clock_syncs(&session), 0, "nothing on the stale view");
+            while clock_syncs(&session) == 0 {
+                let received = session.connection.receive(Duration::from_secs(10));
+                match received.await.unwrap() {
+                    Received::Answer { id, answer } => session.answered(id, answer).unwrap(),
+                    Received::Pushed(_) => {}
+                }
+            }
+            assert_eq!(
+                session.memory.facts.time.as_ref().unwrap().ntp,
+                NtpServer::Off
+            );
         });
     }
 

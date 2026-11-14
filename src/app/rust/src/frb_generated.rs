@@ -9722,6 +9722,7 @@ impl SseDecode for crate::api::feeder::TimeInfo {
         let mut var_lastAtMs = <Option<i64>>::sse_decode(deserializer);
         let mut var_ntpLast = <Option<crate::api::model::NtpResult>>::sse_decode(deserializer);
         let mut var_phoneAheadMs = <Option<i64>>::sse_decode(deserializer);
+        let mut var_serverDisagrees = <bool>::sse_decode(deserializer);
         return crate::api::feeder::TimeInfo {
             generation: var_generation,
             writable: var_writable,
@@ -9738,6 +9739,7 @@ impl SseDecode for crate::api::feeder::TimeInfo {
             last_at_ms: var_lastAtMs,
             ntp_last: var_ntpLast,
             phone_ahead_ms: var_phoneAheadMs,
+            server_disagrees: var_serverDisagrees,
         };
     }
 }
@@ -14430,6 +14432,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::feeder::TimeInfo {
             self.last_at_ms.into_into_dart().into_dart(),
             self.ntp_last.into_into_dart().into_dart(),
             self.phone_ahead_ms.into_into_dart().into_dart(),
+            self.server_disagrees.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -19017,6 +19020,7 @@ impl SseEncode for crate::api::feeder::TimeInfo {
         <Option<i64>>::sse_encode(self.last_at_ms, serializer);
         <Option<crate::api::model::NtpResult>>::sse_encode(self.ntp_last, serializer);
         <Option<i64>>::sse_encode(self.phone_ahead_ms, serializer);
+        <bool>::sse_encode(self.server_disagrees, serializer);
     }
 }
 

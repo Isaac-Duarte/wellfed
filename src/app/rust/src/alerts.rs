@@ -751,9 +751,11 @@ mod tests {
                     sent_ms: Some(1_800_000_000_000),
                     invalid: Some(InvalidRun {
                         since_ms: 1_800_000_060_000,
+                        boot: 12,
                         syncs: 3,
                     }),
                     refused_on: Some(ViewMark {
+                        boot: 12,
                         valid: false,
                         syncs: 3,
                         last: Some(TimeSource::Owner),

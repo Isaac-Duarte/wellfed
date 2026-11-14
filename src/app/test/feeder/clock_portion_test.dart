@@ -29,6 +29,7 @@ bool? _chosen(WidgetTester tester, String name) => tester
 
 void main() {
   const time = TimeInfo(
+    serverDisagrees: false,
     generation: 8,
     writable: true,
     ntp: NtpView.gateway(port: 123),
@@ -66,6 +67,7 @@ void main() {
       session.status(
         fakeCard(
           time: const TimeInfo(
+            serverDisagrees: false,
             generation: 8,
             writable: true,
             zone: 'EST5EDT,M3.2.0,M11.1.0',
@@ -92,6 +94,7 @@ void main() {
       session.status(
         fakeCard(
           time: const TimeInfo(
+            serverDisagrees: false,
             generation: 8,
             writable: true,
             zone: 'MST7MDT,M3.2.0,M11.1.0',
@@ -144,6 +147,7 @@ void main() {
       session.status(
         fakeCard(
           time: const TimeInfo(
+            serverDisagrees: false,
             generation: 8,
             writable: true,
             zone: 'MST7MDT,M3.2.0,M11.1.0',
@@ -193,6 +197,7 @@ void main() {
       session.status(
         fakeCard(
           time: const TimeInfo(
+            serverDisagrees: false,
             generation: 8,
             writable: true,
             ntp: NtpView.off(),
@@ -220,6 +225,7 @@ void main() {
       session.status(
         fakeCard(
           time: const TimeInfo(
+            serverDisagrees: false,
             generation: 8,
             writable: false,
             ntp: NtpView.gateway(port: 123),
@@ -236,6 +242,30 @@ void main() {
       expect(find.textContaining('This phone is 3 h behind the feeder'), findsOneWidget);
       expect(find.textContaining('An owner can set it'), findsOneWidget);
       expect(find.text('Set the time from this phone'), findsNothing);
+    });
+
+    testWidgets('a time server that disagrees with the clock is shown, and an owner may set it', (tester) async {
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
+      session.status(
+        fakeCard(
+          clockSet: false,
+          time: const TimeInfo(
+            serverDisagrees: true,
+            generation: 8,
+            writable: true,
+            ntp: NtpView.gateway(port: 123),
+            syncs: 4,
+            last: TimeSource.owner,
+          ),
+        ),
+      );
+      await showTab(tester, ClockScreen(feeder: feeder));
+      session.requests.clear();
+
+      expect(find.textContaining("The feeder's time server disagrees with its clock."), findsOneWidget);
+      expect(session.requests, isEmpty);
+      await tapIn(tester, find.text('Set the time from this phone'));
+      expect(session.requests, [const FeederRequest.syncClock(), const FeederRequest.getTime()]);
     });
 
     testWidgets('coming to the screen reads the time again', (tester) async {
@@ -285,7 +315,11 @@ void main() {
       expect(session.requests.last, const FeederRequest.getTime());
 
       // What the session then says of that read.
-      session.status(fakeCard(time: const TimeInfo(generation: 9, writable: true, ntp: NtpView.off(), syncs: 1)));
+      session.status(
+        fakeCard(
+          time: const TimeInfo(serverDisagrees: false, generation: 9, writable: true, ntp: NtpView.off(), syncs: 1),
+        ),
+      );
       await settle(tester);
       session.requests.clear();
 
@@ -312,7 +346,11 @@ void main() {
       expect(session.requests.whereType<FeederRequest_PutTime>(), hasLength(1), reason: 'the read is still out');
 
       read.complete();
-      session.status(fakeCard(time: const TimeInfo(generation: 9, writable: true, ntp: NtpView.off(), syncs: 1)));
+      session.status(
+        fakeCard(
+          time: const TimeInfo(serverDisagrees: false, generation: 9, writable: true, ntp: NtpView.off(), syncs: 1),
+        ),
+      );
       await settle(tester);
       await tapIn(tester, find.text('Your router'));
       expect(session.requests.whereType<FeederRequest_PutTime>().last.base, 9);

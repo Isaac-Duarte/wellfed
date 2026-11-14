@@ -213,14 +213,20 @@ async fn read(
 ) -> Result<Visit, Error> {
     let mut connection = Connection::open(target.keys, target.identity, address, ephemeral).await?;
     let epoch = connection.epoch();
-    // What the clock steps hear changes nothing here: a sync that did not
-    // land waits for the next catch-up, and a link that broke fails the
-    // status read next.
-    let _ = keep_clock(&mut connection, clock).await;
-
-    let Answer::Status(status) = ask(&mut connection, Read::Status).await? else {
+    let Answer::Status(mut status) = ask(&mut connection, Read::Status).await? else {
         return Ok(Visit::Answered);
     };
+    // What the clock steps hear changes nothing here: a sync that did not
+    // land waits for the next catch-up, and a link that broke fails the
+    // next read. One that landed set the clock the status read before it
+    // lacked, so the status is read again for the alerts.
+    if let Ok(Synced::Landed) = keep_clock(&mut connection, clock, status.boot_count).await {
+        let Answer::Status(again) = ask(&mut connection, Read::Status).await? else {
+            return Ok(Visit::Answered);
+        };
+        status = again;
+    }
+
     let cursor = Cursor {
         epoch,
         boot: status.boot_count,
@@ -247,19 +253,29 @@ async fn read(
     Ok(Visit::Table(cursor, Box::new(view), clock))
 }
 
+/// What [`keep_clock`] came to.
+enum Synced {
+    /// No sync went, or its answer was not `Done`.
+    No,
+    Landed,
+}
+
 /// Sync the feeder's clock if its time view and the phone's memo `clock`
-/// ask this key's role to, before the status, so the status and the alert
-/// table read after say whether it took. The sync goes once; one whose
-/// answer is lost is not sent again, and one refused is not sent again
-/// until the clock's view moves on.
-async fn keep_clock(connection: &mut Connection, clock: &mut AutoSync) -> Result<(), Error> {
+/// ask this key's role to, in the feeder's boot `boot` (the status's). The
+/// sync goes once; one whose answer is lost is not sent again, and one
+/// refused is not sent again until the clock's view moves on.
+async fn keep_clock(
+    connection: &mut Connection,
+    clock: &mut AutoSync,
+    boot: u32,
+) -> Result<Synced, Error> {
     let Answer::Time(time) = ask(connection, Read::Time).await? else {
-        return Ok(());
+        return Ok(Synced::No);
     };
     let now = Timestamp::now();
     let role = connection.role();
-    if clock.read(&time, role, now, crate::clock::SYNC_AGAIN) != ClockCheck::Sync {
-        return Ok(());
+    if clock.read(&time, boot, role, now, crate::clock::SYNC_AGAIN) != ClockCheck::Sync {
+        return Ok(Synced::No);
     }
 
     let sync = wellfed_client::time::sync(now, &TimeZone::system());
@@ -269,10 +285,14 @@ async fn keep_clock(connection: &mut Connection, clock: &mut AutoSync) -> Result
         .ask(id, &Op::TimeSync(sync))
         .await
         .map_err(wellfed_connect::AskError::into_error)?;
-    if answer == Answer::Refused(Refusal::Time) {
-        clock.refused(&time);
-    }
-    Ok(())
+    Ok(match answer {
+        Answer::Done { .. } => Synced::Landed,
+        Answer::Refused(Refusal::Time) => {
+            clock.refused(&time, boot);
+            Synced::No
+        }
+        _ => Synced::No,
+    })
 }
 
 async fn ask(connection: &mut Connection, read: Read) -> Result<Answer, Error> {

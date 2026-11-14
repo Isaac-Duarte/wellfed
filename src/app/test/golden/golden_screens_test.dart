@@ -183,6 +183,7 @@ class _NoJoin implements JoinPorts {
 TimeInfo? _readClock(TimeInfo? time) => switch (time) {
   null => null,
   final time => TimeInfo(
+    serverDisagrees: false,
     generation: time.generation,
     writable: time.writable,
     zone: time.zone,

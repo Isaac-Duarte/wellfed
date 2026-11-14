@@ -23,6 +23,7 @@ void main() {
         nextMeal: NextMealView(slot: 0, atMs: feederTodayAt(12, 30), minute: 12 * 60 + 30, portions: 2),
         lastFed: fakeFed(atMs: fedAt),
         time: TimeInfo(
+          serverDisagrees: false,
           generation: 1,
           writable: true,
           ntp: const NtpView.gateway(port: 123),
@@ -59,6 +60,7 @@ void main() {
 
   group('a clock with no zone and no offset', () {
     TimeInfo time({bool writable = true, String? zone, int? offsetS}) => TimeInfo(
+      serverDisagrees: false,
       generation: 6,
       writable: writable,
       zone: zone,
@@ -108,6 +110,7 @@ void main() {
 
   group('a router that gives no time', () {
     TimeInfo time(NtpResult? last, {TimeSource? setBy}) => TimeInfo(
+      serverDisagrees: false,
       generation: 4,
       writable: true,
       ntp: const NtpView.gateway(port: 123),
@@ -149,6 +152,7 @@ void main() {
       session.status(
         fakeCard(
           time: const TimeInfo(
+            serverDisagrees: false,
             generation: 5,
             writable: true,
             ntp: NtpView.address(ip: '162.159.200.1', port: 123),
@@ -180,6 +184,7 @@ void main() {
       fakeCard(
         lastFed: fakeFed(atMs: at),
         time: TimeInfo(
+          serverDisagrees: false,
           generation: 1,
           writable: true,
           ntp: const NtpView.off(),
