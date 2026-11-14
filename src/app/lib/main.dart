@@ -15,7 +15,7 @@ Future<void> main() async {
   if (Platform.isAndroid) await startAlerts();
   if (onDesktopHost) await startComputerAlerts();
   runApp(switch (await AppState.start()) {
-    AppStarted(:final AppState app) => WellfedApp(app: app),
+    AppStarted(:final AppState app) => WellfedApp(app: app, alerts: Platform.isAndroid || onDesktopHost),
     AppFailed(:final String message) => StartFailedApp(message: message),
   });
 }

@@ -239,9 +239,15 @@ Route<Object?>? _top(NavigatorState navigator) {
 }
 
 class WellfedApp extends StatefulWidget {
-  const WellfedApp({super.key, required this.app});
+  const WellfedApp({super.key, required this.app, this.alerts = false});
 
   final AppState app;
+
+  /// Whether this app follows alerts: `main` turns it on where they run (on
+  /// Android, where the phone watches in the background, and on a computer,
+  /// which watches while the app is open). Off, the app starts no catch-ups
+  /// and touches no notification plugin, as a test of the app's shell wants.
+  final bool alerts;
 
   @override
   State<WellfedApp> createState() => _WellfedAppState();
@@ -255,14 +261,14 @@ class _WellfedAppState extends State<WellfedApp> {
   late final _fleet = FeederFleet(widget.app, _feederPorts);
   late final AppLifecycleListener _lifecycle;
 
-  /// Alerts at home: on Android, where the phone watches in the background,
-  /// and on a computer, which watches while the app is open.
-  static final bool _alerts = Platform.isAndroid || onDesktopHost;
+  late final bool _alerts = widget.alerts;
   late final _alertPorts = AppAlertPorts(widget.app.key);
   StreamSubscription<String>? _taps;
 
   /// A computer's catch-ups, which end with the app.
-  late final AlertWatch? _watch = onDesktopHost ? AlertWatch.computer(widget.app.key, () => widget.app.feeders) : null;
+  late final AlertWatch? _watch = _alerts && onDesktopHost
+      ? AlertWatch.computer(widget.app.key, () => widget.app.feeders)
+      : null;
 
   @override
   void initState() {
