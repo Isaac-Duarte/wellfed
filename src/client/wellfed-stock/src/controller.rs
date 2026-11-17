@@ -48,10 +48,11 @@ const RESOLVE_AFTER_SECONDS: i64 = 20 * 60;
 /// Resolution also needs an observed connection without OTA reports.
 const QUIET_SECONDS: i64 = 10 * 60;
 
-/// With no image server listening, the 20 minutes guard nothing: no download
-/// can start or go on, and each server start draws a new URL token, so none
-/// can finish the request later. What is left is a download that ended just
-/// before the server went: stock checks and activates it and restarts within
+/// With no image server left (no lease, so no transfer still draining, and
+/// the port refusing), the 20 minutes guard nothing: no download can start or
+/// go on, and each server start draws a new URL token, so none can finish the
+/// request later. What is left is a download that ended just before the
+/// server went: stock checks and activates it and restarts within
 /// seconds (physical: "checksum ok, Update OTA success" and the restart, about
 /// 40 s after the request). Its progress reports restart the quiet interval,
 /// so three quiet minutes after both the request and the last report cover
@@ -633,10 +634,11 @@ impl Controller {
     /// Close the latest uncertain or failed trial from fresh version evidence.
     /// Sends nothing. Missing feeder telemetry or an OTA report breaks the
     /// observation interval; elapsed time alone cannot establish an idle device.
-    /// `image` says whether an image server still listens where stock
-    /// downloads from: while one does, the request's download may still start,
-    /// so the wait covers its accept window; once none does, a short quiet
-    /// interval is enough ([`UNSERVED_QUIET_SECONDS`]).
+    /// `image` says whether an image server may still serve stock: while its
+    /// lease is left or its port answers, the request's download may still
+    /// start or still be draining after the socket closed, so the wait covers
+    /// the accept window and connection limit; once neither is so, a short
+    /// quiet interval is enough ([`UNSERVED_QUIET_SECONDS`]).
     pub fn resolve_trial(
         &mut self,
         request: ota::trial::ResolveInput,

@@ -15,7 +15,7 @@ The Android app runs the whole move and the trip back ([Evidence](#evidence)). T
 | Requirement | Why |
 | --- | --- |
 | One `OTA_UPGRADE`, never resent | A refused precheck can erase stock's OTA status sector, and an uncertain request may still be downloading |
-| Resolve a failed request before the next one | The server's ledger refuses a new trial while one is failed or uncertain. It resolves from fresh evidence: stock's own version reported in its current session and quiet connected time with no OTA report, 20 min from the request and 10 quiet while an image server listens, 3 quiet minutes once none does |
+| Resolve a failed request before the next one | The server's ledger refuses a new trial while one is failed or uncertain. It resolves from fresh evidence: stock's own version reported in its current session and quiet connected time with no OTA report, 20 min from the request and 10 quiet while an image server may still serve (its lease left while a transfer drains, or its port answering), 3 quiet minutes once none can |
 | The image port reachable from the feeder | With only TCP 1883 allowed, stock connected for about 25 s, then reported `OTA_INFORM` error 2003 |
 | Tolerate stock's ~61 s heartbeat | A 60 s telemetry bound restarted the quiet interval at every heartbeat |
 | Ask stock for its attributes when its version report is stale | Idle stock reports its version only around a connect |

@@ -118,16 +118,25 @@ pub async fn current(config_path: &Path, host: std::net::IpAddr) -> Option<Lease
     .then_some(lease)
 }
 
-/// Whether anything listens on the image server's port at `host`, lease or
-/// not. The opposite caution to [`current`]'s, which a dispatch needs: here
-/// anything that answers counts as the server, and so does a connect that
-/// does not finish within a second, since only a refusal says none is
-/// there.
-pub async fn listening(host: std::net::IpAddr) -> ImageServer {
+/// Whether an image server may still serve stock: the opposite caution to
+/// [`current`]'s, which a dispatch needs. A server that stops closes its
+/// socket first but lets a running transfer go on for up to five minutes,
+/// keeping its lease until then, so a lease file beside `config_path` counts
+/// as a server whatever the port says. Without one, anything that answers on
+/// the port counts too, and so does a connect that does not finish within a
+/// second or fails any other way: only a refusal says nothing is there.
+pub async fn listening(config_path: &Path, host: std::net::IpAddr) -> ImageServer {
+    match tokio::fs::metadata(Lease::path(config_path)).await {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Ok(_) | Err(_) => return ImageServer::Listening,
+    }
+
     let connect = tokio::net::TcpStream::connect((host, PORT));
     match tokio::time::timeout(Duration::from_secs(1), connect).await {
-        Ok(Err(_)) => ImageServer::Gone,
-        Ok(Ok(_)) | Err(_) => ImageServer::Listening,
+        Ok(Err(error)) if error.kind() == std::io::ErrorKind::ConnectionRefused => {
+            ImageServer::Gone
+        }
+        Ok(Ok(_) | Err(_)) | Err(_) => ImageServer::Listening,
     }
 }
 
@@ -670,22 +679,43 @@ mod tests {
         drop(listener);
     }
 
-    /// Only a refused connect says the image server has gone; a lease file
-    /// plays no part.
+    /// Only a refused connect with no lease file says the image server has
+    /// gone.
     #[cfg_attr(
         not(target_os = "linux"),
         ignore = "binds a 127.x address other than 127.0.0.1, which only Linux's loopback answers"
     )]
     #[tokio::test]
-    async fn the_image_server_is_gone_only_when_its_port_refuses() {
+    async fn the_image_server_is_gone_only_when_its_port_refuses_and_no_lease_is_left() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("installer.json");
         let host = std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 251));
-        assert_eq!(listening(host).await, ImageServer::Gone);
+        assert_eq!(listening(&config, host).await, ImageServer::Gone);
 
         let listener = TcpListener::bind((host, PORT)).await.unwrap();
-        assert_eq!(listening(host).await, ImageServer::Listening);
+        assert_eq!(listening(&config, host).await, ImageServer::Listening);
 
         drop(listener);
-        assert_eq!(listening(host).await, ImageServer::Gone);
+        assert_eq!(listening(&config, host).await, ImageServer::Gone);
+    }
+
+    /// A stopping server closes its socket but keeps its lease while a
+    /// transfer drains: that is still a server, though the port refuses.
+    #[cfg_attr(
+        not(target_os = "linux"),
+        ignore = "binds a 127.x address other than 127.0.0.1, which only Linux's loopback answers"
+    )]
+    #[tokio::test]
+    async fn a_lease_left_while_a_transfer_drains_is_still_a_server() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("installer.json");
+        let host = std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 249));
+        std::fs::write(Lease::path(&config), b"{}").unwrap();
+
+        assert_eq!(listening(&config, host).await, ImageServer::Listening);
+
+        std::fs::remove_file(Lease::path(&config)).unwrap();
+        assert_eq!(listening(&config, host).await, ImageServer::Gone);
     }
 
     /// A review directory holding `image`, a manifest naming `identity`, and

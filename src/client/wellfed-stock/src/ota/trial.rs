@@ -28,15 +28,17 @@ pub struct ResolveInput {
     pub note: String,
 }
 
-/// Whether anything listens on the image server's port at the address stock
-/// downloads from, when a resolution is asked for.
+/// Whether an image server may still serve stock, when a resolution is asked
+/// for: `Listening` while its lease file is left beside the config (a stopping
+/// server keeps it until its last transfer has drained) or anything answers on
+/// its port; `Gone` only once no lease is left and the port refuses.
 ///
 /// A request's install needs that server: stock downloads the image from it
 /// and writes as it downloads, and every server start draws a new URL token,
 /// so a server that has gone can never finish an earlier request. While one
-/// listens the resolution waits out its accept window; once none does, only
-/// a download that ended just before it went can still be activating, and a
-/// short quiet interval covers that.
+/// may serve, the resolution waits out its accept window and connection
+/// limit; once none can, only a download that ended just before it went can
+/// still be activating, and a short quiet interval covers that.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ImageServer {
     Listening,

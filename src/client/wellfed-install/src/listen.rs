@@ -32,7 +32,7 @@ use crate::track::{Stop, Stopped};
 /// How long an uncertain request is listened for. The listener serves no
 /// image, so the stock server's ledger resolves a request three quiet minutes
 /// into a session in which stock reported its own version; were an image
-/// server still listening, it would wait 20 minutes from the request and 10
+/// server still serving (its lease left), it would wait 20 minutes from the request and 10
 /// quiet ones, so a stock that connects or drops as late as the 20th minute
 /// still has its 10.
 pub const UNCERTAIN_WAIT: Duration = Duration::from_secs(30 * 60);
@@ -192,10 +192,10 @@ fn stock_stayed(status: &StockStatus) -> bool {
 }
 
 /// Ask the ledger to close the latest request from that report. It decides,
-/// and sends nothing: with no image server listening (the run that served one
-/// has ended), three quiet minutes with stock connected, after the request and
-/// stock's last OTA report; with one, 20 minutes since the request and 10
-/// quiet ones.
+/// and sends nothing: with no image server left (the run that served one has
+/// ended, its last transfer drained and its lease removed), three quiet
+/// minutes with stock connected, after the request and stock's last OTA
+/// report; with one, 20 minutes since the request and 10 quiet ones.
 async fn resolve(handle: &Handle, status: &StockStatus) -> bool {
     let Some(latest) = status.ota_trials.first() else {
         return false;
