@@ -4,12 +4,19 @@ name = "wellfed-relay"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
-description = "Driver for the bench's DSD TECH SH-UR04A relay board: feeder power, the loader strap and the UART lines"
+description = "Driver for the Wellfed Bench board's switched outputs over postcard-rpc: feeder power, the loader strap and the UART lines"
 publish.workspace = true
 
 [dependencies]
-serialport.workspace = true
+nusb = "0.1.14"
+postcard-rpc = { version = "0.12.1", features = ["raw-nusb"] }
+serde.workspace = true
 thiserror.workspace = true
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
+wellfed-bench-icd = { path = "../../firmware/bench/wellfed-bench-icd" }
+
+[dev-dependencies]
+postcard-rpc = { version = "0.12.1", features = ["raw-nusb", "test-utils"] }
 
 [features]
 # `FakeBoard`, a scripted board for other crates' tests.

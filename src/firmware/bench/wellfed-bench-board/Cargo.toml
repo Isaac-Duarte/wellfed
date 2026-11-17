@@ -8,7 +8,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.99"
 license = "MIT"
-description = "RP2040 firmware for the Wellfed Bench board: feeder UART bridge and SH-UR04A relay emulation"
+description = "RP2040 firmware for the Wellfed Bench board: feeder UART bridge and the postcard-rpc control interface"
 publish = false
 
 [workspace]
@@ -19,7 +19,10 @@ test = false
 bench = false
 
 [dependencies]
-wellfed-bench-at = { path = "../wellfed-bench-at" }
+wellfed-bench-icd = { path = "../wellfed-bench-icd" }
+postcard-rpc = { version = "0.12.1", default-features = false }
+postcard = "1.1.3"
+serde = { version = "1.0.229", default-features = false }
 embassy-rp = { version = "0.10.0", features = ["rp2040", "time-driver", "critical-section-impl", "unstable-pac"] }
 embassy-executor = { version = "0.10.0", features = ["platform-cortex-m", "executor-thread"] }
 embassy-time = "0.5.1"

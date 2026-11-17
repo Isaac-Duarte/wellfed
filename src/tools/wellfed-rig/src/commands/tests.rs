@@ -15,7 +15,7 @@ use crate::device::{Answer, DeviceError, DeviceStatus};
 use crate::tools::{Capture, CaptureFailure, Captured, InstallJob, Installing, PushError};
 use wellfed_bench_formats::progress::{FlashTool, StepState};
 use wellfed_formats::VERIFICATION;
-use wellfed_relay::{FakeBoard, Link, Switch};
+use wellfed_relay::{Board, FakeBoard, POWER, Switch};
 use wellfed_signed::SECTOR;
 
 fn sector() -> PlannedSector {
@@ -441,13 +441,13 @@ fn rig() -> Rig {
         device: wellfed_proto::device::Model::Plaf103,
         root: tmp.path().to_path_buf(),
         config: Config {
-            relay_port: "relay".into(),
+            board_serial: "board".into(),
             uart_port: "uart".into(),
             baseline: "b".into(),
             rom_report: "r".into(),
             analyzer_channels: None,
         },
-        relay: Relay::new(Box::new(board.clone())),
+        relay: Relay::of(Box::new(board.clone())),
         status: Status::disabled(),
         tools: Box::new(tools.clone()),
         children: crate::tools::Children::new(),
@@ -833,13 +833,13 @@ fn give_way_prepare_then_execute() {
 #[test]
 fn a_power_cut_the_board_made_since_prepare_refuses_the_execute() {
     let mut rig = rig();
-    rig.board.lock().cuts = Some(41);
+    rig.board.lock().cuts = 41;
     let execute = prepared_give_way(&mut rig);
 
     // RECOVER, short press: power off, then on again.
     let mut panel = rig.board.clone();
-    panel.transact("AT+CH1=0").unwrap();
-    panel.transact("AT+CH1=1").unwrap();
+    panel.set(POWER, Switch::Off).unwrap();
+    panel.set(POWER, Switch::On).unwrap();
     assert!(rig.board.state()[0] && !rig.board.state()[1]);
 
     let error = rig.bench.give_way_execute(&execute).unwrap_err();
@@ -848,7 +848,7 @@ fn a_power_cut_the_board_made_since_prepare_refuses_the_execute() {
 
     // Nothing cut since the prepare: the execute runs.
     let mut unbroken = self::rig();
-    unbroken.board.lock().cuts = Some(41);
+    unbroken.board.lock().cuts = 41;
     let execute = prepared_give_way(&mut unbroken);
     unbroken
         .tools
@@ -859,27 +859,8 @@ fn a_power_cut_the_board_made_since_prepare_refuses_the_execute() {
     assert_eq!(unbroken.bench.give_way_execute(&execute).unwrap(), 0);
 }
 
-/// A Wellfed Bench board on firmware from before the power-cut count is
-/// refused before any relay moves: its RECOVER button could cycle the
-/// feeder unseen, so no session is entered for a write until it counts.
-#[test]
-fn a_wellfed_board_that_does_not_count_power_cuts_enters_no_session() {
-    let mut rig = rig();
-    rig.board.lock().version = Some("0.1.0 revB".into());
-    fs::create_dir_all(rig.bench.root.join(VERIFICATION)).unwrap();
-    let args = GiveWayArgs {
-        name: "gw".into(),
-        fallback: "f".into(),
-    };
-
-    let error = rig.bench.give_way_prepare(&args).unwrap_err();
-    assert_matches!(error, Error::Relay(wellfed_relay::Error::Uncounted { .. }));
-    assert!(rig.board.log().is_empty());
-    assert!(rig.tools.0.borrow().flash.is_empty());
-}
-
 /// A plan with no record of the loader entry it runs in is no session this
-/// build entered, and neither is one a board that counts did not count.
+/// build entered, and neither is one whose count the board has moved past.
 #[test]
 fn an_execute_needs_the_count_its_prepare_recorded() {
     let mut rig = rig();
@@ -891,7 +872,7 @@ fn an_execute_needs_the_count_its_prepare_recorded() {
 
     let mut counted = self::rig();
     let execute = prepared_give_way(&mut counted);
-    counted.board.lock().cuts = Some(0);
+    counted.board.lock().cuts = 1;
     let error = counted.bench.give_way_execute(&execute).unwrap_err();
     assert_matches!(error, Error::Command(CommandsError::PowerCycled));
     assert!(

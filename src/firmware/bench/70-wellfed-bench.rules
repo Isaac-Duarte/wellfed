@@ -1,0 +1,6 @@
+# Lets the logged-in user open the Wellfed Bench board's control interface,
+# a raw USB interface that the dialout group does not cover. 1209:0001 is
+# pid.codes' shared test ID, so the manufacturer string is matched too.
+# Install: sudo cp 70-wellfed-bench.rules /etc/udev/rules.d/ &&
+#          sudo udevadm control --reload && sudo udevadm trigger
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="0001", ATTRS{manufacturer}=="Wellfed", TAG+="uaccess"

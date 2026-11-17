@@ -40,7 +40,7 @@ The older relay bench added four switches to a bare FT232R adapter's [UART wirin
 - **Relays 3 and 4 isolate the UART.** A powered adapter holds TXD and RXD high, which can back-power an unpowered feeder through its UART pins, so every power cut opens relays 3 and 4 after the supply, and every power-on closes them just before it. GND stays connected.
 - `capture` connects the UART only to a powered feeder; `--uart-when-off connected` keeps relays 3 and 4 closed through cuts, as before they were wired, for comparison.
 - `ota`, and `itest` without `--power`, leave the relay board alone and need a feeder the bench powered (which connected the UART).
-- The board answers `AT` with `OK`. `AT+CHn=1`, `AT+CHn=0` and `AT+CHn=?` set and query channel *n*. Its front buttons toggle the same state, which queries report.
+- The bench tools no longer drive the SH-UR04A. It answered `AT+CHn=1`, `=0` and `=?` lines over its serial port; the bench board takes requests over its USB control interface instead ([bench firmware](../../../src/firmware/bench/README.md#control-interface)).
 
 ### Software
 
@@ -52,12 +52,12 @@ The older relay bench added four switches to a bare FT232R adapter's [UART wirin
 
    The server runs the `wellfed-flash` beside itself unless `serve --flash-bin` names another (named `wellfed-flash` too, which the orphan check finds it by), and `restore-stock` the `wellfed` beside it unless `serve --wellfed-bin` does.
 
-2. Write the ignored `private/bench.json` with `/dev/serial/by-id/` paths, since the relay board also enumerates as a USB serial port and can take the UART adapter's old name:
+2. Write the ignored `private/bench.json` with the bench board's serial and its UART port's `/dev/serial/by-id/` path ([bench firmware](../../../src/firmware/bench/README.md#use-it-with-the-bench)):
 
    ```json
    {
-     "relay_port": "/dev/serial/by-id/<relay board>",
-     "uart_port": "/dev/serial/by-id/<UART adapter>",
+     "board_serial": "<serial>",
+     "uart_port": "/dev/serial/by-id/usb-Wellfed_Wellfed_Bench_<serial>-if00",
      "baseline": "private/<pinned full read>/flash-read.bin",
      "rom_report": "private/<ROM inspection>/report.json"
    }
@@ -74,7 +74,7 @@ Run the bench from the repository root, or pass `--root`. A job resolves the pat
 | Crate | What it does |
 | --- | --- |
 | `wellfed-bench-formats` | The protocol the server and its clients share |
-| `wellfed-relay` | The relay board driver, behind a `Board` trait the Wellfed Bench board can implement |
+| `wellfed-relay` | The bench board's driver over its USB control interface, behind a `Board` trait |
 | `wellfed-rig` | The operator sequences, and the steps the suite builds on |
 | `wellfed-itest` | The integration suite, on the rig |
 | `wellfed-bench` | One binary over the others: the server (the lease, the board, the socket, the feeder session, the UART capture, the sequences and the suite as its jobs, and the bank ledger), `serve` and its clients |
@@ -86,7 +86,7 @@ Dependencies run down the table. Their shared shapes (the bench config, progress
 | Command | Effect |
 | --- | --- |
 | `serve` | The [bench server](bench-server.md), in the foreground until Ctrl+C, SIGTERM or a hangup, printing its console as lines |
-| `status` | The [bench lease](bench-server.md#bench-lease), then the server's job, children, UART, feeder session, bank ledger and relays; with no server, the relay board itself. A server silent for 5 s is reported so, after the lease. `--break-lease` first frees a lease a killed server left |
+| `status` | The [bench lease](bench-server.md#bench-lease), then the server's job, children, UART, feeder session, bank ledger and relays; with no server, the board itself, with its telemetry. A server silent for 5 s is reported so, after the lease. `--break-lease` first frees a lease a killed server left |
 | `attach ID` | Follow job `ID` again, from its first kept line |
 | `answer JOB SEQ done\|yes\|no` | Answer question `SEQ` of job `JOB` ([restore as a job](#restore-as-a-job)), once |
 | `banks` | The [bank ledger](bench-server.md#the-bank-ledger). `--seed DUMP_SESSION` starts it, from that dump's inspection or, when it names no build, from `--bank N --build HASH` |
@@ -288,11 +288,11 @@ target/release/wellfed-bench restore-stock --key private/ota-key.json
 
 | Failure | Effect | Handling |
 | --- | --- | --- |
-| Relay board loses USB or the host reboots | Normally-open contacts drop: feeder off, strap released | A running update stops like any other power cut; finish it with `--interrupted` |
+| Bench board loses USB or the host reboots | The board keeps its outputs while it has power; losing its own power drops them all: feeder off, strap released | A running update stops like any other power cut; finish it with `--interrupted` |
 | Brownout or supply dip while powered | Relay state still reads on | Not detectable here; the updater's readback and status checks are the guard |
 | Strap contact fails at its small current (under 1 mA) | Normal boot instead of the loader | `loader` requires the banner and NAKs, otherwise powers off; nothing is retried |
 | UART adapter back-powers the feeder through its TX line | Power-off may not fully reset the chip, so the strap is ignored | Seen intermittently with the manual button (cured by replugging the adapter), not in 32 relay trials. Relays 3 and 4 now isolate the UART while off; holding a UART break while off is the fallback |
-| Relay port disappears mid-session | The current command fails; power stays as last set | Cut power by hand if needed, then check `status` |
+| The board's control interface disappears mid-session | The current request fails within 2 s; power stays as last set | Cut power by hand if needed, then check `status` |
 | Board power also feeds the motor harness | The motor driver is powered whenever the chip is | Only the ROM and flash helper run while flashing, and the driver sits in standby in the loader ([motor driver](motor-driver.md)) |
 | UART adapter stops answering control requests | A run stops before its first step | A USB reset of that adapter alone recovered it |
 

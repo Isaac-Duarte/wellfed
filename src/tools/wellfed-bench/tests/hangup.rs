@@ -1,25 +1,22 @@
 //! `wellfed-bench serve` losing its terminal, as the real binary on a
-//! pseudo-terminal: a closed `ssh -t` or terminal window. The relay board is
-//! a second pseudo-terminal speaking the board's lines, and the flash client
-//! a stand-in, so nothing here reaches hardware.
+//! pseudo-terminal: a closed `ssh -t` or terminal window. The binary is built
+//! with `fake-board`, so its board is in memory, and the flash client is a
+//! stand-in, so nothing here reaches hardware.
 //!
 //! Linux only: what these prove is which threads are left and that they sit
 //! idle, read from `/proc/<pid>/task`, which macOS has no counterpart for.
 
 #![cfg(target_os = "linux")]
 
-use std::fs::{self, File};
-use std::io::{ErrorKind, Read, Write};
+use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 use rustix::process::{Pid, Signal, kill_process};
-use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
 use tokio::runtime::Runtime;
 use wellfed_bench::server::Client;
 use wellfed_bench_formats::live::{BenchState, CancelState, Phase, Uart};
-use wellfed_relay::{FakeBoard, Link};
 
 mod support;
 use support::{BENCH, Screen, assert_ends, running};
@@ -45,49 +42,6 @@ case "$3 $4" in
   ;;
 esac
 "#;
-
-/// A pseudo-terminal in the board's place, answering as [`FakeBoard`] does,
-/// at the path it returns.
-fn relay_board() -> PathBuf {
-    let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();
-    grantpt(&master).unwrap();
-    unlockpt(&master).unwrap();
-    let path = ptsname(&master, Vec::new()).unwrap();
-    let path = PathBuf::from(path.to_str().unwrap());
-
-    let mut master = File::from(master);
-    // Powered, as a write needs the feeder to have stayed on since prepare.
-    let mut board = FakeBoard::default();
-    board.lock().on[1] = true;
-    std::thread::spawn(move || {
-        let mut line = Vec::new();
-        let mut chunk = [0; 64];
-        loop {
-            // With no side open yet, or none any more, it reads EIO.
-            let read = match master.read(&mut chunk) {
-                Ok(read) => read,
-                Err(error) if error.kind() == ErrorKind::Interrupted => 0,
-                Err(_) => {
-                    std::thread::sleep(Duration::from_millis(5));
-                    0
-                }
-            };
-            for byte in &chunk[..read] {
-                if *byte != b'\n' {
-                    line.push(*byte);
-                    continue;
-                }
-                let text = String::from_utf8_lossy(&line).trim().to_string();
-                line.clear();
-                let reply = board.transact(&text).unwrap();
-                if master.write_all(&reply).is_err() {
-                    return;
-                }
-            }
-        }
-    });
-    path
-}
 
 /// How `serve` stands on its terminal, which decides whether a hangup signals
 /// it: the kernel sends SIGHUP to a session's leader alone.
@@ -121,7 +75,7 @@ impl Serving {
         fs::write(
             root.join("private/bench.json"),
             serde_json::json!({
-                "relay_port": relay_board(),
+                "board_serial": "fake",
                 "uart_port": "uart",
                 "baseline": "b",
                 "rom_report": "r",
@@ -219,7 +173,7 @@ impl Serving {
         fs::write(root.join("private/verification/u1-plan.json"), "{}").unwrap();
         fs::write(
             root.join("private/verification/u1-power.json"),
-            r#"{"power_cuts":null}"#,
+            r#"{"power_cuts":0}"#,
         )
         .unwrap();
         let words = [

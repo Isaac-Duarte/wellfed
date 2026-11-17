@@ -15,7 +15,7 @@ use embassy_rp::watchdog::Watchdog;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
 use embassy_time::{Duration, Instant, Ticker, Timer};
-use wellfed_bench_at::{Channel, Press, PressClassifier};
+use wellfed_bench_icd::{Channel, Press, PressClassifier};
 
 use crate::{bridge, outputs, telemetry, usb};
 

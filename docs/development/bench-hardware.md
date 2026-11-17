@@ -24,7 +24,7 @@ Nothing ever connects to a feeder's 3V3 or VCC pin. The feeder runs from its own
 | Wellfed Bench board, Rev B | One USB cable to the host. Switches feeder 5 V, holds the loader strap, bridges the feeder's UART and isolates it while the feeder is off |
 | The feeder (PLAF103) or the fountain (PLWF106) | The device under test, one at a time |
 
-The board replaced an SH-UR04A USB relay board and an FT232R adapter, and speaks the relay board's `AT+CHn` protocol, so `wellfed-bench` drives it the same way. The [relay bench](../devices/plaf103/bench.md#wiring) page keeps the relay board's wiring for comparison.
+The board replaced an SH-UR04A USB relay board and an FT232R adapter. `wellfed-bench` drives its four channels over a USB control interface, found by the board's serial ([bench firmware](../../src/firmware/bench/README.md#control-interface)). The [relay bench](../devices/plaf103/bench.md#wiring) page keeps the relay board's wiring for comparison.
 
 ## The board's connectors
 
@@ -50,7 +50,7 @@ Each pin's silkscreen label and net name is the feeder's signal on that pin.
 | 3 | GND | `GND` | Feeder GND | Board ground |
 
 - **The strap is on feeder TX** because the chip's download strap is its log UART TX, PA7 ([chip page](../chips/rtl8721dm/README.md#boot-and-download-mode)). CH2 pulls `FDR_TX` to ground through 4.7 kΩ while the feeder powers on.
-- **The TX sense reads the wire, not the buffer.** GPIO28 reads `FDR_TX` on the header side, so `AT+TXV?` and `AT+ALIVE?` show whether feeder TX reaches pin 2 even while CH4 is off.
+- **The TX sense reads the wire, not the buffer.** GPIO28 reads `FDR_TX` on the header side, so the TX level and the alive flag in `wellfed-bench status` show whether feeder TX reaches pin 2 even while CH4 is off.
 - **The header carries no power.** Feeder power goes only through FEEDER 5V.
 - **Both directions are buffered** by a 74LVC2G125, so a board left powered cannot back-power a feeder that is off through its UART pins. Each line also has ESD protection.
 
@@ -86,28 +86,28 @@ The fountain's header is labelled **GND, TX, RX, 3V3** ([UART page](../devices/p
 
 Run the fountain's 5 V supply through FEEDER 5V, so the bench can switch it.
 
-## Find the ports
+## Find the board and its port
 
-The board shows up as two USB serial ports. `private/bench.json` names both.
+The board shows up as one USB serial port and one control interface. `private/bench.json` names both.
 
-| USB interface | Port | `bench.json` key | Answers `AT` |
-| --- | --- | --- | --- |
-| 0 | The feeder UART bridge, `…-if00` | `uart_port` | No |
-| 2 | The relay port, `…-if02` | `relay_port` | Yes, with `OK` |
+| USB interface | What it is | `bench.json` key |
+| --- | --- | --- |
+| 0 | The feeder UART bridge, `…-if00` | `uart_port` |
+| 2 | The control interface, opened by the board's serial | `board_serial` |
 
-Name each port by a path that survives a replug, such as `/dev/serial/by-id/usb-Wellfed_Wellfed_Bench_<serial>-if00`. Unsure which is which? Send `AT`: only the relay port answers. The [bench firmware](../../src/firmware/bench/README.md#use-it-with-the-bench) page has the full `bench.json` and the port names on each host.
+Name the UART port by a path that survives a replug, such as `/dev/serial/by-id/usb-Wellfed_Wellfed_Bench_<serial>-if00`. The serial in that name is the `board_serial`. On Linux the control interface needs the board's udev rule. The [bench firmware](../../src/firmware/bench/README.md#use-it-with-the-bench) page has the full `bench.json`, the rule, and the names on each host.
 
 ## Check the wiring
 
-Check these before blaming the firmware or the tools. Steps 1 and 2 run with no server; steps 3 and 4 run as jobs of `wellfed-bench serve`, which owns both ports.
+Check these before blaming the firmware or the tools. Steps 1 and 2 run with no server; steps 3 and 4 run as jobs of `wellfed-bench serve`, which owns the board and its port.
 
 1. Run `wellfed-bench status` with no server.
 
-   You should see the lease free, all four channels off and both ports present.
+   You should see the lease free, all four channels off, `board_serial: present` and `uart_port: present`.
 
-2. Open the relay port in a serial terminal and send `AT+CH1=1`, then `AT+STAT?`, then `AT+CH1=0`.
+2. Short-press RECOVER, which powers the feeder on, then run `wellfed-bench status` again.
 
-   You should see `ALIVE:1` and `TXV` near 3290 mV in the `AT+STAT?` reply, proving feeder TX reaches pin 2 and the grounds are shared. CH3 and CH4 stay off; this check does not need them.
+   You should see the feeder alive with its TX near 3290 mV, proving feeder TX reaches pin 2 and the grounds are shared. The feeder stays on until step 3's jobs switch it.
 
 3. Start the server, then run `wellfed-bench boot NAME`.
 
@@ -119,8 +119,10 @@ Check these before blaming the firmware or the tools. Steps 1 and 2 run with no 
 
 | Symptom | Most likely cause |
 | --- | --- |
-| `TXV` near 0 and `ALIVE:0` with the feeder on | Feeder TX is not on pin 2: lines crossed, a loose wire, or no shared ground |
-| No boot output, but `ALIVE:1` | `uart_port` names the relay port, or another program holds the UART |
+| TX near 0 mV and not alive with the feeder on | Feeder TX is not on pin 2: lines crossed, a loose wire, or no shared ground |
+| No boot output, but alive | `uart_port` names another port, or another program holds the UART |
+| `board_serial: missing` | The board is unplugged, or `board_serial` has a typo |
+| Opening the board fails with a permission error | The udev rule is not installed, or was installed while the board was plugged in and not triggered |
 | Boot output arrives, but the console or the loader never answers the host | Feeder RX is not on pin 1: lines crossed, or a loose RX wire |
 | Garbled output | Missing ground, or a baud rate other than 115200 |
 | A normal boot where the loader was asked for | The D cells are in, or the strap does not reach feeder TX |
@@ -189,14 +191,14 @@ If a step stops, nothing is retried. Don't run `flash-execute` again: start a fr
 
 ## Flash the bench board
 
-The board's own firmware is separate from the feeder's. Stop `wellfed-bench serve`, which holds the relay port, then send `AT+BOOTSEL` on the relay port (it cuts feeder power first), or hold BOOT and tap RESET, and copy the UF2 onto the `RPI-RP2` drive ([bench firmware](../../src/firmware/bench/README.md#flash)).
+The board's own firmware is separate from the feeder's. Stop `wellfed-bench serve`, which holds the board, then run `wellfed-bench bootsel` (it cuts feeder power first), or hold BOOT and tap RESET, and copy the UF2 onto the `RPI-RP2` drive ([bench firmware](../../src/firmware/bench/README.md#flash)).
 
 ## Common mistakes
 
 - **Crossing TX and RX on the bench board.** Its labels already name the feeder's pins ([wire TX to TX](#wire-tx-to-tx)).
 - **Connecting a 3V3 or VCC pin.** The feeder powers itself, and the bench header has no power pin.
 - **Leaving the D cells in.** The feeder stays powered when FEEDER 5V is cut, so power-off, loader entry and RECOVER don't work.
-- **Swapping `uart_port` and `relay_port`.** Only the relay port answers `AT`.
+- **Putting a port path in `board_serial`.** It takes the 16 hex digits of the serial alone.
 - **Rewiring with power on.** Unplug FEEDER 5V first.
 - **Rebuilding `wellfed-flash` between prepare and execute**, or re-running `flash-execute` after a stop.
 

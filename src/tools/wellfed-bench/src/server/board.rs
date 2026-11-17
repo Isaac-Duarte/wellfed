@@ -69,7 +69,7 @@ impl Board for SharedBoard {
         Ok(on)
     }
 
-    fn power_cuts(&mut self) -> wellfed_relay::Result<Option<u32>> {
+    fn power_cuts(&mut self) -> wellfed_relay::Result<u32> {
         self.lock().power_cuts()
     }
 }

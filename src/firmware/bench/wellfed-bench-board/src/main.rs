@@ -1,19 +1,19 @@
 //! Wellfed Bench rev B: RP2040 firmware for the feeder recovery board.
 //!
-//! The board enumerates as two CDC-ACM ports that stand in for the relay
-//! bench: interface 0 bridges the feeder UART (the FT232R's job) and interface
-//! 2 answers the SH-UR04A `AT+CHn` relay protocol, so `wellfed-bench` drives it
-//! unchanged once `bench.json` points at the new port paths.
+//! The board enumerates as a CDC-ACM port that bridges the feeder UART and a
+//! vendor interface that answers the bench's postcard-rpc control requests
+//! (`wellfed-bench-icd`).
 
 #![no_std]
 #![no_main]
 
 mod bridge;
 mod outputs;
-mod relay;
+mod rpc;
 mod telemetry;
 mod ui;
 mod usb;
+mod wire;
 
 use embassy_executor::Spawner;
 use embassy_rp::bind_interrupts;
@@ -72,7 +72,7 @@ async fn main(spawner: Spawner) {
         w.set_pue(true);
     });
 
-    let (device, uart_class, relay_class) = usb::build(p.USB, Irqs, serial);
+    let (device, uart_class, ep_in, ep_out) = usb::build(p.USB, Irqs, serial);
 
     let sensors = telemetry::Sensors {
         adc: embassy_rp::adc::Adc::new(p.ADC, Irqs, Default::default()),
@@ -94,7 +94,8 @@ async fn main(spawner: Spawner) {
     const ONCE: &str = "each task is spawned once";
     spawner.spawn(usb::run(device).expect(ONCE));
     spawner.spawn(bridge::run(uart, uart_class).expect(ONCE));
-    spawner.spawn(relay::run(relay_class).expect(ONCE));
+    spawner.spawn(rpc::run(ep_in, ep_out).expect(ONCE));
+    spawner.spawn(rpc::reboot().expect(ONCE));
     spawner.spawn(telemetry::run(sensors).expect(ONCE));
     spawner.spawn(ui::run(panel).expect(ONCE));
     spawner.spawn(ui::recover().expect(ONCE));

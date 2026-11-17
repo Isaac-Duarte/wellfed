@@ -1,6 +1,6 @@
 # Wellfed Bench board
 
-The Wellfed Bench is an RP2040 USB-C board for recovering and developing on PETLIBRO feeders. It replaces the FT232R UART adapter and SH-UR04A relay board of the [relay bench](../../../docs/devices/plaf103/bench.md). Over one USB cable it shows up as a feeder UART bridge plus an `AT+CHn` relay port, so the bench tools can drive it the way they drive the relay board. This page covers the hardware: what is on the board, the files here, and how to order it. The firmware has [its own page](../../firmware/bench/README.md).
+The Wellfed Bench is an RP2040 USB-C board for recovering and developing on PETLIBRO feeders. It replaces the FT232R UART adapter and SH-UR04A relay board of the [relay bench](../../../docs/devices/plaf103/bench.md). Over one USB cable it shows up as a feeder UART bridge plus a control interface that the bench tools drive. This page covers the hardware: what is on the board, the files here, and how to order it. The firmware has [its own page](../../firmware/bench/README.md).
 
 > [!NOTE]
 > Rev B is the only revision. One batch has been built. On November 2, 2026 one board passed the first four bring-up checks with nothing attached to its feeder side: it flashed, enumerated, switched feeder power (4.96 V out, no fault), the strap and both UART buffers, and moved to the aux input. The same day, with a stock feeder connected on macOS, it passed steps 5 to 7 apart from the D-cell refusal: the feeder drew 89 to 131 mA with ALIVE 1, `wellfed-bench serve` drove `status`, `on`, `off` and `loader` through it, RECOVER's long press reached the ROM loader, and `wellfed-flash` read the feeder's whole 8 MiB flash through its bridge. The current has not been checked against a meter yet.
@@ -15,7 +15,7 @@ The Wellfed Bench is an RP2040 USB-C board for recovering and developing on PETL
 - **RECOVER button.** Power-cycles the feeder into its ROM loader without a host.
 - **Room to grow.** 16 MB of flash (the firmware uses the first 2 MB), a 2×8 expansion header and an SWD header.
 
-The relay channels, LEDs, buttons and pin map are listed in the [firmware page](../../firmware/bench/README.md#relay-port). The connectors, the FEEDER UART pinout and how to wire a feeder are on the [bench hardware](../../../docs/development/bench-hardware.md) page. The header's labels name the feeder's pins, so a feeder is wired label to label, TX to TX.
+The relay channels, LEDs, buttons and pin map are listed in the [firmware page](../../firmware/bench/README.md#control-interface). The connectors, the FEEDER UART pinout and how to wire a feeder are on the [bench hardware](../../../docs/development/bench-hardware.md) page. The header's labels name the feeder's pins, so a feeder is wired label to label, TX to TX.
 
 ## Files
 

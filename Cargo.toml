@@ -8,7 +8,7 @@ members = [
     "src/tools/wellfed-*",
     "src/tools/xtask",
     "src/firmware/wellfed/*",
-    "src/firmware/bench/wellfed-bench-at",
+    "src/firmware/bench/wellfed-bench-icd",
     "src/app/rust",
     "src/integrations/homeassistant/bridge",
 ]

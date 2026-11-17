@@ -7,7 +7,7 @@ use embassy_rp::gpio::Input;
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_time::{Duration, Ticker};
-use wellfed_bench_at::{Source, Telemetry};
+use wellfed_bench_icd::{Source, Telemetry};
 
 pub(crate) struct Sensors {
     pub(crate) adc: Adc<'static, Async>,
@@ -40,8 +40,8 @@ pub(crate) async fn run(mut s: Sensors) -> ! {
         let current = average(&mut s.adc, &mut s.current).await;
         let tx = average(&mut s.adc, &mut s.tx).await;
         let t = Telemetry {
-            vbus_mv: wellfed_bench_at::vbus_mv(vbus),
-            current_ma: wellfed_bench_at::current_ma(current),
+            vbus_mv: wellfed_bench_icd::vbus_mv(vbus),
+            current_ma: wellfed_bench_icd::current_ma(current),
             // ST is open-drain and released (pulled high) while VIN1, the aux
             // USB-C, feeds the output. Confirm on the first board.
             source: if s.aux.is_high() {
@@ -50,7 +50,7 @@ pub(crate) async fn run(mut s: Sensors) -> ! {
                 Source::Host
             },
             fault: s.fault_n.is_low(),
-            tx_mv: wellfed_bench_at::adc_mv(tx),
+            tx_mv: wellfed_bench_icd::adc_mv(tx),
         };
         LATEST.lock(|cell| cell.set(t));
         ticker.next().await;

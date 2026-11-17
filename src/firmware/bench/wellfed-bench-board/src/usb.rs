@@ -1,15 +1,14 @@
-//! USB composite device: two CDC-ACM functions.
-//!
-//! Function order fixes the Linux by-id names: the feeder UART is interface 0
-//! (`...-if00`) and the relay port interface 2 (`...-if02`). The serial string
-//! is the flash chip's unique ID, so each board keeps stable paths.
+//! USB composite device: the feeder UART as CDC-ACM (interfaces 0 and 1, so
+//! Linux names it `...-if00`) and the control interface as one vendor-class
+//! interface (2) with a bulk endpoint each way, which the host opens by the
+//! board's serial string, the flash chip's unique ID.
 
 use portable_atomic::{AtomicBool, Ordering};
 
 use embassy_rp::Peri;
 use embassy_rp::interrupt::typelevel::Binding;
 use embassy_rp::peripherals::{FLASH, USB};
-use embassy_rp::usb::{Driver, InterruptHandler};
+use embassy_rp::usb::{Driver, Endpoint, In, InterruptHandler, Out};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::{Builder, Config, Handler, UsbDevice};
 use static_cell::StaticCell;
@@ -75,7 +74,12 @@ pub(crate) fn build(
     usb: Peri<'static, USB>,
     irq: impl Binding<embassy_rp::interrupt::typelevel::USBCTRL_IRQ, InterruptHandler<USB>>,
     serial: &'static str,
-) -> (UsbDevice<'static, UsbDriver>, Cdc, Cdc) {
+) -> (
+    UsbDevice<'static, UsbDriver>,
+    Cdc,
+    Endpoint<'static, USB, In>,
+    Endpoint<'static, USB, Out>,
+) {
     let driver = Driver::new(usb, irq);
 
     let mut config = Config::new(VID, PID);
@@ -102,11 +106,17 @@ pub(crate) fn build(
     builder.handler(HANDLER.init(UsbState));
 
     static UART_STATE: StaticCell<State> = StaticCell::new();
-    static RELAY_STATE: StaticCell<State> = StaticCell::new();
     let uart = CdcAcmClass::new(&mut builder, UART_STATE.init(State::new()), PACKET);
-    let relay = CdcAcmClass::new(&mut builder, RELAY_STATE.init(State::new()), PACKET);
 
-    (builder.build(), uart, relay)
+    // Class 0xFF is how the host finds the control interface.
+    let mut function = builder.function(0xFF, 0, 0);
+    let mut interface = function.interface();
+    let mut alt = interface.alt_setting(0xFF, 0, 0, None);
+    let ep_out = alt.endpoint_bulk_out(None, PACKET);
+    let ep_in = alt.endpoint_bulk_in(None, PACKET);
+    drop(function);
+
+    (builder.build(), uart, ep_in, ep_out)
 }
 
 #[embassy_executor::task]
