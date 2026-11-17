@@ -16,7 +16,7 @@ use wellfed_bench_formats::lease;
 use wellfed_bench_formats::live::{
     ActivityKind, BenchState, CancelState, JOBS, JobEnd, JobId, Phase, Uart,
 };
-use wellfed_relay::{AtBoard, Board, FakeBoard, POWER, STRAP, Switch};
+use wellfed_relay::{Board, FakeBoard, POWER, STRAP, Switch};
 
 use super::*;
 use crate::server::api::{DuringWrite, Wait, WaitFor, Waited};
@@ -114,7 +114,7 @@ impl Checkout {
         fs::write(root.join("t/review.json"), r#"{"image_kind": "stock"}"#).unwrap();
         fs::write(
             root.join("private/bench.json"),
-            r#"{"relay_port": "relay", "uart_port": "uart", "baseline": "b", "rom_report": "r"}"#,
+            r#"{"board_serial": "board", "uart_port": "uart", "baseline": "b", "rom_report": "r"}"#,
         )
         .unwrap();
 
@@ -183,10 +183,7 @@ esac
 
     fn open(&self) -> Server {
         let board = self.board.clone();
-        Server::open(self.options(), move |_| {
-            Ok(Box::new(AtBoard::new(Box::new(board))))
-        })
-        .unwrap()
+        Server::open(self.options(), move |_| Ok(Box::new(board))).unwrap()
     }
 
     fn capture(&self, name: &str) -> PathBuf {
@@ -496,7 +493,7 @@ async fn a_cancel_mid_write_only_interrupts_the_flash_client_and_waits_for_it() 
     fs::write(root.join("private/verification/u1-plan.json"), "{}").unwrap();
     fs::write(
         root.join("private/verification/u1-power.json"),
-        r#"{"power_cuts":null}"#,
+        r#"{"power_cuts":0}"#,
     )
     .unwrap();
     // Powered with the strap released, as a prepare leaves the feeder.
@@ -576,7 +573,7 @@ async fn sigterm_during_a_write_lets_the_job_end_then_stops() {
     fs::write(root.join("private/verification/u1-plan.json"), "{}").unwrap();
     fs::write(
         root.join("private/verification/u1-power.json"),
-        r#"{"power_cuts":null}"#,
+        r#"{"power_cuts":0}"#,
     )
     .unwrap();
     checkout.board.lock().on[1] = true;
@@ -744,7 +741,7 @@ async fn a_burst_of_output_streams_without_blocking() {
 /// A board that panics on its first switch, then works.
 struct PanicsOnce {
     panicked: Arc<AtomicBool>,
-    board: AtBoard,
+    board: FakeBoard,
 }
 
 impl Board for PanicsOnce {
@@ -760,7 +757,7 @@ impl Board for PanicsOnce {
         self.board.get(channel)
     }
 
-    fn power_cuts(&mut self) -> wellfed_relay::Result<Option<u32>> {
+    fn power_cuts(&mut self) -> wellfed_relay::Result<u32> {
         self.board.power_cuts()
     }
 }
@@ -773,7 +770,7 @@ async fn a_panicking_job_ends_and_the_next_one_runs() {
     let opened = Server::open(checkout.options(), move |_| {
         Ok(Box::new(PanicsOnce {
             panicked: Arc::default(),
-            board: AtBoard::new(Box::new(fake)),
+            board: fake,
         }))
     })
     .unwrap();
@@ -917,7 +914,7 @@ fn a_bank_ledger_that_does_not_read_refuses_the_start_before_the_board_opens() {
 
     let refused = Server::open(checkout.options(), |_| {
         opened.store(true, Ordering::SeqCst);
-        Ok(Box::new(AtBoard::new(Box::new(checkout.board.clone()))))
+        Ok(Box::new(checkout.board.clone()))
     });
 
     let Err(ServeError::Banks { path, .. }) = refused else {

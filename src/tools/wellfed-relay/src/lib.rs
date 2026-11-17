@@ -1,57 +1,75 @@
-//! DSD TECH SH-UR04A relay board: CP2102, 9600 8N1, `AT+CHn=0/1` and `AT+CHn=?`.
+//! The Wellfed Bench board's switched outputs: feeder power, the loader
+//! strap and the UART lines.
 //!
-//! The bench commands drive the feeder's power, boot strap and UART lines through
-//! [`Relay`]. Every command must come back with `OK`, and a set must echo the
-//! exact channel and value; anything else is an error, so a sequence stops
-//! rather than assuming a relay moved. `FakeBoard` (the `fake` feature)
-//! stands in for the board in tests.
+//! The bench commands drive them through [`Relay`]. The board answers the
+//! postcard-rpc requests of `wellfed-bench-icd` on a vendor USB interface,
+//! found by its serial string ([`RpcBoard`]). A set returns only once the
+//! board confirmed the new state, and a refusal is an error, so a sequence
+//! stops rather than assuming an output moved. `FakeBoard` (the `fake`
+//! feature) stands in for the board in tests.
 //!
 //! The crate knows the board and the channel wiring, nothing of the bench's
 //! sequences: those belong to `wellfed-bench`.
 
 #![forbid(unsafe_code)]
 
-use std::io::{self, Read, Write};
-use std::time::{Duration, Instant};
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::mpsc as sync_mpsc;
+use std::time::Duration;
+
+use postcard_rpc::header::VarSeqKind;
+use postcard_rpc::host_client::{HostClient, HostErr};
+use postcard_rpc::standard_icd::{ERROR_PATH, WireError};
+use postcard_rpc::{Endpoint, postcard_schema::Schema};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+use tokio::sync::mpsc;
+use wellfed_bench_icd::{Bootsel, Channel, GetStatus, Refusal, Set, SetChannel, Status};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    /// The board answered a command without `OK`.
-    #[error("Relay refused {command}: {reply:?}")]
-    Refused { command: String, reply: String },
-    /// A set's reply did not echo the channel and value.
-    #[error("Relay {channel} reply {reply:?}")]
-    Reply { channel: u8, reply: String },
-    /// A query's reply was neither on nor off.
-    #[error("Relay {channel} state {reply:?}")]
-    State { channel: u8, reply: String },
-    /// The power-cut count's reply was not a count.
-    #[error("Relay power-cut count {reply:?}")]
-    Cuts { reply: String },
-    /// A Wellfed Bench board (it answers `AT+VER?` as `version`) whose
-    /// firmware predates the power-cut count: its RECOVER button could
-    /// cycle the feeder's power unseen, so nothing writes until it counts.
-    #[error(
-        "The Wellfed Bench board ({version}) does not count power cuts: reflash the bench board"
-    )]
-    Uncounted { version: String },
-    #[error(transparent)]
-    Io(#[from] io::Error),
-    #[error("Serial port: {0}")]
-    Serial(#[from] serialport::Error),
+    /// No Wellfed Bench board with this serial is on the bus.
+    #[error("No Wellfed Bench board with serial {serial} is connected")]
+    NotFound { serial: String },
+    /// The board is there but its control interface would not open: held
+    /// by another process, or no permission (the udev rule).
+    #[error("Opening the Wellfed Bench board {serial}: {reason}")]
+    Open { serial: String, reason: String },
+    /// A RECOVER sequence holds the outputs; the request did not run.
+    #[error("The bench board's RECOVER sequence holds the outputs; nothing was switched")]
+    Held,
+    /// A channel number outside 1–4.
+    #[error("No relay channel {channel}")]
+    Channel { channel: u8 },
+    /// The board did not answer in time.
+    #[error("The bench board did not answer within {} ms", TIMEOUT.as_millis())]
+    Timeout,
+    /// The board answered with an error, or the link failed. An
+    /// `UnknownKey` wire error is firmware built from another protocol.
+    #[error("Bench board request failed: {0:?}")]
+    Rpc(#[from] HostErr<WireError>),
+    /// The link to the board is gone (unplugged, or the worker ended).
+    #[error("The bench board link is closed")]
+    Closed,
+    /// [`Relay::detached`]: this command does not open the board.
+    #[error("This command does not open the bench board")]
+    Detached,
+    #[error("Listing USB devices: {0}")]
+    Usb(#[source] std::io::Error),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// Switches the feeder's USB 5V.
-pub const POWER: u8 = 1;
+pub const POWER: u8 = Channel::Power as u8;
 /// Holds feeder TX to GND through the 4.7 kΩ strap.
-pub const STRAP: u8 = 2;
-/// The UART adapter's two lines, each through one relay: 3 carries adapter
-/// TXD to the feeder's RX, 4 the feeder's TX to adapter RXD (the strap stays
-/// on the feeder side). A powered adapter holds both lines high, which can
-/// back-power a feeder that is off, so they open while it is.
-pub const UART: [u8; 2] = [3, 4];
+pub const STRAP: u8 = Channel::Strap as u8;
+/// The UART bridge's two lines, each through one buffer: 3 carries the
+/// bridge's TXD to the feeder's RX, 4 the feeder's TX to the bridge (the
+/// strap stays on the feeder side). A powered bridge holds both lines high,
+/// which can back-power a feeder that is off, so they open while it is.
+pub const UART: [u8; 2] = [Channel::UartTx as u8, Channel::UartRx as u8];
 
 /// What a set asks of a channel's relay.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,79 +84,16 @@ impl Switch {
     }
 }
 
-/// One command line out, one reply line back.
-pub trait Link: Send {
-    /// Discard pending input, send `line` with CRLF, and return the reply up
-    /// to its newline (or whatever arrived within the timeout).
-    fn transact(&mut self, line: &str) -> io::Result<Vec<u8>>;
-}
-
-struct SerialLink(Box<dyn serialport::SerialPort>);
-
-impl SerialLink {
-    fn open(path: &str) -> Result<Self> {
-        let builder = serialport::new(path, 9600).timeout(Duration::from_millis(100));
-        // Exclusive, so a second bench process cannot share the board.
-        #[cfg(unix)]
-        let port: Box<dyn serialport::SerialPort> = {
-            let mut port = builder.open_native()?;
-            // open_native already takes the port exclusively (TIOCEXCL), and
-            // macOS refuses a second TIOCEXCL with EBUSY, so ask only if it
-            // did not.
-            if !port.exclusive() {
-                port.set_exclusive(true)?;
-            }
-            Box::new(port)
-        };
-        #[cfg(not(unix))]
-        let port = builder.open()?;
-        Ok(Self(port))
-    }
-}
-
-impl Link for SerialLink {
-    fn transact(&mut self, line: &str) -> io::Result<Vec<u8>> {
-        self.0.clear(serialport::ClearBuffer::Input)?;
-        self.0.write_all(format!("{line}\r\n").as_bytes())?;
-        self.0.flush()?;
-
-        let deadline = Instant::now() + Duration::from_secs(1);
-        let mut reply = Vec::new();
-        let mut byte = [0u8];
-        while Instant::now() < deadline {
-            match self.0.read(&mut byte) {
-                Ok(1) => {
-                    reply.push(byte[0]);
-                    if byte[0] == b'\n' {
-                        break;
-                    }
-                }
-                Ok(_) => {}
-                Err(error) if error.kind() == io::ErrorKind::TimedOut => {}
-                Err(error) => return Err(error),
-            }
-        }
-
-        Ok(reply)
-    }
-}
-
-/// A board with the bench's four switches. The SH-UR04A speaks AT commands
-/// ([`AtBoard`]); a board that reports more (the Wellfed Bench board's
-/// telemetry) implements this beside it, and the bench drives either
-/// through [`Relay`].
+/// A board with the bench's four switches.
 pub trait Board: Send {
     /// Switch `channel`, returning only once the board acknowledged it.
     fn set(&mut self, channel: u8, switch: Switch) -> Result<()>;
     /// The channel's state as the board reports it.
     fn get(&mut self, channel: u8) -> Result<bool>;
-    /// The feeder power cuts the board has made, whoever asked for them,
-    /// or `None` from the SH-UR04A, whose relays move only on a host
-    /// command. The Wellfed Bench board's RECOVER button cycles the power
-    /// by itself, which the channels alone cannot show once the feeder is
-    /// back on, so a Wellfed board that does not count is an error
-    /// ([`Error::Uncounted`]), never `None`.
-    fn power_cuts(&mut self) -> Result<Option<u32>>;
+    /// The feeder power cuts the board has made, whoever asked for them.
+    /// The RECOVER button cycles the power by itself, which the channels
+    /// alone cannot show once the feeder is back on.
+    fn power_cuts(&mut self) -> Result<u32>;
 }
 
 /// The relay board a sequence drives.
@@ -147,23 +102,19 @@ pub struct Relay {
 }
 
 impl Relay {
-    /// An AT board over `link`.
-    pub fn new(link: Box<dyn Link>) -> Self {
-        Self::of(Box::new(AtBoard { link }))
-    }
-
     pub fn of(board: Box<dyn Board>) -> Self {
         Self { board }
     }
 
-    pub fn open(path: &str) -> Result<Self> {
-        Ok(Self::of(Box::new(AtBoard::open(path)?)))
+    /// The board with this USB serial string.
+    pub fn open(serial: &str) -> Result<Self> {
+        Ok(Self::of(Box::new(RpcBoard::open(serial)?)))
     }
 
     /// No board: every command fails. For a command that never switches a
-    /// relay, so it does not hold the board's port while it runs.
+    /// relay, so it does not hold the board while it runs.
     pub fn detached() -> Self {
-        Self::new(Box::new(Detached))
+        Self::of(Box::new(Detached))
     }
 
     pub fn set(&mut self, channel: u8, switch: Switch) -> Result<()> {
@@ -174,109 +125,210 @@ impl Relay {
         self.board.get(channel)
     }
 
-    pub fn power_cuts(&mut self) -> Result<Option<u32>> {
+    pub fn power_cuts(&mut self) -> Result<u32> {
         self.board.power_cuts()
-    }
-}
-
-/// The SH-UR04A's AT protocol over a serial link.
-pub struct AtBoard {
-    link: Box<dyn Link>,
-}
-
-impl AtBoard {
-    pub fn new(link: Box<dyn Link>) -> Self {
-        Self { link }
-    }
-
-    pub fn open(path: &str) -> Result<Self> {
-        Ok(Self::new(Box::new(SerialLink::open(path)?)))
-    }
-
-    fn command(&mut self, text: &str) -> Result<Vec<u8>> {
-        let raw = self.link.transact(text)?;
-        let reply = trim(&raw).to_vec();
-        if !reply.starts_with(b"OK") {
-            return Err(Error::Refused {
-                command: text.into(),
-                reply: String::from_utf8_lossy(&reply).into_owned(),
-            });
-        }
-        Ok(reply)
-    }
-}
-
-impl Board for AtBoard {
-    fn set(&mut self, channel: u8, switch: Switch) -> Result<()> {
-        let value = u8::from(switch.is_on());
-        let reply = self.command(&format!("AT+CH{channel}={value}"))?;
-        if reply != format!("OK+CH{channel}={value}").as_bytes() {
-            return Err(Error::Reply {
-                channel,
-                reply: String::from_utf8_lossy(&reply).into_owned(),
-            });
-        }
-        Ok(())
-    }
-
-    fn get(&mut self, channel: u8) -> Result<bool> {
-        let reply = self.command(&format!("AT+CH{channel}=?"))?;
-        let on = reply == format!("OK+CH{channel}=1").as_bytes();
-        if !on && reply != format!("OK+CH{channel}=0").as_bytes() {
-            return Err(Error::State {
-                channel,
-                reply: String::from_utf8_lossy(&reply).into_owned(),
-            });
-        }
-        Ok(on)
-    }
-
-    fn power_cuts(&mut self) -> Result<Option<u32>> {
-        // A refusal is the SH-UR04A, which has no such query, or a Wellfed
-        // board on firmware older than the count. Only the Wellfed board
-        // answers `AT+VER?`, and it never passes as the SH-UR04A.
-        let reply = match self.command("AT+CUTS?") {
-            Ok(reply) => reply,
-            Err(Error::Refused { .. }) => {
-                return match self.command("AT+VER?") {
-                    Ok(version) => Err(Error::Uncounted {
-                        version: String::from_utf8_lossy(&version).into_owned(),
-                    }),
-                    Err(Error::Refused { .. }) => Ok(None),
-                    Err(error) => Err(error),
-                };
-            }
-            Err(error) => return Err(error),
-        };
-        let count = reply
-            .strip_prefix(b"OK+CUTS=")
-            .and_then(|digits| std::str::from_utf8(digits).ok())
-            .and_then(|digits| digits.parse().ok());
-        count.map(Some).ok_or_else(|| Error::Cuts {
-            reply: String::from_utf8_lossy(&reply).into_owned(),
-        })
     }
 }
 
 struct Detached;
 
-impl Link for Detached {
-    fn transact(&mut self, line: &str) -> io::Result<Vec<u8>> {
-        Err(io::Error::other(format!(
-            "This command does not open the relay board; refused {line}"
-        )))
+impl Board for Detached {
+    fn set(&mut self, _: u8, _: Switch) -> Result<()> {
+        Err(Error::Detached)
+    }
+
+    fn get(&mut self, _: u8) -> Result<bool> {
+        Err(Error::Detached)
+    }
+
+    fn power_cuts(&mut self) -> Result<u32> {
+        Err(Error::Detached)
     }
 }
 
-/// The board ends replies with CRLF and a trailing NUL.
-fn trim(raw: &[u8]) -> &[u8] {
-    let junk = |b: &u8| matches!(b, b'\0' | b'\r' | b'\n');
-    let start = raw.iter().position(|b| !junk(b)).unwrap_or(raw.len());
-    let end = raw.iter().rposition(|b| !junk(b)).map_or(start, |i| i + 1);
-    &raw[start..end]
+/// The board's USB IDs: pid.codes' test VID:PID, which other prototypes
+/// share, so the manufacturer string is matched too.
+const VID: u16 = 0x1209;
+const PID: u16 = 0x0001;
+const MANUFACTURER: &str = "Wellfed";
+
+/// How long a request may wait for its reply. The board answers within a
+/// millisecond; a switch that is refused is refused at once.
+const TIMEOUT: Duration = Duration::from_secs(2);
+
+fn is_bench(device: &nusb::DeviceInfo) -> bool {
+    device.vendor_id() == VID
+        && device.product_id() == PID
+        && device.manufacturer_string() == Some(MANUFACTURER)
 }
 
-/// Answers like the SH-UR04A, including its trailing NUL byte; for tests.
+/// Whether a board with this serial is on the bus, without opening it.
+pub fn connected(serial: &str) -> Result<bool> {
+    let mut devices = nusb::list_devices().map_err(Error::Usb)?;
+    Ok(devices.any(|device| is_bench(&device) && device.serial_number() == Some(serial)))
+}
+
+type Job =
+    Box<dyn FnOnce(HostClient<WireError>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send>;
+
+/// The Wellfed Bench board over postcard-rpc.
+///
+/// postcard-rpc's client is async; the bench's sequences are not. One
+/// worker thread owns the client and its runtime, and each call waits for
+/// its reply, so a call works the same from a plain thread or from inside
+/// the bench server's runtime.
+pub struct RpcBoard {
+    jobs: mpsc::UnboundedSender<Job>,
+}
+
+impl RpcBoard {
+    /// Opens the board with this USB serial string. Its control interface
+    /// is claimed for as long as this lives, so a second process cannot
+    /// share the board.
+    pub fn open(serial: &str) -> Result<Self> {
+        let serial = serial.to_owned();
+        Self::spawn(move || {
+            let devices = nusb::list_devices().map_err(Error::Usb)?;
+            let device = devices
+                .filter(is_bench)
+                .find(|device| device.serial_number() == Some(serial.as_str()))
+                .ok_or_else(|| Error::NotFound {
+                    serial: serial.clone(),
+                })?;
+            // The only vendor-class interface is the control interface.
+            let interface = device
+                .interfaces()
+                .find(|interface| interface.class() == 0xFF)
+                .map(|interface| usize::from(interface.interface_number()))
+                .ok_or_else(|| Error::Open {
+                    serial: serial.clone(),
+                    reason: "no control interface: reflash the bench board".into(),
+                })?;
+            HostClient::try_from_nusb_and_interface(
+                &device,
+                interface,
+                ERROR_PATH,
+                8,
+                VarSeqKind::Seq2,
+            )
+            .map_err(|reason| Error::Open { serial, reason })
+        })
+    }
+
+    /// Starts the worker, which builds its client with `connect` inside its
+    /// runtime: the client spawns its I/O tasks there.
+    pub fn spawn(
+        connect: impl FnOnce() -> Result<HostClient<WireError>> + Send + 'static,
+    ) -> Result<Self> {
+        let (jobs, mut queue) = mpsc::unbounded_channel::<Job>();
+        let (ready, opened) = sync_mpsc::sync_channel(1);
+
+        std::thread::Builder::new()
+            .name("bench-board".into())
+            .spawn(move || {
+                let runtime = match tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    Ok(runtime) => runtime,
+                    Err(error) => {
+                        let _ = ready.send(Err(Error::Usb(error)));
+                        return;
+                    }
+                };
+                runtime.block_on(async move {
+                    let client = match connect() {
+                        Ok(client) => client,
+                        Err(error) => {
+                            let _ = ready.send(Err(error));
+                            return;
+                        }
+                    };
+                    let _ = ready.send(Ok(()));
+
+                    while let Some(job) = queue.recv().await {
+                        job(client.clone()).await;
+                    }
+                    client.close();
+                });
+            })
+            .map_err(Error::Usb)?;
+
+        opened.recv().map_err(|_| Error::Closed)??;
+        Ok(Self { jobs })
+    }
+
+    fn call<E>(&self, request: E::Request) -> Result<E::Response>
+    where
+        E: Endpoint,
+        E::Request: Serialize + Schema + Send + Sync + 'static,
+        E::Response: DeserializeOwned + Schema + Send + 'static,
+    {
+        let (reply, replied) = sync_mpsc::sync_channel(1);
+        let job: Job = Box::new(move |client| {
+            Box::pin(async move {
+                let answer = tokio::time::timeout(TIMEOUT, client.send_resp::<E>(&request)).await;
+                let _ = reply.send(answer);
+            })
+        });
+        self.jobs.send(job).map_err(|_| Error::Closed)?;
+
+        match replied.recv() {
+            Ok(Ok(Ok(response))) => Ok(response),
+            Ok(Ok(Err(HostErr::Closed))) | Err(_) => Err(Error::Closed),
+            Ok(Ok(Err(error))) => Err(Error::Rpc(error)),
+            Ok(Err(_elapsed)) => Err(Error::Timeout),
+        }
+    }
+
+    pub fn status(&mut self) -> Result<Status> {
+        self.call::<GetStatus>(())
+    }
+
+    /// Cuts the feeder's power and reboots the board into its UF2
+    /// bootloader, 100 ms after it answers.
+    pub fn bootsel(&mut self) -> Result<()> {
+        self.call::<Bootsel>(())?.map_err(refused)
+    }
+}
+
+fn refused(refusal: Refusal) -> Error {
+    match refusal {
+        Refusal::Held => Error::Held,
+    }
+}
+
+fn channel(number: u8) -> Result<Channel> {
+    Channel::from_number(number).ok_or(Error::Channel { channel: number })
+}
+
+impl Board for RpcBoard {
+    fn set(&mut self, number: u8, switch: Switch) -> Result<()> {
+        let request = Set {
+            channel: channel(number)?,
+            on: switch.is_on(),
+        };
+        let channels = self.call::<SetChannel>(request)?.map_err(refused)?;
+        debug_assert_eq!(
+            channels.get(request.channel),
+            request.on,
+            "the board set what was asked"
+        );
+        Ok(())
+    }
+
+    fn get(&mut self, number: u8) -> Result<bool> {
+        let channel = channel(number)?;
+        Ok(self.status()?.channels.get(channel))
+    }
+
+    fn power_cuts(&mut self) -> Result<u32> {
+        Ok(self.status()?.cuts)
+    }
+}
+
+/// A board in memory, for tests: it switches, counts cuts and refuses as
+/// told.
 #[cfg(any(test, feature = "fake"))]
 #[derive(Clone, Default)]
 pub struct FakeBoard {
@@ -290,16 +342,12 @@ pub struct FakeState {
     pub on: [bool; 5],
     /// Every set, in order: (channel, on).
     pub log: Vec<(u8, bool)>,
+    /// Refuse every set, as a RECOVER sequence holding the outputs does.
     pub refuse: bool,
     /// Refuse this one channel only, as a failed relay would.
     pub refuse_channel: Option<u8>,
-    /// The power-cut count, as the Wellfed Bench board answers it; `None`
-    /// answers `AT+CUTS?` with an error, as the SH-UR04A does. Switching
-    /// CH1 off from on adds one.
-    pub cuts: Option<u32>,
-    /// What `AT+VER?` answers after `OK+VER=`, as the Wellfed Bench board
-    /// does; `None` answers it with an error, as the SH-UR04A does.
-    pub version: Option<String>,
+    /// The power-cut count. Switching CH1 off from on adds one.
+    pub cuts: u32,
 }
 
 #[cfg(any(test, feature = "fake"))]
@@ -322,124 +370,214 @@ impl FakeBoard {
 }
 
 #[cfg(any(test, feature = "fake"))]
-impl Link for FakeBoard {
-    fn transact(&mut self, line: &str) -> io::Result<Vec<u8>> {
+impl Board for FakeBoard {
+    fn set(&mut self, number: u8, switch: Switch) -> Result<()> {
+        channel(number)?;
         let mut s = self.lock();
-        if line == "AT+CUTS?" {
-            return Ok(match s.cuts {
-                Some(cuts) => format!("OK+CUTS={cuts}\r\n\0").into_bytes(),
-                None => b"Error\r\n\0".to_vec(),
-            });
+        if s.refuse || s.refuse_channel == Some(number) {
+            return Err(Error::Held);
         }
-        if line == "AT+VER?" {
-            return Ok(match &s.version {
-                Some(version) => format!("OK+VER={version}\r\n\0").into_bytes(),
-                None => b"Error\r\n\0".to_vec(),
-            });
-        }
-        let parsed = line
-            .strip_prefix("AT+CH")
-            .and_then(|rest| rest.split_once('='))
-            .and_then(|(channel, value)| Some((channel.parse::<u8>().ok()?, value)))
-            .filter(|(channel, value)| {
-                (1..=4).contains(channel) && ["0", "1", "?"].contains(value)
-            });
-        let refused = |channel: u8| s.refuse || s.refuse_channel == Some(channel);
-        let Some((channel, value)) = parsed.filter(|(channel, _)| !refused(*channel)) else {
-            return Ok(b"Error\r\n\0".to_vec());
-        };
 
-        let slot = usize::from(channel);
-        if value != "?" {
-            if channel == POWER && s.on[slot] && value == "0" {
-                s.cuts = s.cuts.map(|cuts| cuts.wrapping_add(1));
-            }
-            s.on[slot] = value == "1";
-            s.log.push((channel, value == "1"));
+        let slot = usize::from(number);
+        if number == POWER && s.on[slot] && !switch.is_on() {
+            s.cuts = s.cuts.wrapping_add(1);
         }
-        Ok(format!("OK+CH{channel}={}\r\n\0", u8::from(s.on[slot])).into_bytes())
+        s.on[slot] = switch.is_on();
+        s.log.push((number, switch.is_on()));
+        Ok(())
+    }
+
+    fn get(&mut self, number: u8) -> Result<bool> {
+        channel(number)?;
+        Ok(self.lock().on[usize::from(number)])
+    }
+
+    fn power_cuts(&mut self) -> Result<u32> {
+        Ok(self.lock().cuts)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use postcard_rpc::header::VarHeader;
+    use postcard_rpc::host_client::test_channels::new_from_channels;
+    use postcard_rpc::server::SpawnContext;
+    use postcard_rpc::server::impls::test_channels::dispatch_impl::{
+        Settings, WireSpawnImpl, WireTxImpl, new_server,
+    };
+    use postcard_rpc::server::impls::test_channels::{
+        ChannelWireRx, ChannelWireSpawn, ChannelWireTx,
+    };
+    use postcard_rpc::{define_dispatch, server::Dispatch};
+    use wellfed_bench_icd::{
+        BootselReply, Channels, ENDPOINT_LIST, SetReply, TOPICS_IN_LIST, TOPICS_OUT_LIST, Telemetry,
+    };
+
     use super::*;
 
-    #[test]
-    fn set_and_query_match_device_replies() {
-        let board = FakeBoard::default();
-        let mut relay = Relay::new(Box::new(board.clone()));
-
-        relay.set(1, Switch::On).unwrap();
-
-        assert!(relay.get(1).unwrap());
-        assert!(!relay.get(2).unwrap());
-        assert_eq!(board.log(), [(1, true)]);
+    /// The board's side of the protocol, as its firmware answers it.
+    #[derive(Default)]
+    struct Panel {
+        channels: Channels,
+        cuts: u32,
+        held: bool,
     }
 
-    #[test]
-    fn a_board_that_counts_power_cuts_reports_each_one() {
-        let board = FakeBoard::default();
-        let mut relay = Relay::new(Box::new(board.clone()));
-        assert_eq!(relay.power_cuts().unwrap(), None, "an SH-UR04A");
+    struct Context(Arc<Mutex<Panel>>);
 
-        board.lock().cuts = Some(u32::MAX);
-        relay.set(POWER, Switch::Off).unwrap();
-        relay.set(POWER, Switch::On).unwrap();
-        assert_eq!(
-            relay.power_cuts().unwrap(),
-            Some(u32::MAX),
-            "nothing was cut"
-        );
-        relay.set(POWER, Switch::Off).unwrap();
-        assert_eq!(relay.power_cuts().unwrap(), Some(0), "the count wraps");
+    impl SpawnContext for Context {
+        type SpawnCtxt = ();
+        fn spawn_ctxt(&mut self) {}
     }
 
-    /// A Wellfed board on firmware from before the count is told from the
-    /// SH-UR04A by its version answer, and refused rather than trusted.
-    #[test]
-    fn a_wellfed_board_that_does_not_count_is_an_error() {
-        let board = FakeBoard::default();
-        board.lock().version = Some("0.1.0 revB".into());
-        let mut relay = Relay::new(Box::new(board));
+    define_dispatch! {
+        app: PanelDispatcher;
+        spawn_fn: spawn_fn;
+        tx_impl: WireTxImpl;
+        spawn_impl: WireSpawnImpl;
+        context: Context;
 
-        let error = relay.power_cuts().unwrap_err();
-        assert!(
-            matches!(&error, Error::Uncounted { version } if version == "OK+VER=0.1.0 revB"),
-            "{error:?}"
-        );
-        assert!(error.to_string().contains("reflash the bench board"));
+        endpoints: {
+            list: ENDPOINT_LIST;
+
+            | EndpointTy | kind     | handler    |
+            | ---------- | ----     | -------    |
+            | SetChannel | blocking | set        |
+            | GetStatus  | blocking | get_status |
+            | Bootsel    | blocking | bootsel    |
+        };
+        topics_in: {
+            list: TOPICS_IN_LIST;
+
+            | TopicTy | kind | handler |
+            | ------- | ---- | ------- |
+        };
+        topics_out: {
+            list: TOPICS_OUT_LIST;
+        };
     }
 
-    #[test]
-    fn a_count_that_is_not_one_is_an_error() {
-        struct Garbled;
-        impl Link for Garbled {
-            fn transact(&mut self, _: &str) -> io::Result<Vec<u8>> {
-                Ok(b"OK+CUTS=many\r\n".to_vec())
-            }
+    fn set(context: &mut Context, _: VarHeader, request: Set) -> SetReply {
+        let mut panel = context.0.lock().unwrap();
+        if panel.held {
+            return Err(Refusal::Held);
         }
-        let mut relay = Relay::new(Box::new(Garbled));
-        assert!(matches!(relay.power_cuts(), Err(Error::Cuts { .. })));
+        if panel.channels.cuts_power(request.channel, request.on) {
+            panel.cuts = panel.cuts.wrapping_add(1);
+        }
+        panel.channels.set(request.channel, request.on);
+        Ok(panel.channels)
+    }
+
+    fn get_status(context: &mut Context, _: VarHeader, (): ()) -> Status {
+        let panel = context.0.lock().unwrap();
+        Status {
+            channels: panel.channels,
+            cuts: panel.cuts,
+            telemetry: Telemetry::new(),
+        }
+    }
+
+    fn bootsel(context: &mut Context, _: VarHeader, (): ()) -> BootselReply {
+        if context.0.lock().unwrap().held {
+            return Err(Refusal::Held);
+        }
+        Ok(())
+    }
+
+    /// An [`RpcBoard`] talking postcard-rpc to [`Panel`] over channels.
+    fn board(panel: Arc<Mutex<Panel>>) -> RpcBoard {
+        RpcBoard::spawn(move || {
+            let (to_server, server_rx) = tokio::sync::mpsc::channel(8);
+            let (server_tx, from_server) = tokio::sync::mpsc::channel(8);
+            let dispatcher = PanelDispatcher::new(Context(panel), ChannelWireSpawn);
+            let kkind = dispatcher.min_key_len();
+            let mut server = new_server(
+                dispatcher,
+                Settings {
+                    tx: ChannelWireTx::new(server_tx),
+                    rx: ChannelWireRx::new(server_rx),
+                    buf: 256,
+                    kkind,
+                },
+            );
+            tokio::spawn(async move { server.run().await });
+            Ok(new_from_channels(to_server, from_server, VarSeqKind::Seq2))
+        })
+        .unwrap()
     }
 
     #[test]
-    fn refusal_stops() {
-        let board = FakeBoard::default();
-        board.inner.lock().unwrap().refuse = true;
-        let mut relay = Relay::new(Box::new(board));
+    fn a_set_is_read_back_and_a_power_cut_is_counted() {
+        let panel = Arc::new(Mutex::new(Panel {
+            cuts: u32::MAX,
+            ..Panel::default()
+        }));
+        let mut relay = Relay::of(Box::new(board(panel)));
 
-        assert!(relay.set(1, Switch::On).is_err());
+        relay.set(POWER, Switch::On).unwrap();
+        assert!(relay.get(POWER).unwrap());
+        assert!(!relay.get(STRAP).unwrap());
+        assert_eq!(relay.power_cuts().unwrap(), u32::MAX, "nothing was cut");
+
+        relay.set(POWER, Switch::Off).unwrap();
+        assert_eq!(relay.power_cuts().unwrap(), 0, "the count wraps");
+    }
+
+    /// While RECOVER holds the outputs a switch is refused, and the state
+    /// still reads.
+    #[test]
+    fn a_held_board_refuses_switches_and_still_answers_status() {
+        let panel = Arc::new(Mutex::new(Panel {
+            held: true,
+            ..Panel::default()
+        }));
+        let mut board = board(panel);
+
+        assert!(matches!(board.set(POWER, Switch::On), Err(Error::Held)));
+        assert!(matches!(board.bootsel(), Err(Error::Held)));
+        assert!(!board.get(POWER).unwrap());
+    }
+
+    #[test]
+    fn a_channel_outside_one_to_four_is_refused_before_sending() {
+        let mut board = board(Arc::default());
+        assert!(matches!(
+            board.set(5, Switch::On),
+            Err(Error::Channel { channel: 5 })
+        ));
+        assert!(matches!(board.get(0), Err(Error::Channel { channel: 0 })));
+    }
+
+    #[test]
+    fn a_board_that_never_opens_reports_why() {
+        let error = RpcBoard::spawn(|| Err(Error::NotFound { serial: "X".into() }))
+            .err()
+            .unwrap();
+        assert!(matches!(error, Error::NotFound { .. }), "{error:?}");
+    }
+
+    #[test]
+    fn the_fake_counts_cuts_and_refuses_as_told() {
+        let board = FakeBoard::default();
+        let mut relay = Relay::of(Box::new(board.clone()));
+
+        relay.set(POWER, Switch::On).unwrap();
+        relay.set(POWER, Switch::Off).unwrap();
+        assert_eq!(relay.power_cuts().unwrap(), 1);
+        assert_eq!(board.log(), [(POWER, true), (POWER, false)]);
+
+        board.lock().refuse = true;
+        assert!(matches!(relay.set(STRAP, Switch::On), Err(Error::Held)));
     }
 
     #[test]
     fn a_detached_relay_switches_nothing() {
-        assert!(Relay::detached().set(1, Switch::Off).is_err());
-    }
-
-    #[test]
-    fn replies_are_trimmed_of_line_ends_and_nul() {
-        assert_eq!(trim(b"\0OK+CH1=0\r\n\0"), b"OK+CH1=0");
-        assert_eq!(trim(b"\0\0"), b"");
+        assert!(matches!(
+            Relay::detached().set(1, Switch::Off),
+            Err(Error::Detached)
+        ));
     }
 }

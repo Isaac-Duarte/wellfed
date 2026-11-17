@@ -556,7 +556,7 @@ fn dispatch(
 #[cfg(test)]
 mod tests {
 
-    use wellfed_relay::{AtBoard, FakeBoard, Switch};
+    use wellfed_relay::{FakeBoard, Switch};
 
     use super::*;
     use crate::server::state::Store;
@@ -662,13 +662,10 @@ mod tests {
             device: wellfed_proto::device::Model::Plaf103,
             root,
             config: serde_json::from_str(
-                r#"{"relay_port": "r", "uart_port": "u", "baseline": "b", "rom_report": "r"}"#,
+                r#"{"board_serial": "r", "uart_port": "u", "baseline": "b", "rom_report": "r"}"#,
             )
             .unwrap(),
-            board: SharedBoard::new(
-                Box::new(AtBoard::new(Box::new(board.clone()))),
-                store.clone(),
-            ),
+            board: SharedBoard::new(Box::new(board.clone()), store.clone()),
             tools: ToolPaths {
                 flash_bin: PathBuf::from("absent"),
                 build_bin: PathBuf::from("absent"),

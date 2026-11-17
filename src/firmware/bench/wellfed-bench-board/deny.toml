@@ -13,6 +13,10 @@ ignore = [
     # bare-metal is archived, and cortex-m 0.7 depends on it with no release
     # that drops it, as in the workspace's policy.
     { id = "RUSTSEC-2026-0110", reason = "archived, pulled in by cortex-m 0.7 with no upgrade" },
+    # postcard-rpc depends on postcard with its default features, which turn
+    # on heapless 0.7's CAS emulation through atomic-polyfill; a dependent
+    # cannot switch it off. No postcard-rpc release drops it yet.
+    { id = "RUSTSEC-2023-0089", reason = "atomic-polyfill: unmaintained, pulled in by postcard-rpc 0.12's postcard defaults with no upgrade" },
     # embassy-rp's PIO assembler macros (pio-core, pio-proc) use both at
     # build time only; neither is linked into the firmware, and embassy-rp
     # 0.10 has no release without them.

@@ -52,7 +52,9 @@ FOUNTAIN_CRATES = -p wellfed-board -p wellfed-board-plwf106 -p wellfed-amebad-sy
 # After the workspace, nine lines check the bench variants' injections,
 # which no workspace build enables: `stop-fail` and `feed-faults` (for
 # `feed-jam` and `sensor-fault`) in the feeder drivers, and `virtual-panel`
-# in the chip HAL. The last three check the fountain's board.
+# in the chip HAL. Two more run the bench's hangup tests, whose `serve`
+# binary needs `fake-board` for an in-memory board. The last three check
+# the fountain's board.
 check-rust:
 	cargo fmt --all -- --check
 	cargo clippy --locked --workspace --all-targets -- -D warnings
@@ -67,6 +69,8 @@ check-rust:
 	cargo clippy --locked -p wellfed-hal --features virtual-panel --all-targets -- -D warnings
 	cargo clippy --locked $(PRODUCTION) -p wellfed-hal --features virtual-panel --lib -- -D warnings $(PRODUCTION_LINTS)
 	cargo nextest run --locked -p wellfed-hal --features virtual-panel --test virtual_panel
+	cargo clippy --locked -p wellfed-bench --features fake-board --all-targets -- -D warnings
+	cargo nextest run --locked -p wellfed-bench --features fake-board --test hangup
 	$(FOUNTAIN) cargo clippy --locked $(FOUNTAIN_CRATES) --all-targets -- -D warnings
 	$(FOUNTAIN) cargo clippy --locked $(FOUNTAIN_PRODUCTION) $(FOUNTAIN_CRATES) --lib -- -D warnings $(PRODUCTION_LINTS)
 	$(FOUNTAIN) cargo nextest run --locked $(FOUNTAIN_CRATES) --all-targets

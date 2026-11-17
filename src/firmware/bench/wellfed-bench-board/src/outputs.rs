@@ -1,4 +1,4 @@
-//! The four emulated relays. This is the only module that drives the feeder
+//! The four switched outputs. This is the only module that drives the feeder
 //! power, strap and UART buffer-enable pins.
 
 use portable_atomic::{AtomicU8, AtomicU32, Ordering};
@@ -6,7 +6,7 @@ use portable_atomic::{AtomicU8, AtomicU32, Ordering};
 use embassy_rp::gpio::{Level, Output};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::{Mutex, MutexGuard};
-use wellfed_bench_at::{Channel, Channels};
+use wellfed_bench_icd::{Channel, Channels};
 
 pub(crate) struct Outputs {
     /// GPIO2 FDR_PWR_EN, AP2171W EN, active high.
@@ -76,7 +76,7 @@ static RELAYS: Mutex<CriticalSectionRawMutex, Option<Relays>> = Mutex::new(None)
 /// Lock-free copy of the state for the LEDs.
 static SNAPSHOT: AtomicU8 = AtomicU8::new(0);
 
-/// Lock-free copy of the power-cut count for `AT+CUTS?`.
+/// Lock-free copy of the power-cut count for a status request.
 static CUTS: AtomicU32 = AtomicU32::new(0);
 
 /// `first_cut`, a random start for the power-cut count: a board reset
@@ -119,7 +119,7 @@ pub(crate) fn try_lock() -> Option<Guard> {
     RELAYS.try_lock().ok().map(Guard)
 }
 
-/// The power-cut count `AT+CUTS?` reports.
+/// The power-cut count a status request reports.
 pub(crate) fn cuts() -> u32 {
     CUTS.load(Ordering::Relaxed)
 }

@@ -1,20 +1,20 @@
 # Wellfed Bench firmware
 
-This is the RP2040 firmware for the [Wellfed Bench board](../../hardware/bench/README.md). Over USB the board enumerates as two serial ports that stand in for the relay bench's FT232R UART adapter and SH-UR04A relay board. This page covers building and flashing the firmware, the relay port's protocol, and the checks to run on the first boards.
+This is the RP2040 firmware for the [Wellfed Bench board](../../hardware/bench/README.md). Over USB the board enumerates as a serial port that bridges the feeder's UART, and a control interface that `wellfed-bench` drives over [postcard-rpc](https://github.com/jamesmunns/postcard-rpc). This page covers building and flashing the firmware, the control interface, and the checks to run on the first boards.
 
 > [!NOTE]
-> The firmware has run on one Rev B board (November 2, 2026). Checklist steps 1–4 below passed with nothing attached to the feeder side. That run found replies of exactly 64 bytes held back by the host until the next packet, now ended with a zero-length packet on both ports. The same day, with a stock feeder attached, steps 5–7 passed apart from the D-cell refusal, and `wellfed-flash` read the whole flash through the bridge. The bench tools drive it as the relay board. How to wire a feeder to it, TX to TX, is on the [bench hardware](../../../docs/development/bench-hardware.md) page.
+> The firmware has run on one Rev B board (November 2, 2026). Checklist steps 1–4 below passed with nothing attached to the feeder side. That run found replies of exactly 64 bytes held back by the host until the next packet, now ended with a zero-length packet on both ports. The same day, with a stock feeder attached, steps 5–7 passed apart from the D-cell refusal, and `wellfed-flash` read the whole flash through the bridge. Those runs drove the board's former `AT` relay protocol. The postcard-rpc control interface that replaced it has not run on a board yet. How to wire a feeder to it, TX to TX, is on the [bench hardware](../../../docs/development/bench-hardware.md) page.
 
-| USB interface | by-id suffix | Replaces | Job |
-| --- | --- | --- | --- |
-| 0 | `-if00` | FT232R | Feeder UART bridge (115200 8N1 to the feeder's UART header) |
-| 2 | `-if02` | SH-UR04A | `AT+CHn` relay protocol plus telemetry |
+| USB interface | Class | Job |
+| --- | --- | --- |
+| 0 and 1, by-id suffix `-if00` | CDC-ACM serial port | Feeder UART bridge (115200 8N1 to the feeder's UART header) |
+| 2 | Vendor (`0xFF`), one bulk endpoint each way | The [control interface](#control-interface): switched outputs, telemetry and BOOTSEL |
 
 ## Crates
 
 | Crate | What it holds |
 | --- | --- |
-| [`wellfed-bench-at`](wellfed-bench-at) | The relay port's protocol: line framing, the `AT` parser, the replies and the telemetry scaling. Pure `no_std` code in the main workspace, so `make check` tests it on the host |
+| [`wellfed-bench-icd`](wellfed-bench-icd) | The control interface's endpoints and message types, which the firmware and `wellfed-relay` both build from, plus the telemetry scaling and the RECOVER press classifier. Pure `no_std` code in the main workspace, so `make check` tests it on the host |
 | [`wellfed-bench-board`](wellfed-bench-board) | The embassy firmware that owns the pins, USB and the button. It builds only for `thumbv6m-none-eabi`, so it is its own workspace with its own lockfile and [dependency policy](wellfed-bench-board/deny.toml) |
 
 ## Build
@@ -38,7 +38,9 @@ elf2uf2-rs target/thumbv6m-none-eabi/release/wellfed-bench-board wellfed-bench-b
 1. Hold **BOOT** while you plug in USB, or hold BOOT and tap RESET. An `RPI-RP2` drive appears.
 2. Copy the `.uf2` onto that drive. With the board in this mode, `cargo run --locked --release` builds and copies in one step.
 
-**Updates:** send `AT+BOOTSEL` on the relay port. The board cuts feeder power and reboots into the UF2 drive:
+**Updates:** stop `wellfed-bench serve`, which holds the board, then run `wellfed-bench bootsel`. The board cuts feeder power and reboots into the UF2 drive. Holding BOOT and tapping RESET does the same.
+
+A board still on the `AT` firmware has no control interface. Update it once with BOOT and RESET, or send `AT+BOOTSEL` on its second serial port:
 
 ```sh
 printf 'AT+BOOTSEL\r\n' > /dev/serial/by-id/usb-Wellfed_Wellfed_Bench_<serial>-if02
@@ -46,12 +48,16 @@ printf 'AT+BOOTSEL\r\n' > /dev/serial/by-id/usb-Wellfed_Wellfed_Bench_<serial>-i
 
 ## Use it with the bench
 
-1. Find the ports. On Linux, `ls /dev/serial/by-id/ | grep Wellfed`. On macOS, `ls /dev/cu.usbmodem*`: macOS names each port after the USB location and the interface number plus one, so a board in one socket shows `cu.usbmodem2101` (the UART bridge) and `cu.usbmodem2103` (the relay port). The names change with the socket or hub, so recheck them after moving the cable. Use the `cu.` path, not `tty.`, which waits for carrier detect. On Linux the by-id names carry the serial, the flash chip's unique ID, so each board keeps stable paths there.
+1. Find the board's serial and its UART port. The serial is the flash chip's unique ID, 16 hex digits, so it stays the same for each board.
+
+   On Linux, run `ls /dev/serial/by-id/ | grep Wellfed`. You should see `usb-Wellfed_Wellfed_Bench_<serial>-if00`, which names the serial and is the UART port.
+
+   On macOS, run `ioreg -p IOUSB -l -n "Wellfed Bench" | grep '"USB Serial Number"'` for the serial, and `ls /dev/cu.usbmodem*` for the port. macOS names the port after the USB location, so a board in one socket shows `cu.usbmodem2101`. The name changes with the socket or hub, so recheck it after moving the cable. Use the `cu.` path, not `tty.`, which waits for carrier detect.
 2. Point `private/bench.json` at them:
 
    ```json
    {
-     "relay_port": "/dev/serial/by-id/usb-Wellfed_Wellfed_Bench_<serial>-if02",
+     "board_serial": "<serial>",
      "uart_port": "/dev/serial/by-id/usb-Wellfed_Wellfed_Bench_<serial>-if00",
      "baseline": "private/flash-backups/<full-read>/flash-read.bin",
      "rom_report": "private/captures/<rom-inspection>/report.json"
@@ -60,38 +66,45 @@ printf 'AT+BOOTSEL\r\n' > /dev/serial/by-id/usb-Wellfed_Wellfed_Bench_<serial>-i
 
    `baseline` is this feeder's full flash read and `rom_report` its ROM inspection. A new feeder gets both by hand first: `wellfed-flash read inspect-rom` while stock runs (it fails if a stock log line lands inside a reply, so run it while the feeder is quiet), then RECOVER's long press into the loader, `wellfed-flash read small --device plaf103` and `read full --device plaf103`. Those two refuse a ROM report of another model's console.
 
-3. On Linux your user needs serial access: the `uucp` group on Arch, `dialout` on Debian and Ubuntu. macOS needs no group.
+3. On Linux your user needs two kinds of access. Install [`70-wellfed-bench.rules`](70-wellfed-bench.rules) for the control interface:
 
-## Relay port
+   ```sh
+   sudo cp src/firmware/bench/70-wellfed-bench.rules /etc/udev/rules.d/
+   sudo udevadm control --reload && sudo udevadm trigger
+   ```
 
-Send one line ending in CR, LF or CRLF, and you get exactly one line back ending in CRLF. Commands are case-insensitive. A line that does not parse, or is longer than 32 bytes, gets `ERROR`.
+   The UART port needs the serial group: `uucp` on Arch, `dialout` on Debian and Ubuntu. macOS needs neither.
+4. Run `wellfed-bench status` with no server. You should see all four relays off, the board's telemetry, and `board_serial: present`.
 
-**SH-UR04A compatible.** These replies are what `wellfed-relay` checks, byte for byte:
+## Control interface
 
-| Command | Reply | Hardware |
+The board answers [postcard-rpc](https://github.com/jamesmunns/postcard-rpc) requests on interface 2. The host finds it by VID:PID `1209:0001`, the manufacturer string `Wellfed` and the serial string. Opening it claims the interface, so only one process drives the board at a time. The endpoints and their types live in [`wellfed-bench-icd`](wellfed-bench-icd/src/lib.rs):
+
+| Endpoint | Request | Reply |
 | --- | --- | --- |
-| `AT` | `OK` | |
-| `AT+CH1=1` / `=0` / `=?` | `OK+CH1=1` / `0` | Feeder 5 V on or off (AP2171W, about 1.1 A limit) |
-| `AT+CH2=…` | `OK+CH2=…` | Strap: feeder TX to GND through 4.7 kΩ (ROM loader entry) |
-| `AT+CH3=…` | `OK+CH3=…` | Bridge TX → feeder RX buffer enabled |
-| `AT+CH4=…` | `OK+CH4=…` | Feeder TX → bridge RX buffer enabled |
+| `bench/set` | A channel and on or off | The four channels after the set, or `Held` |
+| `bench/status` | None | The four channels, the power-cut count and the telemetry |
+| `bench/bootsel` | None | `Ok` or `Held`. The board cuts feeder power, answers, and 100 ms later reboots into the UF2 bootloader |
 
-**Board additions.** The bench tools never send these:
+| Channel | Hardware |
+| --- | --- |
+| 1 | Feeder 5 V on or off (AP2171W, about 1.1 A limit) |
+| 2 | Strap: feeder TX to GND through 4.7 kΩ (ROM loader entry) |
+| 3 | Bridge TX → feeder RX buffer enabled |
+| 4 | Feeder TX → bridge RX buffer enabled |
 
-| Command | Reply | Meaning |
-| --- | --- | --- |
-| `AT+VER?` | `OK+VER=0.1.0 revB` | Firmware version and board revision |
-| `AT+VBUS?` | `OK+VBUS=5012` | Feeder 5 V, in mV |
-| `AT+CUR?` | `OK+CUR=180` | Feeder current, in mA (INA181 on 50 mΩ) |
-| `AT+SRC?` | `OK+SRC=HOST` / `AUX` | Which USB-C input feeds the feeder |
-| `AT+FLT?` | `OK+FLT=0` / `1` | Overcurrent flag |
-| `AT+TXV?` | `OK+TXV=3290` | Feeder TX line level, in mV |
-| `AT+ALIVE?` | `OK+ALIVE=1` | The feeder MCU is powered (its TX idles high). `1` with CH1 off means the D-cells are still in |
-| `AT+STAT?` | `OK+STAT=CH:1011;VBUS:…;CUR:…;SRC:…;FLT:…;TXV:…;ALIVE:…` | Everything above at once |
-| `AT+CUTS?` | `OK+CUTS=2914730551` | Feeder power cuts the board has made, from either port or RECOVER, counted from a random start at each board boot. `wellfed-bench` records it when it leaves the feeder in the loader and refuses to write if it moved, and enters no session on a board whose firmware does not answer it |
-| `AT+BOOTSEL` | `OK` | Cuts feeder power, then reboots into the UF2 bootloader |
+| Status field | Meaning |
+| --- | --- |
+| `vbus_mv` | Feeder 5 V, in mV |
+| `current_ma` | Feeder current, in mA (INA181 on 50 mΩ) |
+| `source` | Which USB-C input feeds the feeder, `Host` or `Aux` |
+| `fault` | Overcurrent flag |
+| `tx_mv` | Feeder TX line level, in mV. 2000 mV or more counts as alive: the feeder MCU is powered. Alive with channel 1 off means the D-cells are still in |
+| `cuts` | Feeder power cuts the board has made, from a request or RECOVER, counted from a random start at each board boot. `wellfed-bench` records it when it leaves the feeder in the loader, and refuses to write if it moved |
 
-At power-up, and after any reset including the 2 s watchdog, all four channels are off. That matches an unpowered relay board. The board's pull resistors hold the same state while the RP2040 is in reset.
+The board also answers postcard-rpc's standard endpoints, such as the schema report. A request built from another version of `wellfed-bench-icd` gets an `UnknownKey` error, not a wrong answer.
+
+At power-up, and after any reset including the 2 s watchdog, all four channels are off. The board's pull resistors hold the same state while the RP2040 is in reset.
 
 ## Feeder UART bridge
 
@@ -111,7 +124,7 @@ At power-up, and after any reset including the 2 s watchdog, all four channels a
 | **RECOVER, short press** | A plain feeder power cycle |
 | **RESET / BOOT** | RP2040 reset and BOOTSEL |
 
-While a RECOVER sequence runs, a host command that switches a relay (`AT+CHn=0|1`, `AT+BOOTSEL`) is answered `ERROR` at once and never runs later; queries answer with the current state.
+While a RECOVER sequence runs, a request that switches an output (`bench/set`, `bench/bootsel`) is answered `Held` at once and never runs later. A status request answers with the current state.
 
 ## Pin map
 
@@ -134,12 +147,12 @@ The code uses the first 2 MiB of the 16 MiB flash. The rest is reserved for stor
 
 Run these on the first boards, in order:
 
-1. The UF2 flashes, and `ls /dev/serial/by-id/` shows `-if00` and `-if02`.
-2. `AT+STAT?` with nothing attached: all channels 0, VBUS about 0, ALIVE 0. Read `AT+TXV?` a few times too. Nothing loads the feeder TX net and the firmware reads it with no pull, so a floating line can read high, and a high reading refuses RECOVER as if the D-cells were in.
-3. `AT+CH1=1`: the FDR LED lights and `AT+VBUS?` reads about 5000. Check it against a meter.
-4. Plug in the aux USB-C: `AT+SRC?` reads `AUX`. If it reads `HOST`, the ST polarity is inverted; flip it in `wellfed-bench-board/src/telemetry.rs`.
-5. With a feeder connected and powered, `AT+ALIVE?` is 1 and `AT+CUR?` matches a USB meter.
-6. Point `private/bench.json` at the board, then run `wellfed-bench status`, `on`, `off` and `loader`. The loader must see the `#Flash Download Start` banner.
+1. The UF2 flashes, `ls /dev/serial/by-id/` shows `-if00`, and `lsusb -v -d 1209:0001` lists a vendor-class interface 2.
+2. `wellfed-bench status` with no server and nothing attached: all relays off, VBUS about 0, not alive. Run it a few times. Nothing loads the feeder TX net and the firmware reads it with no pull, so a floating line can read high, and a high reading refuses RECOVER as if the D-cells were in.
+3. Start `wellfed-bench serve` and run `wellfed-bench on`: the FDR LED lights. Stop the server and run `wellfed-bench status`: VBUS reads about 5000 mV. Check it against a meter.
+4. Plug in the aux USB-C: `status` shows the source as `Aux`. If it shows `Host`, the ST polarity is inverted; flip it in `wellfed-bench-board/src/telemetry.rs`.
+5. With a feeder connected and powered, `status` shows it alive, and its current matches a USB meter.
+6. With the server running, run `wellfed-bench status`, `on`, `off` and `loader`. The loader must see the `#Flash Download Start` banner.
 7. RECOVER long press with the D-cells in: refused (triple blink). With them out: the feeder enters the loader.
 
 > [!WARNING]

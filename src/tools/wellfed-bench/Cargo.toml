@@ -36,6 +36,7 @@ wellfed-install.workspace = true
 wellfed-itest = { path = "../wellfed-itest" }
 wellfed-model.workspace = true
 wellfed-proto.workspace = true
+wellfed-bench-icd = { path = "../../firmware/bench/wellfed-bench-icd" }
 wellfed-relay = { path = "../wellfed-relay" }
 wellfed-rig = { path = "../wellfed-rig" }
 wellfed-session.workspace = true
@@ -43,9 +44,17 @@ rustix = { version = "1", features = ["fs", "process", "stdio"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 
+[features]
+# `serve` drives an in-memory board, powered, instead of opening the bench
+# board over USB. Only the hangup tests build it, so they can run the real
+# binary with no board attached (`make check` runs them with it).
+fake-board = ["wellfed-relay/fake"]
+
+[[test]]
+name = "hangup"
+required-features = ["fake-board"]
+
 [dev-dependencies]
-# The hangup tests' relay board is a pseudo-terminal.
-rustix = { version = "1", features = ["pty"] }
 tempfile.workspace = true
 # The feeder session against a simulated feeder over TCP.
 wellfed-feeder-sim = { workspace = true, features = ["harness"] }

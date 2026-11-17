@@ -50,10 +50,14 @@ pub const FLASH_BACKUPS: &str = "private/flash-backups";
 /// owner key.
 pub const WELLFED_HOME: &str = "private";
 
-/// `private/bench.json`: the ports and pinned evidence the bench uses.
+/// `private/bench.json`: the board, the port and the pinned evidence the
+/// bench uses.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
-    pub relay_port: String,
+    /// The Wellfed Bench board's USB serial string, its flash chip's unique
+    /// ID as 16 hex digits; the bench opens its control interface by it.
+    pub board_serial: String,
+    /// The board's feeder UART bridge, a serial port path.
     pub uart_port: String,
     /// Root-relative: the pinned full read.
     pub baseline: PathBuf,
@@ -74,7 +78,7 @@ pub struct Paths {
     pub plan: PathBuf,
     pub execute: PathBuf,
     pub boot: PathBuf,
-    /// The relay board's power-cut count at loader entry, which the
+    /// The bench board's power-cut count at loader entry, which the
     /// execute in that helper session requires unchanged.
     pub power: PathBuf,
 }

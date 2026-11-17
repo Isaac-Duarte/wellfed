@@ -96,9 +96,7 @@ impl Checkout {
 
     fn open_device(&self, device: DeviceOptions) -> Result<Server, ServeError> {
         let board = self.board.clone();
-        Server::open_with(self.options(), &device, move |_| {
-            Ok(Box::new(AtBoard::new(Box::new(board))))
-        })
+        Server::open_with(self.options(), &device, move |_| Ok(Box::new(board)))
     }
 }
 
@@ -361,15 +359,10 @@ async fn job_results_write_the_ledger_and_the_banner_disputes_them() {
     fs::write(root.join("private/verification/u1-plan.json"), "{}").unwrap();
     fs::write(
         root.join("private/verification/u1-power.json"),
-        r#"{"power_cuts":null}"#,
+        r#"{"power_cuts":0}"#,
     )
     .unwrap();
     fs::write(root.join("private/verification/g1-plan.json"), "{}").unwrap();
-    fs::write(
-        root.join("private/verification/g1-power.json"),
-        r#"{"power_cuts":null}"#,
-    )
-    .unwrap();
     let server = Running::start(checkout.open_at(None));
 
     let id = server
@@ -415,7 +408,14 @@ async fn job_results_write_the_ledger_and_the_banner_disputes_them() {
     assert_eq!(kept.banks[&Bank::One].content, entry.content);
 
     // A give-way leaves bank 1 without a valid image, which the banner of
-    // a build on bank 1 then disputes too.
+    // a build on bank 1 then disputes too. Its prepare would have recorded
+    // the count after the execute's boot cut the power.
+    let cuts = checkout.board.lock().cuts;
+    fs::write(
+        root.join("private/verification/g1-power.json"),
+        format!(r#"{{"power_cuts":{cuts}}}"#),
+    )
+    .unwrap();
     let id = server
         .submit(&[
             "give-way-execute",
@@ -727,7 +727,7 @@ async fn a_write_that_stops_leaves_its_bank_unknown_and_a_seed_waits_for_no_job(
     fs::write(root.join("private/verification/g1-plan.json"), "{}").unwrap();
     fs::write(
         root.join("private/verification/g1-power.json"),
-        r#"{"power_cuts":null}"#,
+        r#"{"power_cuts":0}"#,
     )
     .unwrap();
     let server = Running::start(checkout.open_at(None));

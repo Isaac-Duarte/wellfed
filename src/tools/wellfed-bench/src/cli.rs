@@ -35,7 +35,7 @@ use wellfed_bench_formats::live::{BenchState, JobId, Phase, Session, Uart};
 use wellfed_bench_formats::rendezvous;
 use wellfed_bench_formats::{CONFIG, Config};
 use wellfed_install::prompt::Answer;
-use wellfed_relay::{AtBoard, Relay};
+use wellfed_relay::RpcBoard;
 use wellfed_rig::commands::{check_name, seconds_arg};
 use wellfed_rig::tools::{default_build_bin, default_flash_bin, default_wellfed_bin};
 
@@ -82,6 +82,10 @@ enum Command {
     /// Run the bench server in the foreground until Ctrl+C: it holds the
     /// lease and the relay board, and runs one job at a time.
     Serve(ServeArgs),
+    /// Cut the feeder's power and reboot the bench board into its UF2
+    /// bootloader, to copy new board firmware onto it. Stop the server
+    /// first: it holds the board.
+    Bootsel,
     /// Follow a job of the running server again, from its first kept line.
     Attach {
         /// The job's number, as its command printed it.
@@ -217,6 +221,7 @@ fn run(cli: Cli, argv: &[String]) -> anyhow::Result<u8> {
         }
         Command::Status { break_lease } => status(&root, break_lease, &runtime),
         Command::Serve(args) => serve(&root, &args, &runtime),
+        Command::Bootsel => Ok(bootsel(&root)?),
         Command::Banks(args) => runtime.block_on(banks(&Client::new(&root), args)),
         Command::Answer { job, seq, answer } => runtime.block_on(async {
             let answer = Answer::from(answer);
@@ -348,9 +353,7 @@ fn serve(root: &Path, args: &ServeArgs, runtime: &tokio::runtime::Runtime) -> an
         rendezvous,
         ..DeviceOptions::default()
     };
-    let server = Server::open_with(options, &device, |config| {
-        Ok(Box::new(AtBoard::open(&config.relay_port)?))
-    })?;
+    let server = Server::open_with(options, &device, open_board)?;
 
     let relays: Vec<String> = server
         .store()
@@ -664,30 +667,68 @@ fn on_off(on: bool) -> &'static str {
     if on { "on" } else { "off" }
 }
 
-/// Whether the configured ports exist, as the server's own status cannot
-/// show them for a config it may have read long ago.
+fn present(present: bool) -> &'static str {
+    if present { "present" } else { "missing" }
+}
+
+/// Whether the configured board and port are there, as the server's own
+/// status cannot show them for a config it may have read long ago.
 fn report_ports(root: &Path) {
     let Ok(config) = wellfed_formats::load::<Config>(&root.join(CONFIG)) else {
         return;
     };
-    for (key, port) in [
-        ("relay_port", &config.relay_port),
-        ("uart_port", &config.uart_port),
-    ] {
-        let present = Path::new(port).exists();
-        wellfed_rig::say!("{key}: {}", if present { "present" } else { "missing" });
+    match wellfed_relay::connected(&config.board_serial) {
+        Ok(connected) => wellfed_rig::say!("board_serial: {}", present(connected)),
+        Err(error) => wellfed_rig::say!("board_serial: {error}"),
     }
+    let uart = Path::new(&config.uart_port).exists();
+    wellfed_rig::say!("uart_port: {}", present(uart));
 }
 
-/// With no server: read the relays and ports as the bench always could, so
+/// With no server: read the board directly, as the bench always could, so
 /// a killed server's bench can be looked at before it is freed.
 fn direct_status(root: &Path) -> wellfed_rig::Result<u8> {
     let config: Config = wellfed_rig::load(root, Path::new(CONFIG))?;
-    let mut relay = Relay::open(&config.relay_port)?;
-    for channel in 1..=4 {
-        wellfed_rig::say!("Relay {channel}: {}", on_off(relay.get(channel)?));
+    let status = RpcBoard::open(&config.board_serial)?.status()?;
+    for channel in wellfed_bench_icd::Channel::ALL {
+        let on = status.channels.get(channel);
+        wellfed_rig::say!("Relay {}: {}", channel.number(), on_off(on));
     }
+    let t = status.telemetry;
+    wellfed_rig::say!(
+        "Feeder: {} mV, {} mA from {:?}, fault {}, TX {} mV ({}), {} power cuts counted",
+        t.vbus_mv,
+        t.current_ma,
+        t.source,
+        on_off(t.fault),
+        t.tx_mv,
+        if t.alive() { "alive" } else { "not alive" },
+        status.cuts
+    );
     report_ports(root);
+    Ok(0)
+}
+
+#[cfg(not(feature = "fake-board"))]
+fn open_board(config: &Config) -> wellfed_relay::Result<Box<dyn wellfed_relay::Board>> {
+    Ok(Box::new(RpcBoard::open(&config.board_serial)?))
+}
+
+/// The hangup tests' board: powered, as a write needs the feeder to have
+/// stayed on since its prepare.
+#[cfg(feature = "fake-board")]
+fn open_board(_: &Config) -> wellfed_relay::Result<Box<dyn wellfed_relay::Board>> {
+    let board = wellfed_relay::FakeBoard::default();
+    board.lock().on[usize::from(wellfed_relay::POWER)] = true;
+    Ok(Box::new(board))
+}
+
+/// `bootsel`: the board cuts the feeder's power, answers, and drops off the
+/// bus into its UF2 drive.
+fn bootsel(root: &Path) -> wellfed_rig::Result<u8> {
+    let config: Config = wellfed_rig::load(root, Path::new(CONFIG))?;
+    RpcBoard::open(&config.board_serial)?.bootsel()?;
+    wellfed_rig::say!("The bench board is rebooting into its UF2 drive (RPI-RP2).");
     Ok(0)
 }
 

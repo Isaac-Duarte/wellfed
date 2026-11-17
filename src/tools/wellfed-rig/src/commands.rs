@@ -66,12 +66,11 @@ enum PressStep {
     Within,
 }
 
-/// The relay board's power-cut count when the feeder entered the loader,
-/// `None` from the SH-UR04A, which cannot cut power by itself; the execute
-/// in that helper session requires the same answer.
+/// The bench board's power-cut count when the feeder entered the loader;
+/// the execute in that helper session requires the same count.
 #[derive(Serialize, Deserialize)]
 struct PowerAtLoader {
-    power_cuts: Option<u32>,
+    power_cuts: u32,
 }
 
 const STOPPED_POWERED: &str =
@@ -1202,7 +1201,7 @@ impl Bench {
     /// the board's power-cut count recorded for that execute to check.
     fn helper_session(&mut self, p: &Paths) -> Result<()> {
         self.fresh(&p.power)?;
-        // A board that cannot be checked is refused before a relay moves.
+        // A board that cannot answer is refused before a relay moves.
         self.relay.power_cuts()?;
         self.loader(&p.loader)?;
 
@@ -1215,10 +1214,9 @@ impl Bench {
         Ok(())
     }
 
-    /// The relays show the supply on and the strap released, and the
-    /// Wellfed Bench board has made no power cut since loader entry: the
-    /// Wellfed Bench board's RECOVER button cycles the power by itself and
-    /// leaves the relays as they were. It cannot rule out a brownout.
+    /// The relays show the supply on and the strap released, and the bench
+    /// board has made no power cut since loader entry: its RECOVER button
+    /// cycles the power by itself and leaves the relays as they were. It cannot rule out a brownout.
     fn require_unbroken_power(&mut self, p: &Paths) -> Result<()> {
         let powered = self.get(POWER)?;
         let strap = self.get(STRAP)?;

@@ -8,7 +8,7 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 use serde_json::{Value, json};
 use wellfed_bench::server::{Options, Server, ToolPaths};
-use wellfed_relay::{AtBoard, FakeBoard};
+use wellfed_relay::FakeBoard;
 
 struct Agent {
     child: Child,
@@ -81,7 +81,7 @@ fn an_agent_lists_reads_posts_a_job_waits_and_is_refused_motion_and_feeds() {
     std::fs::create_dir_all(root.join("private")).unwrap();
     std::fs::write(
         root.join("private/bench.json"),
-        r#"{"relay_port": "relay", "uart_port": "uart", "baseline": "b", "rom_report": "r"}"#,
+        r#"{"board_serial": "board", "uart_port": "uart", "baseline": "b", "rom_report": "r"}"#,
     )
     .unwrap();
     let options = Options {
@@ -94,10 +94,7 @@ fn an_agent_lists_reads_posts_a_job_waits_and_is_refused_motion_and_feeds() {
         },
     };
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    let server = Server::open(options, |_| {
-        Ok(Box::new(AtBoard::new(Box::new(FakeBoard::default()))))
-    })
-    .unwrap();
+    let server = Server::open(options, |_| Ok(Box::new(FakeBoard::default()))).unwrap();
     let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
     let served = runtime.spawn(server.run(async {
         let _ = stopped.await;
