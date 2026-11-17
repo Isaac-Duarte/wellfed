@@ -309,9 +309,10 @@ async fn a_job_streams_its_output_and_ends_with_its_code() {
     fs::write(checkout.root().join(JOBS).join("41-old.log"), "").unwrap();
     let server = Running::start(checkout.open());
 
-    // Opening queried every relay.
+    // Opening queried every relay and the board's readings.
     let state = server.state().await;
     assert_eq!(state.relays.len(), 4);
+    assert!(state.board.is_some(), "the feeder's power was read");
     assert_eq!(state.server.phase, Phase::Serving);
 
     // A wait for a job of the earlier server is met at once: it ended
@@ -753,12 +754,8 @@ impl Board for PanicsOnce {
         self.board.set(channel, switch)
     }
 
-    fn get(&mut self, channel: u8) -> wellfed_relay::Result<bool> {
-        self.board.get(channel)
-    }
-
-    fn power_cuts(&mut self) -> wellfed_relay::Result<u32> {
-        self.board.power_cuts()
+    fn status(&mut self) -> wellfed_relay::Result<wellfed_relay::Status> {
+        self.board.status()
     }
 }
 

@@ -889,7 +889,7 @@ impl Shared {
 
     /// Read the relays unless a job runs; whether it did.
     ///
-    /// The jobs lock is held only for the check: four AT round trips to a
+    /// The jobs lock is held only for the check: a round trip to a
     /// slow or unplugged board must not stall new jobs, streams and
     /// cancels. A job that starts during the read waits at its first
     /// switch, since the board's lock is held for the whole read, and its

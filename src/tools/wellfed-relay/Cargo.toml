@@ -14,6 +14,7 @@ serde.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "time"] }
 wellfed-bench-icd = { path = "../../firmware/bench/wellfed-bench-icd" }
+wellfed-formats.workspace = true
 
 [dev-dependencies]
 postcard-rpc = { version = "0.12.1", features = ["raw-nusb", "test-utils"] }

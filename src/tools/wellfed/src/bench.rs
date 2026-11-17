@@ -1026,6 +1026,7 @@ mod tests {
             activity: Vec::new(),
             uart: Uart::Idle,
             relays: std::collections::BTreeMap::new(),
+            board: None,
             feeder: FeederView {
                 session,
                 ..FeederView::default()

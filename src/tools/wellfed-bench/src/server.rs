@@ -31,6 +31,7 @@
 pub mod api;
 mod banks;
 mod board;
+pub use board::reading;
 mod capture;
 pub mod client;
 mod device_routes;
