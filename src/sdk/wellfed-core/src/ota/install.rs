@@ -473,7 +473,7 @@ impl Install {
     /// The complete sector [`Self::chunk`] handed out and not yet reported
     /// [`Self::programmed`]: the port may write it in a later step than the
     /// chunk that completed it, and takes no chunk meanwhile (one of the
-    /// next sector's would stop the install out of order).
+    /// next sector's would be refused while this one waits to be programmed).
     pub fn staged(&self) -> Option<Program<'_>> {
         if self.stopped().is_some() || self.phase != State::Receiving {
             return None;
