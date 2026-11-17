@@ -85,7 +85,9 @@ class MainActivity : FlutterActivity() {
                 .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
                 .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
                 .build()
-        connectivity.requestNetwork(request, wifi)
+        // Home's callbacks and the setup network's run on one thread, so a home
+        // bind can't land between the setup bind and its check.
+        connectivity.requestNetwork(request, wifi, main)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -259,7 +261,7 @@ class MainActivity : FlutterActivity() {
                 // Leaving rebinds.
             }
         feeder = callback
-        connectivity.requestNetwork(request, callback, JOIN_TIMEOUT_MS)
+        connectivity.requestNetwork(request, callback, main, JOIN_TIMEOUT_MS)
     }
 
     // Answers with this phone's address on its Wi-Fi once it is back there, or
