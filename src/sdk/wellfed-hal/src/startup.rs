@@ -79,10 +79,12 @@ impl Report {
 
 impl<const N: usize> Report<N> {
     /// A buffer of `N` bytes, for a task whose records outgrow [`LINE`].
-    /// Every size must leave room for a NUL, and its longest line must fit
-    /// the log tail, or `wellfed logs` would miss the lines the UART shows.
+    /// Every size must hold a cut line whole (`PLxxxx1 truncated=1`, its CRLF
+    /// and a NUL), so a cut record keeps the tag the host parser reads it
+    /// by, and its longest line must fit the log tail, or `wellfed logs`
+    /// would miss the lines the UART shows.
     pub const fn sized() -> Self {
-        const { assert!(N >= 1 && N - 1 <= wellfed_core::log_tail::LINE_MAX) };
+        const { assert!(N >= 32 && N - 1 <= wellfed_core::log_tail::LINE_MAX) };
         Self {
             bytes: [0; N],
             used: 0,
@@ -285,14 +287,13 @@ mod tests {
 
     #[test]
     fn a_record_with_no_room_for_its_words_keeps_the_tag() {
-        let mut report = Report::<24>::sized();
+        // The smallest size `sized` allows still holds the tag and the mark.
+        let mut report = Report::<32>::sized();
 
-        let line = report.record(format_args!("PLSUP1 trail_mark_long_word_here mark=a\r\n"));
+        let line = report.record(format_args!(
+            "PLSUP1 trail_mark_much_longer_than_its_buffer mark=a\r\n"
+        ));
         assert_eq!(line.to_str().unwrap(), "PLSUP1 truncated=1\r\n");
-
-        let mut tiny = Report::<8>::sized();
-        let line = tiny.record(format_args!("PLSUP1 hang x=1\r\n"));
-        assert_eq!(line.to_str().unwrap(), "");
-        assert!(tiny.truncated());
+        assert!(report.truncated());
     }
 }

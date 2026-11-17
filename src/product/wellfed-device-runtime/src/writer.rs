@@ -339,7 +339,7 @@ pub enum Record<R> {
 
 /// A `PLCFG1` line's buffer, in bytes with its NUL. The longest record is
 /// the feeder's `saved` with every field at its longest (268 bytes with its
-/// CRLF), past the 192 of a task's usual record buffer, which dropped it;
+/// CRLF), past the 192 of a task's usual record buffer;
 /// `wellfed-feeder-runtime`'s `tests/writer/records.rs` formats every
 /// record at its longest through [`line`] and pins that each fits.
 pub const LINE: usize = 288;

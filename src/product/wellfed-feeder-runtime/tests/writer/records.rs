@@ -528,8 +528,8 @@ fn the_longest_saved_and_open_lines_read_back_whole() {
     );
 }
 
-/// The line the bench first missed: the feeder's default settings saved,
-/// 203 bytes, past the 192 of a task's usual record buffer.
+/// The feeder's default settings saved is 203 bytes, past the 192 of a
+/// task's usual record buffer, so the writer's own buffer must carry it.
 #[test]
 fn the_default_saved_line_outgrew_the_usual_buffer() {
     let record = Record::Saved {
