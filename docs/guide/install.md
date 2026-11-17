@@ -40,6 +40,8 @@ You should see the feeder restart. It then opens its own Wi-Fi network for setup
 
 Tap **Join the feeder's network**, and choose the `PL-AF103` network in Android's picker. The picker can be empty until the network is up. The app sends your Wi-Fi details and goes back to your own network.
 
+If a VPN app such as Tailscale is on, exclude Wellfed in its settings or turn it off first. Otherwise the VPN holds the app off the feeder's network, and the app sends nothing and tells you so, since your Wi-Fi details would go out on your home network instead.
+
 On a computer, you switch networks yourself, since no desktop lets an app join one for you:
 
 1. Open the computer's Wi-Fi menu and pick the `PL-AF103` network. The app watches for the switch and sends your Wi-Fi details once it sees it.

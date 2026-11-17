@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wellfed/platform/feeder_network.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/install/install.dart';
@@ -186,6 +187,23 @@ void main() {
       ports.joinFails = null;
       await installTap(tester, "Join the feeder's network");
       expect(run.answers[2], const InstallAnswer.done());
+    });
+
+    testWidgets('a VPN holding the phone off the feeder sends nothing, and says how to free it', (tester) async {
+      final ports = FakeInstallPorts()..joinFails = const JoinRefused(FeederJoinProblem.vpn);
+      final FakeRun run = await installToRun(tester, ports);
+      run.ask(2, const InstallAsk.joinFeederNetwork());
+      await settle(tester);
+
+      await installTap(tester, "Join the feeder's network");
+      expect(
+        find.textContaining("This phone couldn't send through the feeder's network.", findRichText: true),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Nothing was sent.', findRichText: true), findsOneWidget);
+      expect(find.textContaining('Exclude Wellfed', findRichText: true), findsOneWidget);
+      expect(run.answers[2], isNull);
+      expect(find.text("Join the feeder's network"), findsOneWidget);
     });
 
     testWidgets('coming back at another address fails the ask', (tester) async {

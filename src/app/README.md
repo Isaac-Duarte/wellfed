@@ -41,7 +41,7 @@ The app talks to each feeder directly, on the home network; there is no server b
 - **Images** are links to the committed renders in `assets/renders/`, and the launcher icon links to `assets/brand/android/`.
 - **The client secret never leaves the phone.** Android backup is off, so a new phone pairs again.
 - **A session gives a feeder this phone's clock** right after pairing, and whenever the feeder's clock is not set. An owner's session also syncs a set clock once its error reaches a minute, halfway to expiry, and the periodic catch-up does the same with the app closed, so a feeder with no time server stays set and learns its rate ([clock](../../docs/firmware/clock.md#the-clock)). A session sends one such sync at most every 30 minutes.
-- **Every socket follows the Wi-Fi network.** Android keeps mobile data as the default network while the Wi-Fi has no internet, so `MainActivity` binds the app to Wi-Fi. A VPN that apps cannot bypass (Tailscale, for one) refuses that: exclude Wellfed from it.
+- **Every socket follows the Wi-Fi network.** Android keeps mobile data as the default network while the Wi-Fi has no internet, so `MainActivity` binds the app to Wi-Fi. A VPN that apps cannot bypass (Tailscale, for one) refuses that: exclude Wellfed from it. The install's join checks the binding took: an unbound process would send the setup frame, with the Wi-Fi password, out on the home network, so `joinFeeder` answers `notBound` instead and the screen says to exclude Wellfed or turn the VPN off.
 
 ## Alerts
 

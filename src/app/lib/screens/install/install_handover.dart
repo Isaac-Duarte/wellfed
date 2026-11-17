@@ -102,6 +102,11 @@ class _NotJoined extends StatelessWidget {
         'The feeder would look for it at the wrong address. Switch back to your home network, then close this '
             'install and start again. The feeder keeps its setup network open.',
       ),
+      FeederJoinProblem.vpn when state.join == FeederJoin.picker => (
+        "This $deviceName couldn't send through the feeder's network.",
+        'A VPN is keeping Wellfed off it, so your Wi-Fi password would have gone out on your home network instead. '
+            "Nothing was sent. Exclude Wellfed in the VPN app's settings, or turn the VPN off, then try again.",
+      ),
       FeederJoinProblem.vpn => (
         "The feeder can't reach this computer's address.",
         "It's a VPN's, or another address off your home network. Turn off your VPN, then look again.",

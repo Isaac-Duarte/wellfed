@@ -2,11 +2,12 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:clock/clock.dart';
+import 'package:flutter/services.dart' show MethodChannel, PlatformException;
 import 'package:wellfed/platform/wifi_name.dart';
 import 'package:wellfed/src/rust/api/install.dart' show routeSource;
 import 'package:wellfed/state/install/install_state.dart' show FeederJoinProblem;
 
-/// Why a computer would not be counted as on the feeder's network.
+/// Why this device would not be counted as on the feeder's network.
 class JoinRefused implements Exception {
   /// Refused for `problem`.
   const JoinRefused(this.problem);
@@ -18,10 +19,28 @@ class JoinRefused implements Exception {
   String toString() => switch (problem) {
     FeederJoinProblem.notSeen => "this computer didn't join the feeder's network",
     FeederJoinProblem.otherNetwork => 'this computer is on another 192.168.1.x network',
-    FeederJoinProblem.vpn => "this computer's address is one the feeder can't reach, as a VPN's is",
+    FeederJoinProblem.vpn => "this device's traffic can't go to the feeder's network, as under a VPN",
     FeederJoinProblem.nameUnreadable => "this computer didn't say which Wi-Fi it joined",
     FeederJoinProblem.alreadyOnFeeder => "this computer was already on the feeder's network",
   };
+}
+
+/// MainActivity's refusal when Android wouldn't bind the process to the
+/// feeder's setup network.
+const notBound = 'notBound';
+
+/// Join the feeder's setup network through Android's picker, over `channel`.
+/// Rust's sockets follow the process's binding, and Android refuses that
+/// binding under a VPN the app can't bypass: the setup frame would then leave
+/// on the home Wi-Fi with its password. So that refusal ends the join, as
+/// [FeederJoinProblem.vpn], and no frame goes.
+Future<void> joinByPicker(MethodChannel channel) async {
+  try {
+    await channel.invokeMethod<void>('joinFeeder');
+  } on PlatformException catch (error) {
+    if (error.code == notBound) throw const JoinRefused(FeederJoinProblem.vpn);
+    rethrow;
+  }
 }
 
 /// This computer's IPv4 addresses, by interface name.
