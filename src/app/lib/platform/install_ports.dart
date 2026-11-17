@@ -251,7 +251,7 @@ class AppInstallPorts implements InstallPorts {
   @override
   Future<String?> joinFeederNetwork(String? home) async {
     if (onDesktopHost) return _guided.join(home);
-    await _wifi.invokeMethod<void>('joinFeeder');
+    await joinByPicker(_wifi);
     return null;
   }
 

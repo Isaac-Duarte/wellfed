@@ -58,7 +58,7 @@ enum FeederJoin {
   byHand,
 }
 
-/// Why a computer was not counted as on the feeder's network.
+/// Why this device was not counted as on the feeder's network.
 enum FeederJoinProblem {
   /// Its network never showed, or the owner stopped waiting.
   notSeen,
@@ -67,7 +67,9 @@ enum FeederJoinProblem {
   /// and the Wi-Fi password in it would go to that network's router.
   otherNetwork,
 
-  /// Its address is one the feeder can't reach, as a VPN's is.
+  /// Its address is one the feeder can't reach, as a VPN's is; or, on a
+  /// phone, Android wouldn't hold the app to the feeder's network, as under a
+  /// VPN the app can't bypass.
   vpn,
 
   /// It joined a new 192.168.1.x network, but the system wouldn't say which

@@ -85,7 +85,9 @@ class MainActivity : FlutterActivity() {
                 .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
                 .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
                 .build()
-        connectivity.requestNetwork(request, wifi)
+        // Home's callbacks and the setup network's run on one thread, so a home
+        // bind can't land between the setup bind and its check.
+        connectivity.requestNetwork(request, wifi, main)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -222,10 +224,29 @@ class MainActivity : FlutterActivity() {
         val callback =
             object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
-                    WifiNetworks.bindForActivity(connectivity, network)
+                    // Rust's sockets follow the process's binding, so the frame
+                    // reaches the feeder only once the process is bound to its
+                    // network. Android refuses the binding under a VPN the app
+                    // cannot bypass, and the frame would then leave on the
+                    // default network with the Wi-Fi password in it: so no
+                    // binding, no frame.
+                    val bound =
+                        WifiNetworks.bindForActivity(connectivity, network) &&
+                            connectivity.boundNetworkForProcess == network
+                    // Once answered, a frame may be on its way: a refused
+                    // rebinding then leaves the process on the network it had,
+                    // which is the feeder's, and never moves it home.
                     if (answered) return
                     answered = true
-                    main.post { result.success(null) }
+                    if (bound) {
+                        main.post { result.success(null) }
+                        return
+                    }
+                    Log.w(TAG, "not bound to the feeder's network, so no frame goes")
+                    connectivity.unregisterNetworkCallback(this)
+                    if (feeder === this) feeder = null
+                    home?.let { WifiNetworks.bindForActivity(connectivity, it) }
+                    main.post { result.error(NOT_BOUND, "not bound to the feeder's network", null) }
                 }
 
                 override fun onUnavailable() {
@@ -240,7 +261,7 @@ class MainActivity : FlutterActivity() {
                 // Leaving rebinds.
             }
         feeder = callback
-        connectivity.requestNetwork(request, callback, JOIN_TIMEOUT_MS)
+        connectivity.requestNetwork(request, callback, main, JOIN_TIMEOUT_MS)
     }
 
     // Answers with this phone's address on its Wi-Fi once it is back there, or
@@ -331,6 +352,10 @@ class MainActivity : FlutterActivity() {
         const val BLUETOOTH_CHANNEL = "io.github.isaacduarte.wellfed/bluetooth"
         const val ALERTS_CHANNEL = "io.github.isaacduarte.wellfed/alerts"
         const val SETUP_PREFIX = "PL-AF103-"
+
+        // joinFeeder's refusal when the process couldn't be bound to the
+        // feeder's network; install_ports.dart reads it.
+        const val NOT_BOUND = "notBound"
         const val JOIN_TIMEOUT_MS = 60_000
         const val HOME_WAIT_MS = 30_000L
         const val HOME_POLL_MS = 250L
