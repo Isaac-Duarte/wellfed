@@ -196,7 +196,7 @@ fn the_longest_lines_fit_the_record_buffer() {
 
     for record in records {
         let mut report = Report::new();
-        let line = report.record(format_args!("PLGAP1 {record}\r\n"));
-        assert!(line.is_ok(), "{}", text(record));
+        report.record(format_args!("PLGAP1 {record}\r\n"));
+        assert!(!report.truncated(), "{}", text(record));
     }
 }

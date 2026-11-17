@@ -67,6 +67,7 @@
 //! write that erases, an upload's chunks alone following sooner. The turn above
 //! and the attempt marker are the same either way.
 
+use core::ffi::CStr;
 use core::fmt;
 
 use wellfed_core::named_enum;
@@ -92,6 +93,7 @@ use wellfed_hal::flash_lock::provider::Provider;
 use wellfed_hal::handoff::Taken;
 use wellfed_hal::interlock::{INTERLOCK, WRITER_POLL_MS, WriteStep, WriteTurn};
 use wellfed_hal::settings::{KindSettings, Mailbox};
+use wellfed_hal::startup::Report;
 use wellfed_hal::{rng, sdk, supervision};
 use wellfed_sdk::storage::{
     CLIENTS_BASE, EVENTS_BASE, EVENTS_UNITS, FlashOps, Region, SEED_BASE, SETTINGS_BASE,
@@ -333,6 +335,29 @@ pub enum Record<R> {
     },
     /// One of the product's own stores.
     Product(R),
+}
+
+/// A `PLCFG1` line's buffer, in bytes with its NUL. The longest record is
+/// the feeder's `saved` with every field at its longest (268 bytes with its
+/// CRLF), past the 192 of a task's usual record buffer;
+/// `wellfed-feeder-runtime`'s `tests/writer/records.rs` formats every
+/// record at its longest through [`line`] and pins that each fits.
+pub const LINE: usize = 288;
+
+/// `record` as its whole `PLCFG1` line, for the service task to log. One
+/// that ever outgrew [`LINE`] is logged cut, as
+/// `wellfed_hal::startup::Report::record` says, never dropped.
+pub fn line<R: Describe>(report: &mut Report<LINE>, record: Record<R>) -> &CStr {
+    report.record(format_args!("PLCFG1 {}\r\n", Line(record)))
+}
+
+/// A record as the body of its `PLCFG1` line.
+struct Line<R>(Record<R>);
+
+impl<R: Describe> fmt::Display for Line<R> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        describe(self.0, f)
+    }
 }
 
 /// The body of a `PLCFG1` line.

@@ -172,12 +172,10 @@ pub fn give_way(reason: GiveWayReason) -> bool {
     let identity = trial::identity();
     update_trial_register(|register| trial::spent(register, &identity));
     let mut report = startup::Report::new();
-    if let Ok(line) = report.record(format_args!(
+    sdk::log(report.record(format_args!(
         "PLCNF1 {}\r\n",
         ConfirmLine(confirm::Record::GiveWay { reason })
-    )) {
-        sdk::log(line);
-    }
+    )));
     sdk::log_flush();
 
     supervision::stopping();
@@ -284,9 +282,7 @@ fn power_step() -> u32 {
     let step = monitor.step();
     if let Some(record) = step.record {
         let mut report = startup::Report::new();
-        if let Ok(line) = report.record(format_args!("PLBAT1 {}\r\n", PowerLine(record))) {
-            sdk::log(line);
-        }
+        sdk::log(report.record(format_args!("PLBAT1 {}\r\n", PowerLine(record))));
     }
     step.delay_ms
 }
@@ -430,11 +426,7 @@ fn storm_step(feeding: bool, now: u32) {
             RELEASED_AT.store(now, Ordering::Relaxed);
             HELD.store(false, Ordering::Release);
             let mut report = startup::Report::new();
-            if let Ok(line) =
-                report.record(format_args!("PLSUP1 storm released=1 level={level}\r\n"))
-            {
-                sdk::log(line);
-            }
+            sdk::log(report.record(format_args!("PLSUP1 storm released=1 level={level}\r\n")));
         }
         return;
     }
@@ -478,13 +470,11 @@ unsafe extern "C" fn feeder_task(_: *mut c_void) -> u32 {
         TRIAL.store(trial, Ordering::Release);
         let opened = SdkHooks::watchdog();
         let mut report = startup::Report::new();
-        if let Ok(line) = report.record(format_args!(
+        sdk::log(report.record(format_args!(
             "PLSUP1 open watchdog={} trial={}\r\n",
             bit(opened),
             bit(trial)
-        )) {
-            sdk::log(line);
-        }
+        )));
         if !opened {
             // A boot the watchdog cannot supervise is a startup failure,
             // and ends in a reset KM0 counts, never in a boot that runs on
@@ -534,7 +524,7 @@ unsafe extern "C" fn feeder_task(_: *mut c_void) -> u32 {
                 (now.wrapping_sub(b.at_ms), b.gap_ms, b.supervised)
             });
             let mut report = startup::Report::new();
-            if let Ok(line) = report.record(format_args!(
+            sdk::log(report.record(format_args!(
                 "PLSUP1 stop startup={} trial={} confirmed={} alive={} outputs={} restart={} \
                  owner={} feeding={} owner_age={} owner_gap={} supervised={} fed_ms={} ms={}\r\n",
                 STARTUP.load(Ordering::Relaxed),
@@ -550,9 +540,7 @@ unsafe extern "C" fn feeder_task(_: *mut c_void) -> u32 {
                 bit(supervised),
                 FED_MS.load(Ordering::Relaxed),
                 now
-            )) {
-                sdk::log(line);
-            }
+            )));
         }
         flush_before_reset(&REFUSED);
         return FEED_MS;
@@ -576,15 +564,13 @@ unsafe extern "C" fn feeder_task(_: *mut c_void) -> u32 {
                     // is never refreshed again and resets the platform within
                     // its expiry. Say so once, with the gap that led to it.
                     let mut report = startup::Report::new();
-                    if let Ok(line) = report.record(format_args!(
+                    sdk::log(report.record(format_args!(
                         "PLSUP1 stop watchdog_fault={} gap_ms={} fed_ms={} ms={}\r\n",
                         watchdog.fault.code(),
                         gap,
                         FED_MS.load(Ordering::Relaxed),
                         now
-                    )) {
-                        sdk::log(line);
-                    }
+                    )));
                 }
             }
         }
@@ -745,9 +731,7 @@ fn confirm_step() -> u32 {
 
     if let Some(record) = step.record {
         let mut report = startup::Report::new();
-        if let Ok(line) = report.record(format_args!("PLCNF1 {}\r\n", ConfirmLine(record))) {
-            sdk::log(line);
-        }
+        sdk::log(report.record(format_args!("PLCNF1 {}\r\n", ConfirmLine(record))));
     }
 
     HEARTBEAT.store(sdk::uptime_ms(), Ordering::Release);
@@ -759,12 +743,10 @@ fn confirm_step() -> u32 {
             // join's SAE included: the margin under the watchdog's 1 s
             // progress gap that the feeder's priority buys.
             let mut report = startup::Report::new();
-            if let Ok(line) = report.record(format_args!(
+            sdk::log(report.record(format_args!(
                 "PLSUP1 trial feed_gap_max_ms={}\r\n",
                 FEED_GAP_MAX_MS.load(Ordering::Relaxed)
-            )) {
-                sdk::log(line);
-            }
+            )));
         }
         match step.record {
             Some(confirm::Record::Already | confirm::Record::Confirmed { .. }) => {
@@ -807,9 +789,7 @@ fn update_step() -> u32 {
 
     if let Some(record) = step.record {
         let mut report = startup::Report::new();
-        if let Ok(line) = report.record(format_args!("{}\r\n", UpdateLine(record))) {
-            sdk::log(line);
-        }
+        sdk::log(report.record(format_args!("{}\r\n", UpdateLine(record))));
         if matches!(record, update::Record::Progress { .. }) {
             log_leases();
         }
@@ -851,7 +831,7 @@ fn log_leases() {
     };
 
     let mut report = startup::Report::new();
-    if let Ok(line) = report.record(format_args!(
+    sdk::log(report.record(format_args!(
         "PLOTA1 leases count={} park_max={} release_max={} masked_max_ms={} masked_long={} \
          feed_gap_max_ms={}\r\n",
         leases,
@@ -860,9 +840,7 @@ fn log_leases() {
         ticks_ms(masked_max),
         masked_long,
         FEED_GAP_MAX_MS.load(Ordering::Relaxed),
-    )) {
-        sdk::log(line);
-    }
+    )));
 }
 
 /// The runtime's record storage: the SDK wrappers, refused unless the
@@ -1126,9 +1104,7 @@ fn log_probe(record: Record) {
         )),
     };
 
-    if let Ok(line) = line {
-        sdk::log(line);
-    }
+    sdk::log(line);
 }
 
 /// The longest the radio waits for startup work: a firmware that never
@@ -1206,25 +1182,21 @@ fn log_rng(started: rng::Started) {
             started.samples
         )),
     };
-    if let Ok(line) = line {
-        sdk::log(line);
-    }
+    sdk::log(line);
 }
 
 fn log_gpio_routing(stage: &str) {
     let value = sdk::gpio_routing();
     let mut report = startup::Report::new();
-    if let Ok(line) = report.record(format_args!(
+    sdk::log(report.record(format_args!(
         "PLIO1 stage={} groups={:08x} aon={:08x} control_a={:08x} control_b={:08x} share_pad={:08x} ext_a={:08x}\r\n",
         stage, value.groups, value.aon, value.control_a, value.control_b, value.share_pad, value.ext_a,
-    )) {
-        sdk::log(line);
-    }
+    )));
 }
 
 fn log_led_readback(led: leds::Led, high: bool, stage: &str, value: leds::Readback) {
     let mut report = startup::Report::new();
-    if let Ok(line) = report.record(format_args!(
+    sdk::log(report.record(format_args!(
         "PLDBG1 pin={} stage={} want={} latch={} input={} highs={}/{} directions={} stopped={} pad={:08x}\r\n",
         led.name(),
         stage,
@@ -1236,9 +1208,7 @@ fn log_led_readback(led: leds::Led, high: bool, stage: &str, value: leds::Readba
         u8::from(value.directions_ok),
         u8::from(value.stopped_ok),
         value.pad,
-    )) {
-        sdk::log(line);
-    }
+    )));
 }
 
 unsafe extern "C" fn diagnostic_task(_: *mut c_void) -> u32 {
@@ -1249,9 +1219,7 @@ unsafe extern "C" fn diagnostic_task(_: *mut c_void) -> u32 {
 
     sdk::log(c"\r\nWellfed local firmware: Rust bringup\r\n");
     let mut report = startup::Report::new();
-    if let Ok(line) = report.start(startup::snapshot()) {
-        sdk::log(line);
-    }
+    sdk::log(report.start(startup::snapshot()));
 
     // Test variant: a determined startup failure, which a trial image
     // must turn into a counted reset. Opaque to the optimizer, or LTO drops
@@ -1369,18 +1337,14 @@ fn log_trail(trail: &Result<trail::Trail<'_, trail::Ram>, trail::Refusal>) {
             return;
         }
         &Err(trail::Refusal::OtherBoot { boot, current }) => {
-            if let Ok(line) = report.record(format_args!(
+            sdk::log(report.record(format_args!(
                 "PLSUP1 trail refused=boot boot={boot} current={current}\r\n"
-            )) {
-                sdk::log(line);
-            }
+            )));
             return;
         }
     };
 
-    if let Ok(line) = report.record(format_args!("PLSUP1 trail {trail}\r\n")) {
-        sdk::log(line);
-    }
+    sdk::log(report.record(format_args!("PLSUP1 trail {trail}\r\n")));
     for (mark, entry) in trail.marks() {
         let line = match entry {
             Some(entry) => report.record(format_args!(
@@ -1392,14 +1356,10 @@ fn log_trail(trail: &Result<trail::Trail<'_, trail::Ram>, trail::Refusal>) {
                 mark.name()
             )),
         };
-        if let Ok(line) = line {
-            sdk::log(line);
-        }
+        sdk::log(line);
     }
     for entry in trail.entries() {
-        if let Ok(line) = report.record(format_args!("PLSUP1 trail_step {entry}\r\n")) {
-            sdk::log(line);
-        }
+        sdk::log(report.record(format_args!("PLSUP1 trail_step {entry}\r\n")));
     }
 }
 
@@ -1425,18 +1385,14 @@ pub extern "C" fn wellfed_app_start() {
             )),
             Err(raw) => report.record(format_args!("PLSUP1 lease_fault raw={raw:#010x}\r\n")),
         };
-        if let Ok(line) = line {
-            sdk::log(line);
-        }
+        sdk::log(line);
     }
     // Before the scheduler starts the tick hook that overwrites it. Only a
     // watchdog reset is a hang worth naming; any other reset just clears it.
     let hang = crumb::take().filter(|_| startup::snapshot().reset & sdk::BOOT_KM4_WATCHDOG != 0);
     if let Some(crumb) = hang {
         let mut report = startup::Report::new();
-        if let Ok(line) = report.record(format_args!("PLSUP1 hang {crumb}\r\n")) {
-            sdk::log(line);
-        }
+        sdk::log(report.record(format_args!("PLSUP1 hang {crumb}\r\n")));
     }
     // The calls the hang's boot made last, then an empty trail for this
     // boot: every boot starts one, and only the boot just before is read.
@@ -1455,12 +1411,10 @@ pub extern "C" fn wellfed_app_start() {
     let storm = trial::Storm::of(resets);
     if resets != 0 || level != 0 {
         let mut report = startup::Report::new();
-        if let Ok(line) = report.record(format_args!(
+        sdk::log(report.record(format_args!(
             "PLSUP1 storm resets={resets} level={level} mode={}\r\n",
             storm.name()
-        )) {
-            sdk::log(line);
-        }
+        )));
     }
     match storm {
         trial::Storm::Normal => {}
@@ -1501,26 +1455,22 @@ pub extern "C" fn wellfed_app_start() {
         sdk::log(c"PLSUP1 error task=create\r\n");
     }
     let mut report = startup::Report::new();
-    if let Ok(line) = report.record(format_args!(
+    sdk::log(report.record(format_args!(
         "PLCLK1 function_before={:08x} clock_before={:08x} function_after={:08x} clock_after={:08x} status={}\r\n",
         snapshot.clock.function_before, snapshot.clock.clock_before,
         snapshot.clock.function_after, snapshot.clock.clock_after,
         if snapshot.clock.verified() { "pass" } else { "fail" },
-    )) {
-        sdk::log(line);
-    }
+    )));
 
     log_gpio_routing("startup");
-    if let Ok(line) = report.record(format_args!(
+    sdk::log(report.record(format_args!(
         "PLFW1 outputs pa={:08x} pb={:08x} dira={:08x} dirb={:08x} status={}\r\n",
         snapshot.pa,
         snapshot.pb,
         snapshot.dira,
         snapshot.dirb,
         if snapshot.verified() { "pass" } else { "fail" },
-    )) {
-        sdk::log(line);
-    }
+    )));
 
     if !snapshot.verified() {
         sdk::log(c"PLFW1 error outputs=unverified\r\n");

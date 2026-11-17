@@ -47,10 +47,22 @@ impl Snapshot {
     }
 }
 
-/// Enough for the fixed schema with a full SHA-256 build ID and raw registers.
-pub struct Report {
-    bytes: [u8; 192],
+/// The default record buffer: enough for the fixed `PLFW1 start` schema
+/// with a full SHA-256 build ID and raw registers, and for every record
+/// line a task logs through [`log`]. A task with longer records sizes its
+/// own ([`Report::sized`]), its worst case pinned by a host test.
+pub const LINE: usize = 192;
+
+/// What an overflowing record is cut to: its leading words, then this.
+const TRUNCATED: &str = " truncated=1\r\n";
+
+/// A record line formatted into a fixed buffer of `N` bytes, at most
+/// `N - 1` of text and the NUL.
+pub struct Report<const N: usize = LINE> {
+    bytes: [u8; N],
     used: usize,
+    /// The last record did not fit and was cut.
+    cut: bool,
 }
 
 impl Default for Report {
@@ -61,13 +73,26 @@ impl Default for Report {
 
 impl Report {
     pub const fn new() -> Self {
+        Self::sized()
+    }
+}
+
+impl<const N: usize> Report<N> {
+    /// A buffer of `N` bytes, for a task whose records outgrow [`LINE`].
+    /// Every size must hold a cut line whole (`PLxxxx1 truncated=1`, its CRLF
+    /// and a NUL), so a cut record keeps the tag the host parser reads it
+    /// by, and its longest line must fit the log tail, or `wellfed logs`
+    /// would miss the lines the UART shows.
+    pub const fn sized() -> Self {
+        const { assert!(N >= 32 && N - 1 <= wellfed_core::log_tail::LINE_MAX) };
         Self {
-            bytes: [0; 192],
+            bytes: [0; N],
             used: 0,
+            cut: false,
         }
     }
 
-    pub fn start(&mut self, snapshot: Snapshot) -> Result<&CStr, fmt::Error> {
+    pub fn start(&mut self, snapshot: Snapshot) -> &CStr {
         let bank = snapshot.bank_name();
         self.record(format_args!(
             concat!(
@@ -79,35 +104,98 @@ impl Report {
         ))
     }
 
-    /// Format a complete bounded record, replacing any previous buffer contents.
-    pub fn record(&mut self, args: fmt::Arguments<'_>) -> Result<&CStr, fmt::Error> {
+    /// Format a complete record, replacing any previous buffer contents.
+    ///
+    /// A record that does not fit (or whose formatting fails) is never
+    /// dropped or cut mid-value: it becomes its leading words, up to the
+    /// first `key=value`, and `truncated=1` (`PLCFG1 saved truncated=1`),
+    /// so the bench still sees that it happened and a parser never reads a
+    /// half value as a whole one.
+    pub fn record(&mut self, args: fmt::Arguments<'_>) -> &CStr {
         self.used = 0;
-        self.write_fmt(args)?;
-        self.bytes[self.used] = 0;
-        CStr::from_bytes_with_nul(&self.bytes[..=self.used]).map_err(|_| fmt::Error)
+        self.cut = self.write_fmt(args).is_err();
+        if self.cut {
+            self.truncate();
+        }
+        self.terminated()
+    }
+
+    /// Whether the last [`record`](Self::record) had to be cut.
+    pub fn truncated(&self) -> bool {
+        self.cut
+    }
+
+    /// Cuts the partial text to its complete leading words without an `=`
+    /// and appends [`TRUNCATED`]. Out of line, as is [`Self::terminated`]:
+    /// [`Self::record`]'s frame sits under `core::fmt::write`, on a task's
+    /// deepest path, and the stack audit counts every byte of it.
+    #[cold]
+    #[inline(never)]
+    fn truncate(&mut self) {
+        let room = N.saturating_sub(TRUNCATED.len() + 1);
+        let partial = self.bytes.get(..self.used.min(room)).unwrap_or(&[]);
+        let mut keep = 0;
+        for (at, &byte) in partial.iter().enumerate() {
+            match byte {
+                b'=' | b'\r' | b'\n' => break,
+                b' ' => keep = at,
+                _ => {}
+            }
+        }
+
+        self.used = keep;
+        if keep.saturating_add(TRUNCATED.len()) < N {
+            self.copy(TRUNCATED.as_bytes());
+        }
+    }
+
+    #[inline(never)]
+    fn terminated(&mut self) -> &CStr {
+        if let Some(nul) = self.bytes.get_mut(self.used) {
+            *nul = 0;
+        }
+        // The text is formatted from `str`s, which a record never gives a
+        // NUL; one that did ends the line there.
+        let text = self.bytes.get(..=self.used).unwrap_or(&[]);
+        CStr::from_bytes_until_nul(text).unwrap_or(c"")
+    }
+
+    /// Appends what of `bytes` fits before the NUL's byte; how much did.
+    ///
+    /// No indexing that could panic: [`Write::write_str`] is a formatting
+    /// method, which the stack audit charges at its deepest, and a panic's
+    /// path through the handler is far deeper than the copy.
+    fn copy(&mut self, bytes: &[u8]) -> usize {
+        let free = self.bytes.get_mut(self.used..).unwrap_or(&mut []);
+        let room = free.len().saturating_sub(1);
+        let mut taken = 0;
+        for (slot, &byte) in free.iter_mut().zip(bytes.iter().take(room)) {
+            *slot = byte;
+            taken += 1;
+        }
+        self.used = self.used.saturating_add(taken);
+        taken
     }
 }
 
-impl Write for Report {
+impl<const N: usize> Write for Report<N> {
+    /// Writes what fits, leaving room for the NUL, and fails if that was
+    /// not all of it: the record's leading words survive a cut even when
+    /// the piece that overflows is one long literal.
     fn write_str(&mut self, value: &str) -> fmt::Result {
-        let end = self.used.checked_add(value.len()).ok_or(fmt::Error)?;
-        if end >= self.bytes.len() {
+        if self.copy(value.as_bytes()) < value.len() {
             return Err(fmt::Error);
         }
-        self.bytes[self.used..end].copy_from_slice(value.as_bytes());
-        self.used = end;
         Ok(())
     }
 }
 
-/// Logs one record line, `PLxxx1 …\r\n`. A line longer than the report
-/// buffer is dropped rather than truncated, so a parser never sees half a
-/// record.
+/// Logs one record line, `PLxxx1 …\r\n`, through a [`LINE`] buffer. A
+/// line longer than that is logged cut, as [`Report::record`] says, so a
+/// parser never sees half a value.
 pub fn log(line: fmt::Arguments<'_>) {
     let mut report = Report::new();
-    if let Ok(line) = report.record(line) {
-        crate::sdk::log(line);
-    }
+    crate::sdk::log(report.record(line));
 }
 
 /// A record a task logs as one `PLxxx1 …` line: its `Display` is the body
@@ -162,13 +250,50 @@ mod tests {
             reset: 0x10_0000,
         };
 
-        let line = report.start(s).unwrap().to_str().unwrap();
+        let line = report.start(s).to_str().unwrap();
         assert!(line.contains(" bank=unknown reset=00100000 mmu=00000000,0c000000,03e7a000\r\n"));
 
         s.control = 3;
         s.reset = 0;
-        let line = report.start(s).unwrap().to_str().unwrap();
+        let line = report.start(s).to_str().unwrap();
         assert!(line.contains(" bank=1 reset=00000000 mmu=00000003,0c000000,03e7a000\r\n"));
         assert!(line.starts_with(&format!("PLFW1 start build={BUILD_ID} ")));
+    }
+
+    #[test]
+    fn a_record_that_fits_is_logged_whole() {
+        let mut report = Report::<32>::sized();
+
+        let line = report.record(format_args!("PLCFG1 saved generation={}\r\n", 7));
+        assert_eq!(line.to_str().unwrap(), "PLCFG1 saved generation=7\r\n");
+        assert!(!report.truncated());
+    }
+
+    #[test]
+    fn an_overflowing_record_keeps_its_kind_and_says_it_was_cut() {
+        let mut report = Report::<40>::sized();
+
+        let line = report.record(format_args!(
+            "PLCFG1 net saved generation={} stored=1 event=appended\r\n",
+            u64::MAX
+        ));
+        assert_eq!(line.to_str().unwrap(), "PLCFG1 net saved truncated=1\r\n");
+        assert!(report.truncated());
+
+        // The buffer is reused without the cut line's bytes.
+        let line = report.record(format_args!("PLCFG1 repaired generation=1\r\n"));
+        assert_eq!(line.to_str().unwrap(), "PLCFG1 repaired generation=1\r\n");
+    }
+
+    #[test]
+    fn a_record_with_no_room_for_its_words_keeps_the_tag() {
+        // The smallest size `sized` allows still holds the tag and the mark.
+        let mut report = Report::<32>::sized();
+
+        let line = report.record(format_args!(
+            "PLSUP1 trail_mark_much_longer_than_its_buffer mark=a\r\n"
+        ));
+        assert_eq!(line.to_str().unwrap(), "PLSUP1 truncated=1\r\n");
+        assert!(report.truncated());
     }
 }

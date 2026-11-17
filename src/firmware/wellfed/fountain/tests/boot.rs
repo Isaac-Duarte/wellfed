@@ -81,7 +81,7 @@ fn a_beat_relatches_a_pump_that_reads_on() {
 fn the_lines_name_the_model_bank_and_pump() {
     let mut report = Report::new();
 
-    let line = boot::start_line(&mut report, BANK1, OFF).unwrap();
+    let line = boot::start_line(&mut report, BANK1, OFF);
     assert_eq!(
         line.to_str().unwrap(),
         "PLBOOT1 start model=plwf106 bank=1 pump=off latch=0 pad=0 output=1\r\n"
@@ -93,7 +93,7 @@ fn the_lines_name_the_model_bank_and_pump() {
         pad_high: true,
         output: true,
     };
-    let line = boot::beat_line(&mut report, 7, 35_000, on, true).unwrap();
+    let line = boot::beat_line(&mut report, 7, 35_000, on, true);
     assert_eq!(
         line.to_str().unwrap(),
         "PLBOOT1 beat n=7 uptime_ms=35000 pump=unverified latch=1 pad=1 output=1 relatched=1\r\n"

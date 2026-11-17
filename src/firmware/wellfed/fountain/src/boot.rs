@@ -60,11 +60,7 @@ impl fmt::Display for Pump {
 }
 
 /// `PLBOOT1 start …`: the model, the bank and the pump.
-pub fn start_line(
-    report: &mut Report,
-    boot: startup::Snapshot,
-    pump: Pump,
-) -> Result<&CStr, fmt::Error> {
+pub fn start_line(report: &mut Report, boot: startup::Snapshot, pump: Pump) -> &CStr {
     report.record(format_args!(
         "{TAG} start model={MODEL} bank={} {pump}\r\n",
         boot.bank_name()
@@ -79,7 +75,7 @@ pub fn beat_line(
     uptime_ms: u32,
     pump: Pump,
     relatched: bool,
-) -> Result<&CStr, fmt::Error> {
+) -> &CStr {
     report.record(format_args!(
         "{TAG} beat n={count} uptime_ms={uptime_ms} {pump} relatched={}\r\n",
         u8::from(relatched)
@@ -96,12 +92,8 @@ pub fn start(boot: impl FnOnce() -> startup::Snapshot) -> bool {
     sdk::log(c"\r\nWellfed local firmware: Rust bringup\r\n");
     let boot = boot();
     let mut report = Report::new();
-    if let Ok(line) = report.start(boot) {
-        sdk::log(line);
-    }
-    if let Ok(line) = start_line(&mut report, boot, pump) {
-        sdk::log(line);
-    }
+    sdk::log(report.start(boot));
+    sdk::log(start_line(&mut report, boot, pump));
     pump.stopped
 }
 
@@ -115,8 +107,12 @@ pub fn beat(count: u32) -> Pump {
     }
 
     let mut report = Report::new();
-    if let Ok(line) = beat_line(&mut report, count, sdk::uptime_ms(), pump, relatched) {
-        sdk::log(line);
-    }
+    sdk::log(beat_line(
+        &mut report,
+        count,
+        sdk::uptime_ms(),
+        pump,
+        relatched,
+    ));
     pump
 }
