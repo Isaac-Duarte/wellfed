@@ -8,14 +8,31 @@
 
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use wellfed_bench_formats::live::{BoardReading, PowerSource};
 use wellfed_bench_formats::now;
 use wellfed_bench_formats::progress::RelayState;
-use wellfed_relay::{Board, Switch};
+use wellfed_bench_icd::Channel;
+use wellfed_relay::{Board, Source, Status, Switch};
 
 use crate::server::state::Store;
 
-/// The board's channels, 1 to 4.
-const CHANNELS: std::ops::RangeInclusive<u8> = 1..=4;
+/// The board's readings as the live state carries them, read now.
+pub fn reading(status: &Status) -> BoardReading {
+    let t = status.telemetry;
+    BoardReading {
+        vbus_mv: t.vbus_mv,
+        current_ma: t.current_ma,
+        source: match t.source {
+            Source::Host => PowerSource::Host,
+            Source::Aux => PowerSource::Aux,
+        },
+        fault: t.fault,
+        tx_mv: t.tx_mv,
+        alive: t.alive(),
+        cuts: status.cuts,
+        at: now(),
+    }
+}
 
 #[derive(Clone)]
 pub(crate) struct SharedBoard {
@@ -31,14 +48,20 @@ impl SharedBoard {
         }
     }
 
-    /// Ask the board for all four channels.
+    /// Ask the board for its channels and readings, in one request.
     pub(crate) fn query(&self) -> wellfed_relay::Result<()> {
-        let mut board = self.lock();
-        for channel in CHANNELS {
-            let on = board.get(channel)?;
-            self.publish(channel, on);
+        self.status().map(drop)
+    }
+
+    /// The board's status, published as it answered.
+    fn status(&self) -> wellfed_relay::Result<Status> {
+        let status = self.lock().status()?;
+        for channel in Channel::ALL {
+            self.publish(channel.number(), status.channels.get(channel));
         }
-        Ok(())
+        let reading = reading(&status);
+        self.store.update(|state| state.board = Some(reading));
+        Ok(status)
     }
 
     fn lock(&self) -> MutexGuard<'_, Box<dyn Board>> {
@@ -63,13 +86,7 @@ impl Board for SharedBoard {
         Ok(())
     }
 
-    fn get(&mut self, channel: u8) -> wellfed_relay::Result<bool> {
-        let on = self.lock().get(channel)?;
-        self.publish(channel, on);
-        Ok(on)
-    }
-
-    fn power_cuts(&mut self) -> wellfed_relay::Result<u32> {
-        self.lock().power_cuts()
+    fn status(&mut self) -> wellfed_relay::Result<Status> {
+        SharedBoard::status(self)
     }
 }

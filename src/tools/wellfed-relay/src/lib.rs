@@ -25,7 +25,8 @@ use postcard_rpc::{Endpoint, postcard_schema::Schema};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use tokio::sync::mpsc;
-use wellfed_bench_icd::{Bootsel, Channel, GetStatus, Refusal, Set, SetChannel, Status};
+use wellfed_bench_icd::{Bootsel, Channel, GetStatus, Refusal, Set, SetChannel};
+pub use wellfed_bench_icd::{Source, Status, Telemetry};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -42,9 +43,17 @@ pub enum Error {
     /// A channel number outside 1–4.
     #[error("No relay channel {channel}")]
     Channel { channel: u8 },
-    /// The board did not answer in time.
-    #[error("The bench board did not answer within {} ms", TIMEOUT.as_millis())]
+    /// The board did not answer in time. The request may still have run,
+    /// so a set's outcome is unknown until the status is read again.
+    #[error(
+        "The bench board did not answer within {} ms; a switch may still have happened, so read its status",
+        TIMEOUT.as_millis()
+    )]
     Timeout,
+    /// The board acknowledged a set but reported the channel in the other
+    /// state: firmware that disagrees with this protocol.
+    #[error("The bench board acknowledged relay {channel} but reports it {}", if *.on { "on" } else { "off" })]
+    Unconfirmed { channel: u8, on: bool },
     /// The board answered with an error, or the link failed. An
     /// `UnknownKey` wire error is firmware built from another protocol.
     #[error("Bench board request failed: {0:?}")]
@@ -88,12 +97,22 @@ impl Switch {
 pub trait Board: Send {
     /// Switch `channel`, returning only once the board acknowledged it.
     fn set(&mut self, channel: u8, switch: Switch) -> Result<()>;
+    /// Everything the board reports in one answer: the channels, its power
+    /// cut count and the feeder's power telemetry.
+    fn status(&mut self) -> Result<Status>;
+
     /// The channel's state as the board reports it.
-    fn get(&mut self, channel: u8) -> Result<bool>;
+    fn get(&mut self, number: u8) -> Result<bool> {
+        let channel = channel(number)?;
+        Ok(self.status()?.channels.get(channel))
+    }
+
     /// The feeder power cuts the board has made, whoever asked for them.
     /// The RECOVER button cycles the power by itself, which the channels
     /// alone cannot show once the feeder is back on.
-    fn power_cuts(&mut self) -> Result<u32>;
+    fn power_cuts(&mut self) -> Result<u32> {
+        Ok(self.status()?.cuts)
+    }
 }
 
 /// The relay board a sequence drives.
@@ -128,6 +147,10 @@ impl Relay {
     pub fn power_cuts(&mut self) -> Result<u32> {
         self.board.power_cuts()
     }
+
+    pub fn status(&mut self) -> Result<Status> {
+        self.board.status()
+    }
 }
 
 struct Detached;
@@ -137,11 +160,7 @@ impl Board for Detached {
         Err(Error::Detached)
     }
 
-    fn get(&mut self, _: u8) -> Result<bool> {
-        Err(Error::Detached)
-    }
-
-    fn power_cuts(&mut self) -> Result<u32> {
+    fn status(&mut self) -> Result<Status> {
         Err(Error::Detached)
     }
 }
@@ -281,10 +300,6 @@ impl RpcBoard {
         }
     }
 
-    pub fn status(&mut self) -> Result<Status> {
-        self.call::<GetStatus>(())
-    }
-
     /// Cuts the feeder's power and reboots the board into its UF2
     /// bootloader, 100 ms after it answers.
     pub fn bootsel(&mut self) -> Result<()> {
@@ -309,21 +324,16 @@ impl Board for RpcBoard {
             on: switch.is_on(),
         };
         let channels = self.call::<SetChannel>(request)?.map_err(refused)?;
-        debug_assert_eq!(
-            channels.get(request.channel),
-            request.on,
-            "the board set what was asked"
-        );
-        Ok(())
+        wellfed_formats::require(channels.get(request.channel) == request.on, || {
+            Error::Unconfirmed {
+                channel: number,
+                on: channels.get(request.channel),
+            }
+        })
     }
 
-    fn get(&mut self, number: u8) -> Result<bool> {
-        let channel = channel(number)?;
-        Ok(self.status()?.channels.get(channel))
-    }
-
-    fn power_cuts(&mut self) -> Result<u32> {
-        Ok(self.status()?.cuts)
+    fn status(&mut self) -> Result<Status> {
+        self.call::<GetStatus>(())
     }
 }
 
@@ -348,6 +358,8 @@ pub struct FakeState {
     pub refuse_channel: Option<u8>,
     /// The power-cut count. Switching CH1 off from on adds one.
     pub cuts: u32,
+    /// What the board reports of the feeder's power.
+    pub telemetry: Telemetry,
 }
 
 #[cfg(any(test, feature = "fake"))]
@@ -387,13 +399,17 @@ impl Board for FakeBoard {
         Ok(())
     }
 
-    fn get(&mut self, number: u8) -> Result<bool> {
-        channel(number)?;
-        Ok(self.lock().on[usize::from(number)])
-    }
-
-    fn power_cuts(&mut self) -> Result<u32> {
-        Ok(self.lock().cuts)
+    fn status(&mut self) -> Result<Status> {
+        let s = self.lock();
+        let mut channels = wellfed_bench_icd::Channels::default();
+        for channel in Channel::ALL {
+            channels.set(channel, s.on[usize::from(channel.number())]);
+        }
+        Ok(Status {
+            channels,
+            cuts: s.cuts,
+            telemetry: s.telemetry,
+        })
     }
 }
 
@@ -423,6 +439,9 @@ mod tests {
         channels: Channels,
         cuts: u32,
         held: bool,
+        /// Acknowledge a set without making it, as firmware that disagrees
+        /// with the protocol would.
+        ignores_sets: bool,
     }
 
     struct Context(Arc<Mutex<Panel>>);
@@ -467,7 +486,9 @@ mod tests {
         if panel.channels.cuts_power(request.channel, request.on) {
             panel.cuts = panel.cuts.wrapping_add(1);
         }
-        panel.channels.set(request.channel, request.on);
+        if !panel.ignores_sets {
+            panel.channels.set(request.channel, request.on);
+        }
         Ok(panel.channels)
     }
 
@@ -539,6 +560,23 @@ mod tests {
         assert!(matches!(board.set(POWER, Switch::On), Err(Error::Held)));
         assert!(matches!(board.bootsel(), Err(Error::Held)));
         assert!(!board.get(POWER).unwrap());
+    }
+
+    #[test]
+    fn a_set_the_board_reports_undone_is_an_error() {
+        let panel = Arc::new(Mutex::new(Panel {
+            ignores_sets: true,
+            ..Panel::default()
+        }));
+        let mut board = board(panel);
+
+        assert!(matches!(
+            board.set(POWER, Switch::On),
+            Err(Error::Unconfirmed {
+                channel: POWER,
+                on: false
+            })
+        ));
     }
 
     #[test]

@@ -47,6 +47,9 @@ pub struct BenchState {
     /// acknowledged. The server holds the board, so nothing else switches
     /// a relay between reads, except the board's own front buttons.
     pub relays: BTreeMap<String, RelayState>,
+    /// The board's own readings with its last relay read: the feeder's
+    /// power and the power cut count. None until the board first answers.
+    pub board: Option<BoardReading>,
     /// The owner's device API session and what it last read.
     pub feeder: FeederView,
     /// The receive-only capture's newest lines and the records parsed
@@ -56,6 +59,33 @@ pub struct BenchState {
     pub banks: Ledger,
     /// What the operator's notes say now.
     pub operator: Operator,
+}
+
+/// What the bench board measures of the feeder's power, and when.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BoardReading {
+    pub vbus_mv: u32,
+    pub current_ma: u32,
+    pub source: PowerSource,
+    /// The power switch's overcurrent flag.
+    pub fault: bool,
+    /// The feeder's TX level at the header.
+    pub tx_mv: u32,
+    /// Whether that level says the feeder's MCU has power.
+    pub alive: bool,
+    /// The board's power cut count. It starts at a random value at each
+    /// board boot, so only the difference between two readings means
+    /// anything: the cuts made between them.
+    pub cuts: u32,
+    pub at: f64,
+}
+
+/// Which USB-C input feeds the feeder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PowerSource {
+    Host,
+    Aux,
 }
 
 /// The server process.

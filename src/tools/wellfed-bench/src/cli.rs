@@ -31,11 +31,13 @@ use wellfed_bench::server::{
 use wellfed_bench_formats::banks::{Bank, Check, Content, Entry};
 use wellfed_bench_formats::catalog;
 use wellfed_bench_formats::lease::{self, Liveness};
-use wellfed_bench_formats::live::{BenchState, JobId, Phase, Session, Uart};
+use wellfed_bench_formats::live::{
+    BenchState, BoardReading, JobId, Phase, PowerSource, Session, Uart,
+};
 use wellfed_bench_formats::rendezvous;
 use wellfed_bench_formats::{CONFIG, Config};
 use wellfed_install::prompt::Answer;
-use wellfed_relay::RpcBoard;
+use wellfed_relay::{Board, RpcBoard};
 use wellfed_rig::commands::{check_name, seconds_arg};
 use wellfed_rig::tools::{default_build_bin, default_flash_bin, default_wellfed_bin};
 
@@ -531,6 +533,35 @@ fn report_state(state: &BenchState) {
     for (channel, relay) in &state.relays {
         wellfed_rig::say!("Relay {channel}: {}", on_off(relay.on));
     }
+    match &state.board {
+        Some(reading) => report_board(reading),
+        None => wellfed_rig::say!("Feeder power: not read yet"),
+    }
+}
+
+/// The board's readings. The cut counter starts at a random value at each
+/// board boot, so the line says what a reading of it is for.
+fn report_board(r: &BoardReading) {
+    let source = match r.source {
+        PowerSource::Host => "host",
+        PowerSource::Aux => "aux",
+    };
+    wellfed_rig::say!(
+        "Feeder power: {} mV, {} mA from the {source} input, overcurrent {}, TX {} mV ({})",
+        r.vbus_mv,
+        r.current_ma,
+        on_off(r.fault),
+        r.tx_mv,
+        if r.alive {
+            "MCU powered"
+        } else {
+            "MCU unpowered"
+        },
+    );
+    wellfed_rig::say!(
+        "Power cut counter: {} (random at each board boot; the difference between two readings is the cuts between them)",
+        r.cuts
+    );
 }
 
 fn report_feeder(state: &BenchState) {
@@ -694,17 +725,7 @@ fn direct_status(root: &Path) -> wellfed_rig::Result<u8> {
         let on = status.channels.get(channel);
         wellfed_rig::say!("Relay {}: {}", channel.number(), on_off(on));
     }
-    let t = status.telemetry;
-    wellfed_rig::say!(
-        "Feeder: {} mV, {} mA from {:?}, fault {}, TX {} mV ({}), {} power cuts counted",
-        t.vbus_mv,
-        t.current_ma,
-        t.source,
-        on_off(t.fault),
-        t.tx_mv,
-        if t.alive() { "alive" } else { "not alive" },
-        status.cuts
-    );
+    report_board(&wellfed_bench::server::reading(&status));
     report_ports(root);
     Ok(0)
 }
