@@ -150,6 +150,16 @@ impl Writer {
         self.phase == Phase::Programming
     }
 
+    /// The sector [`Self::accept`] handed out, while its readback is not yet
+    /// reported: the same bytes, the marker still withheld. A port that
+    /// writes it a while after its last chunk came takes it from here.
+    pub fn staged(&self) -> Option<Program<'_>> {
+        (self.phase == Phase::Programming).then(|| Program {
+            offset: BANK1_OFFSET + self.sector_offset,
+            data: &self.sector[..self.sector_len() as usize],
+        })
+    }
+
     /// Whether the chunk at `offset` is already in: in a sector written
     /// before, or received into the staged one. A port that takes chunks
     /// idempotently answers such a chunk without passing it on.

@@ -442,10 +442,15 @@ impl Install {
 
     /// End a quiet install once [`IDLE_MS`] passed without a chunk. A
     /// sector out to the port is the port's to finish, so the wait for its
-    /// readback never times out.
+    /// readback never times out, and the quiet time starts once it is back:
+    /// a port that paces its writes may hold one a while.
     pub fn tick(&mut self, now_ms: u32) -> Option<Stop> {
+        if self.writer.programming() {
+            self.heard_ms = now_ms;
+            return None;
+        }
         let quiet = now_ms.wrapping_sub(self.heard_ms) >= IDLE_MS;
-        (self.receiving() && !self.writer.programming() && quiet).then(|| self.stop(Stop::Timeout))
+        (self.receiving() && quiet).then(|| self.stop(Stop::Timeout))
     }
 
     /// One chunk at `offset`.
@@ -463,6 +468,17 @@ impl Install {
             None => Ok(Taken::Staged),
             Some(program) => Ok(Taken::Program(program)),
         }
+    }
+
+    /// The complete sector [`Self::chunk`] handed out and not yet reported
+    /// [`Self::programmed`]: the port may write it in a later step than the
+    /// chunk that completed it, and takes no chunk meanwhile (one of the
+    /// next sector's would be refused while this one waits to be programmed).
+    pub fn staged(&self) -> Option<Program<'_>> {
+        if self.stopped().is_some() || self.phase != State::Receiving {
+            return None;
+        }
+        self.writer.staged()
     }
 
     /// The staged sector's readback. Once the last one passes the whole

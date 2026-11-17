@@ -51,6 +51,16 @@ thread_local! {
     /// What a loop pass would read while the store erases: whether the
     /// install holds the flash, and the stop the stage shows.
     static SEEN_IN_ERASE: Cell<Option<(bool, Option<Stop>)>> = const { Cell::new(None) };
+    /// Erases and programs asked for, bank 1's and the store's: each a
+    /// flash lease on the device.
+    static LEASES: Cell<(u32, u32)> = const { Cell::new((0, 0)) };
+}
+
+fn lease(erase: u32, program: u32) {
+    LEASES.with(|l| {
+        let (erases, programs) = l.get();
+        l.set((erases + erase, programs + program));
+    });
 }
 
 struct FakeHooks;
@@ -82,9 +92,11 @@ impl SlotIo for StageSlots {
         self.0.read(slot, offset, bytes)
     }
     fn program(&self, slot: u32, offset: u32, bytes: &[u8]) -> bool {
+        lease(0, 1);
         !STORE_FAILS.with(Cell::get) && self.0.program(slot, offset, bytes)
     }
     fn erase(&self, slot: u32) -> bool {
+        lease(1, 0);
         let stop = mailbox::progress().and_then(|progress| progress.stopped);
         SEEN_IN_ERASE.with(|seen| seen.set(Some((mailbox::installing(), stop))));
         !STORE_FAILS.with(Cell::get) && self.0.erase(slot)
@@ -146,9 +158,11 @@ impl Flash for TestFlash {
         self.inner.armed() && !(self.disarm_at_marker && at_marker)
     }
     fn erase(&mut self, sector: u32) -> bool {
+        lease(1, 0);
         self.inner.erase(sector)
     }
     fn program(&mut self, sector: u32, offset: u32, data: &[u8]) -> bool {
+        lease(0, 1);
         self.marker_seen
             .push(fake::with(|h| h.bank1[..8].try_into().unwrap()));
         if sector == 0 && offset == 0 && data == MARKER {
@@ -316,6 +330,13 @@ fn bank0_layout(text: u32) -> Vec<u8> {
 
 fn start(bank: u8) -> MutexGuard<'static, ()> {
     let guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    restart(bank);
+    guard
+}
+
+/// A fresh board running from `bank`, under [`start`]'s guard.
+fn restart(bank: u8) {
+    wellfed_hal::supervision::reset();
     fake::reset_hardware();
     mailbox::reset();
     signers::reset();
@@ -331,7 +352,6 @@ fn start(bank: u8) -> MutexGuard<'static, ()> {
         }
     });
     assert!(stopped::initialize().verified());
-    guard
 }
 
 /// The stage and a clock.
@@ -2178,4 +2198,272 @@ fn an_offer_for_another_model_leaves_the_store_banks_and_marker_untouched() {
     // Nothing is pending for it: the same build for this model installs.
     let progress = progress(rig.offer(&manifest(3, &payload), None));
     assert_eq!(progress.phase, Phase::Receiving);
+}
+
+/// The feeder task's period between watchdog checkpoints, in FreeRTOS
+/// ticks (the runtime's `FEED_MS`).
+const FEED_TICKS: u32 = 250;
+/// One erase lease with IRQs masked, as installs measured it on the bench
+/// (`masked_max_ms` 42 to 46), and one page program's.
+const ERASE_MASKED_MS: u32 = 43;
+const PROGRAM_MASKED_MS: u32 = 3;
+/// A chunk's round trip over the bench's Wi-Fi, as an install measured it
+/// (about 14 ms a 512 B chunk), and the client's wait after a state that
+/// wants nothing (`wellfed-connect`'s settle).
+const CHUNK_RTT_MS: u32 = 14;
+const SETTLE_MS: u32 = 200;
+/// The bench's install image: 276 sectors.
+const BENCH_IMAGE: usize = 1_130_496;
+
+/// How the client pushes chunks.
+#[derive(Clone, Copy)]
+enum Client {
+    /// Every wanted chunk as soon as it is wanted, as one already buffered
+    /// on the feeder's side of the link would arrive.
+    Burst,
+    /// One chunk a Wi-Fi round trip, and a settle before asking again when
+    /// a state wants nothing, as `wellfed-connect` does.
+    WiFi,
+}
+
+/// What [`install_beside_the_feeder`] measured, on the system timer.
+struct Run {
+    /// The longest gap between the feeder's checkpoints.
+    worst_gap_ms: u32,
+    /// The most any one stage step held IRQs masked.
+    longest_step_ms: u32,
+    /// From the accepted offer to the activation.
+    install_ms: u32,
+}
+
+/// [`install_beside_the_feeder`]'s clocks, in milliseconds.
+#[derive(Default)]
+struct Clocks {
+    /// The system timer.
+    wall: u32,
+    /// The FreeRTOS tick.
+    tick: u32,
+    fed_wall: u32,
+    fed_tick: u32,
+    worst: u32,
+}
+
+impl Clocks {
+    fn feed(&mut self) {
+        self.worst = self.worst.max(self.wall - self.fed_wall);
+        self.fed_wall = self.wall;
+        self.fed_tick = self.tick;
+        wellfed_hal::supervision::checkpointed();
+    }
+
+    /// Unmasked time passes on both clocks.
+    fn pass(&mut self, ms: u32) {
+        self.wall += ms;
+        self.tick += ms;
+    }
+}
+
+/// Bank 0's update stage installing a `len`-byte image in the service task
+/// beside the watchdog feeder, on two clocks: the system timer the
+/// watchdog's progress gap is measured on, and the FreeRTOS tick the
+/// feeder and the stage wait in. A lease masks IRQs, so its time passes on
+/// the system timer while the tick stands (one pended tick at the unmask).
+/// The feeder, the highest priority, checkpoints as soon as its period has
+/// passed in ticks; the client's round trips pass on both clocks.
+fn install_beside_the_feeder(len: usize, paced: bool, client: Client) -> Run {
+    use wellfed_hal::supervision;
+
+    restart(0);
+    supervision::reset();
+    if paced {
+        supervision::pace_writes();
+    }
+    let mut rig = Rig::bench(0);
+    let payload = image(len);
+    rig.offer(&manifest(3, &payload), None).unwrap();
+
+    // Both clocks start where the offer left the stage's.
+    let mut clocks = Clocks {
+        wall: rig.now,
+        tick: rig.now,
+        fed_wall: rig.now,
+        fed_tick: rig.now,
+        worst: 0,
+    };
+    let started = rig.now;
+    let mut stage_at = rig.now;
+    let mut client_at = rig.now;
+    let mut longest = 0;
+    let push = |offset: u32| {
+        let start = offset as usize;
+        let end = (start + MAX_CHUNK as usize).min(payload.len());
+        mailbox::chunk(offset, &payload[start..end]).is_ok()
+    };
+    for _ in 0..1_000_000 {
+        // Outside a step both clocks run together, so the next event is
+        // the earliest in ticks: the feeder first, then the client.
+        let feed_at = clocks.fed_tick + FEED_TICKS;
+        let skew = clocks.wall - clocks.tick;
+        let client_tick = match client {
+            Client::WiFi => client_at - skew.min(client_at),
+            Client::Burst => u32::MAX,
+        };
+        let at = feed_at.min(stage_at).min(client_tick);
+        clocks.pass(at.saturating_sub(clocks.tick));
+        if at == feed_at {
+            clocks.feed();
+            continue;
+        }
+        if at == client_tick {
+            let wanted = mailbox::progress().unwrap().wanted;
+            client_at = match wanted.into_iter().flatten().next() {
+                Some(offset) => {
+                    push(offset);
+                    clocks.wall + CHUNK_RTT_MS
+                }
+                None => clocks.wall + SETTLE_MS + CHUNK_RTT_MS,
+            };
+            continue;
+        }
+
+        if let Client::Burst = client {
+            for offset in mailbox::progress().unwrap().wanted.into_iter().flatten() {
+                if !push(offset) {
+                    break;
+                }
+            }
+        }
+        LEASES.with(|l| l.set((0, 0)));
+        let step = rig.stage.step(&mut rig.flash, clocks.tick);
+        let (erases, programs) = LEASES.with(Cell::get);
+        let masked = erases * ERASE_MASKED_MS + programs * PROGRAM_MASKED_MS;
+        longest = longest.max(masked);
+        clocks.wall += masked;
+        clocks.tick += u32::from(masked > 0);
+        stage_at = clocks.tick + step.delay_ms.max(1);
+        rig.records.extend(step.record);
+
+        let progress = mailbox::progress().unwrap();
+        assert_ne!(progress.phase, Phase::Idle, "{:?}", rig.records);
+        if progress.phase == Phase::Activated {
+            assert_eq!(fake::with(|h| h.bank1[..len].to_vec()), payload);
+            supervision::reset();
+            return Run {
+                worst_gap_ms: clocks.worst,
+                longest_step_ms: longest,
+                install_ms: clocks.wall - started,
+            };
+        }
+    }
+    panic!("the install never finished: {:?}", rig.records);
+}
+
+/// Sectors whose chunks come as fast as the stage takes them (simulation):
+/// unpaced, one feed period holds a dozen sectors' leases and the feeder
+/// misses the watchdog's progress gap (2680 ms); paced by its checkpoints,
+/// a feed period holds one step's leases (340 ms). With chunks a Wi-Fi
+/// round trip apart, as the bench's installs ran (`feed_gap_max_ms` 355 to
+/// 819), pacing bounds the gap the same way, and an install takes at least
+/// a feed period and one sector's leases a sector: the bench's image in
+/// 94 s here, against 52 s unpaced.
+#[test]
+fn an_install_keeps_the_watchdog_fed_whatever_the_client_s_rate() {
+    use wellfed_hal::supervision::config::WATCHDOG;
+
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    // A sector: one erase and sixteen 256-byte programs.
+    let sector_ms = ERASE_MASKED_MS + 16 * PROGRAM_MASKED_MS;
+
+    let burst = install_beside_the_feeder(32 * SECTOR, false, Client::Burst);
+    assert!(
+        burst.worst_gap_ms > WATCHDOG.max_progress_gap_ms,
+        "the model reproduces the fault: {} ms",
+        burst.worst_gap_ms
+    );
+    let paced = install_beside_the_feeder(32 * SECTOR, true, Client::Burst);
+    assert!(
+        paced.longest_step_ms <= sector_ms,
+        "the activation's leases are no more than a sector's: {} ms",
+        paced.longest_step_ms
+    );
+    assert!(
+        paced.worst_gap_ms <= FEED_TICKS + sector_ms + 1,
+        "a feed period and one step's leases, at most: {} ms",
+        paced.worst_gap_ms
+    );
+
+    let wifi = install_beside_the_feeder(BENCH_IMAGE, false, Client::WiFi);
+    let wifi_paced = install_beside_the_feeder(BENCH_IMAGE, true, Client::WiFi);
+    assert!(wifi_paced.worst_gap_ms <= FEED_TICKS + sector_ms + 1);
+    // Paced, an install takes a feed period and its leases a sector, and
+    // one more for the activation: about 94 s for the bench's image.
+    let sectors = u32::try_from(BENCH_IMAGE.div_ceil(SECTOR)).unwrap();
+    assert!(
+        wifi_paced.install_ms <= (sectors + 1) * (FEED_TICKS + sector_ms),
+        "{} ms paced against {} ms",
+        wifi_paced.install_ms,
+        wifi.install_ms
+    );
+}
+
+/// Paced, a complete sector waits staged for the feeder's next checkpoint,
+/// wanting nothing meanwhile, and so does the activation after the last;
+/// the wait never times the install out, and the quiet time starts again
+/// once the sector is written.
+#[test]
+fn a_staged_sector_and_the_activation_wait_for_a_checkpoint() {
+    use wellfed_hal::supervision;
+
+    let _guard = start(0);
+    supervision::reset();
+    supervision::pace_writes();
+    let mut rig = Rig::bench(0);
+    let payload = image(LEN);
+    rig.offer(&manifest(3, &payload), None).unwrap();
+    // Every wanted chunk, stepping between, for a while: no checkpoint
+    // comes meanwhile.
+    let push = |rig: &mut Rig| {
+        for _ in 0..100 {
+            let wanted = mailbox::progress().unwrap().wanted;
+            for offset in wanted.into_iter().flatten() {
+                let start = offset as usize;
+                let end = (start + MAX_CHUNK as usize).min(payload.len());
+                if mailbox::chunk(offset, &payload[start..end]).is_err() {
+                    break;
+                }
+            }
+            rig.step();
+        }
+        mailbox::progress().unwrap()
+    };
+
+    // The first sector goes in at once: nothing was written before it.
+    let waiting = push(&mut rig);
+    let one_sector = rig.flash.programs;
+    assert!(one_sector > 0);
+    assert_eq!(waiting.written, SECTOR as u32, "the second waits");
+    assert!(waiting.wanted.iter().all(Option::is_none), "{waiting:?}");
+    rig.now += 120_000;
+    rig.steps(10);
+    assert_eq!(rig.flash.programs, one_sector, "still waiting");
+    assert_eq!(mailbox::progress().unwrap().phase, Phase::Receiving);
+
+    supervision::checkpointed();
+    rig.steps(1);
+    assert!(
+        rig.flash.programs > one_sector,
+        "written after the checkpoint"
+    );
+
+    // The last sector, then the activation at the next checkpoint.
+    supervision::checkpointed();
+    let written = push(&mut rig);
+    assert_eq!(written.phase, Phase::Receiving, "{written:?}");
+    assert_eq!(written.written, LEN as u32);
+    assert!(matches!(store().record().state, State::Pending(_)));
+    supervision::checkpointed();
+    rig.steps(1);
+    assert_eq!(mailbox::progress().unwrap().phase, Phase::Activated);
+    assert_eq!(fake::with(|h| h.bank1[..LEN].to_vec()), payload);
+    supervision::reset();
 }
