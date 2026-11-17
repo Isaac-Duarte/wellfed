@@ -93,7 +93,7 @@ When the install finishes, the app asks you to save the backup somewhere else: t
 Follow what the stop screen offers, since the right move depends on where it stopped:
 
 - **Once Wellfed is running**, you can pick up where it stopped.
-- **If the installer doesn't know whether its request landed**, leave the feeder plugged in and wait. It listens for the answer and never resends that request, and a new one has to wait at least 20 minutes.
+- **If the installer doesn't know whether its request landed**, leave the feeder plugged in and wait. It listens for the answer and never resends that request. Once the feeder reports its original firmware and stays quiet for 3 minutes, you can start again.
 - **If stock's reports were lost**, the app may ask you to restart the feeder. That's the one time to unplug it during an install.
 
 ## Common mistakes

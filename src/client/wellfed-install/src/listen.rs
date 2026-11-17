@@ -29,10 +29,12 @@ use wellfed_stock::server::{self, Api, Handle, OtaTrial, Server};
 use crate::Error;
 use crate::track::{Stop, Stopped};
 
-/// How long an uncertain request is listened for. The stock server's ledger
-/// resolves one no sooner than 20 minutes after it went out, and only 10 quiet
-/// minutes into a session that reported, so a stock that connects or drops as
-/// late as the 20th minute still has its 10.
+/// How long an uncertain request is listened for. The listener serves no
+/// image, so the stock server's ledger resolves a request three quiet minutes
+/// into a session in which stock reported its own version; were an image
+/// server still serving (its lease left), it would wait 20 minutes from the request and 10
+/// quiet ones, so a stock that connects or drops as late as the 20th minute
+/// still has its 10.
 pub const UNCERTAIN_WAIT: Duration = Duration::from_secs(30 * 60);
 
 /// How often the listener looks.
@@ -163,7 +165,10 @@ fn waited_out(stock: bool) -> Listened {
     }
 }
 
-async fn answers(address: SocketAddr) -> bool {
+/// Whether something accepts a connection on the device API at `address`:
+/// stock serves none, so only the replacement does. A connect, and nothing
+/// sent.
+pub(crate) async fn answers(address: SocketAddr) -> bool {
     matches!(
         tokio::time::timeout(CONNECT_WAIT, tokio::net::TcpStream::connect(address)).await,
         Ok(Ok(_))
@@ -186,9 +191,11 @@ fn stock_stayed(status: &StockStatus) -> bool {
             .is_some_and(|reported| reported > latest.created_at)
 }
 
-/// Ask the ledger to close the latest request from that report. It decides:
-/// it wants 20 minutes since the request and 10 quiet ones with stock
-/// connected, and sends nothing.
+/// Ask the ledger to close the latest request from that report. It decides,
+/// and sends nothing: with no image server left (the run that served one has
+/// ended, its last transfer drained and its lease removed), three quiet
+/// minutes with stock connected, after the request and stock's last OTA
+/// report; with one, 20 minutes since the request and 10 quiet ones.
 async fn resolve(handle: &Handle, status: &StockStatus) -> bool {
     let Some(latest) = status.ota_trials.first() else {
         return false;
@@ -411,8 +418,8 @@ mod tests {
     }
 
     /// A wait that ran out says stock stayed if it reported, though its ledger
-    /// will not close the request without 10 quiet minutes, and nothing
-    /// otherwise.
+    /// did not close the request (no quiet minutes, or an image server still
+    /// listening), and nothing otherwise.
     #[test]
     fn a_wait_that_ran_out_says_what_stock_did() {
         assert_eq!(waited_out(true), Listened::StockStayed { resolved: false });

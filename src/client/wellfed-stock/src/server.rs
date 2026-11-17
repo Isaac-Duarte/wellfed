@@ -229,12 +229,15 @@ impl Handle {
     }
 
     /// Close the latest uncertain or failed trial from fresh version
-    /// evidence; sends the device nothing.
+    /// evidence; sends the device nothing. Whether an image server may still
+    /// serve stock (its lease beside the config, or its port answering) is
+    /// looked at here, at each ask.
     pub async fn resolve(
         &self,
         input: ota::trial::ResolveInput,
     ) -> Result<ota::trial::Record, Refusal> {
-        self.operation(|response| Request::ResolveTrial(input, response))
+        let image = ota::image::listening(&self.config_path, self.image_host).await;
+        self.operation(|response| Request::ResolveTrial(input, image, response))
             .await
     }
 

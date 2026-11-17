@@ -64,7 +64,7 @@ Install trials are recorded beside the configuration, under an exclusive lock, i
 
 - Each trial is persisted before its one `OTA_UPGRADE` goes out, and never resent. A repeated request ID returns the stored record.
 - A trial in flight when the server stops or loses the broker becomes uncertain.
-- An uncertain or failed trial blocks the next until `ota-trial-resolve` closes it from fresh evidence, sending no command. Run it against the server (stock replaces its plans with any table a reply carries, so no config holds one):
+- An uncertain or failed trial blocks the next until `ota-trial-resolve` closes it from fresh evidence, sending no command. The evidence is stock's own version, reported in its current connected session after the request, and quiet connected time with no OTA report. While an image server may still serve stock, that is 20 minutes from the request and 10 quiet ones, covering the server's accept window and its five-minute connection limit. A server counts while its lease file is beside the configuration or anything answers on the image port: a stopping server closes its socket first but keeps its lease until running transfers have drained. Once no lease is left and the port refuses connections, three quiet minutes after both the request and the last OTA report: no download can start or go on, and each image server draws a new URL token, so none can finish the request later. The app's listener serves no image, so it settles a request this way. Run it against the server (stock replaces its plans with any table a reply carries, so no config holds one):
 
   ```sh
   ./target/debug/wellfed-stock serve --device plaf103 --config private/installer.json

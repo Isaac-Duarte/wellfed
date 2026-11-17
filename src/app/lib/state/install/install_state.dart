@@ -150,6 +150,7 @@ final class InstallFacts {
     this.bluetoothOff = false,
     this.repairFailed,
     this.phoneIp,
+    this.claim = ImageProvisioning.consumer,
   });
 
   /// What an earlier run left on the feeder.
@@ -166,6 +167,11 @@ final class InstallFacts {
 
   /// Where the feeder reaches this phone.
   final String? phoneIp;
+
+  /// How the image this install carries takes its owner, as the run pairs
+  /// it: a consumer image through Bluetooth setup, a bench image through its
+  /// recovery window. Every screen that names buttons or lights follows it.
+  final ImageProvisioning claim;
 }
 
 /// How one install stands: one class for each screen it can show.
@@ -178,6 +184,9 @@ sealed class InstallState {
 
   /// What an earlier run left on the feeder.
   PendingInstall get pending => facts.pending;
+
+  /// How the image this install carries takes its owner.
+  ImageProvisioning get claim => facts.claim;
 
   /// Android refused Bluetooth to a pick-up that may need it.
   bool get bluetoothRefused => facts.bluetoothRefused;
@@ -341,11 +350,11 @@ final class InstallClaim extends InstallState {
 
   /// The owner gave a new Wi-Fi for a feeder that never joined: the run goes
   /// through Bluetooth setup again, and the claim screen says how to get the
-  /// feeder there.
+  /// feeder there. Only ever on the Bluetooth route.
   final bool settingUpAgain;
 
   /// Bluetooth has found nothing for a while: a feeder that is not advertising
-  /// by itself takes the owner's hold.
+  /// by itself takes the owner's hold. Only ever on the Bluetooth route.
   final bool setupHint;
 
   /// A bench image's recovery window is waiting for the owner.

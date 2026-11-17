@@ -7,6 +7,9 @@ extension InstallRunning on InstallFlow {
     // One run at a time: a second would orphan the first, with no way left
     // to stop it and the broker's port still held.
     if (paths == null || _run != null) return;
+    // The run starts its own broker on the listener's port.
+    _stopListening();
+    if (_listening == Listening.running) _listening = Listening.idle;
     final bool forget = _forget;
     _forget = false;
     final UnjoinedFeeder unjoined = _settingUpAgain

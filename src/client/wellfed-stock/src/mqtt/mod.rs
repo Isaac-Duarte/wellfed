@@ -37,7 +37,12 @@ pub enum Request {
         Option<ota::image::Lease>,
         oneshot::Sender<TrialResult>,
     ),
-    ResolveTrial(ota::trial::ResolveInput, oneshot::Sender<TrialResult>),
+    /// With whether an image server listens where stock downloads from.
+    ResolveTrial(
+        ota::trial::ResolveInput,
+        ota::trial::ImageServer,
+        oneshot::Sender<TrialResult>,
+    ),
     /// The operator's client saw the replacement answer the device API
     /// ([`Controller::replacement_answered`]).
     TrialAnswered(ota::trial::AnsweredInput, oneshot::Sender<TrialResult>),
@@ -173,8 +178,8 @@ impl Actor {
                 let _ = response.send(result);
             }
 
-            Request::ResolveTrial(input, response) => {
-                let result = self.controller.resolve_trial(input, now);
+            Request::ResolveTrial(input, image, response) => {
+                let result = self.controller.resolve_trial(input, image, now);
                 // The evidence includes a version report from the last five
                 // minutes, which stock sends only around a connect. A
                 // read-only attribute query refreshes it for the caller's
@@ -206,8 +211,8 @@ impl Actor {
                 let _ = response.send(result);
             }
 
-            Request::ResolveTrial(input, response) => {
-                let _ = response.send(self.controller.resolve_trial(input, now));
+            Request::ResolveTrial(input, image, response) => {
+                let _ = response.send(self.controller.resolve_trial(input, image, now));
             }
 
             Request::TrialAnswered(input, response) => {

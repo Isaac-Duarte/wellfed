@@ -340,6 +340,7 @@ void main() {
       run.ask(7, const InstallAsk.openRecoveryWindow());
       await settle(tester);
       expect(find.textContaining('then also the', findRichText: true), findsOneWidget);
+      expect(find.byType(PanelPhoto), findsOneWidget);
       await installTap(tester, 'The lock light is blinking fast');
       expect(run.answers[7], const InstallAnswer.done());
     });
