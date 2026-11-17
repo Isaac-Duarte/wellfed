@@ -785,7 +785,7 @@ where
             // Stock's telemetry goes stale only 90 s after its last report, and
             // the replacement starts well within that: its device API answering
             // where stock connected from says stock is gone already.
-            if let Ok(address) = self.address()
+            if let Some(address) = self.stock_api()
                 && crate::listen::answers(address).await
             {
                 self.io.report.event(Event::StockRestarting);
@@ -795,6 +795,14 @@ where
             tokio::time::sleep(self.poll).await;
         }
         install.gave_up();
+    }
+
+    /// The device API where stock is connected from in this run, which only
+    /// the replacement on that same feeder serves. Never a given or saved
+    /// address: another device may hold it now, and its answer would end the
+    /// wait for an install still under way.
+    fn stock_api(&self) -> Option<SocketAddr> {
+        self.peer.map(|ip| SocketAddr::new(ip, PORT))
     }
 
     /// The replacement's address: given, where it answered, or where stock
@@ -1888,6 +1896,17 @@ mod waits {
     /// default poll; the install as it starts, and what the run reports.
     fn run(dir: &Path, start: Start) -> (Waiting, Install, Events) {
         let events = Events::default();
+        let (run, install) = run_with(dir, start, Scripted::default(), events.clone());
+        (run, install, events)
+    }
+
+    /// A run from `start` in `dir` asking `prompter`, reporting to `events`.
+    fn run_with<P: Prompter>(
+        dir: &Path,
+        start: Start,
+        prompter: P,
+        events: Events,
+    ) -> (Run<P, NoRadio, Unseen, NoFeeders, Events>, Install) {
         let plan = Plan {
             review: Review {
                 directory: dir.to_path_buf(),
@@ -1913,14 +1932,13 @@ mod waits {
             poll: POLL,
         };
         let io = Platform {
-            prompter: Scripted::default(),
+            prompter,
             bluetooth: NoRadio,
             discovery: Unseen,
             keys: NoFeeders(Keypair::from_secret([0x5a; 32])),
-            report: events.clone(),
+            report: events,
         };
-        let (run, install) = Run::new(plan, io).unwrap();
-        (run, install, events)
+        Run::new(plan, io).unwrap()
     }
 
     /// `elapsed` is a wait of `bound`: no shorter, and at most a poll longer.
@@ -1939,22 +1957,116 @@ mod waits {
         );
     }
 
+    /// Says the feeder is in setup mode, noting how many stock servers the
+    /// run had started by each ask, and names no address to send the frame
+    /// from, so the run ends there with nothing sent.
+    struct Ordered {
+        events: Events,
+        asked: Vec<(Prompt, usize)>,
+    }
+
+    impl Ordered {
+        fn note(&mut self, prompt: Prompt) {
+            let started = self
+                .events
+                .count(|event| matches!(event, Event::StockServerStarted));
+            self.asked.push((prompt, started));
+        }
+    }
+
+    impl Prompter for Ordered {
+        async fn done(&mut self, prompt: Prompt) -> Result<(), PlatformError> {
+            self.note(prompt);
+            Ok(())
+        }
+
+        async fn yes(&mut self, prompt: Prompt) -> Result<bool, PlatformError> {
+            self.note(prompt);
+            Err("nobody answers".into())
+        }
+
+        async fn announce(&mut self, _: crate::Announcement) -> Result<(), PlatformError> {
+            Ok(())
+        }
+
+        async fn settle(&mut self) -> Result<(), PlatformError> {
+            Ok(())
+        }
+
+        async fn frame_source(&mut self) -> Result<Option<Ipv4Addr>, PlatformError> {
+            Err("this test sends no frame".into())
+        }
+    }
+
+    const SETUP_MODE_TEST: &str = "run::waits::no_broker_runs_until_the_feeder_is_in_setup_mode";
+
     /// The broker is not up while the owner holds Reset: a stock an earlier
     /// frame pointed at this phone would connect and report the hold, and
-    /// then only restart. Here nobody answers the setup-mode ask, so the run
-    /// ends there, with no server started (this run's would fail to start).
-    #[tokio::test]
-    async fn no_broker_runs_until_the_feeder_is_in_setup_mode() {
-        let dir = tempfile::tempdir().unwrap();
-        let (mut run, _, events) = run(dir.path(), Start::Stock(Provision::Done));
+    /// then only restart. The run's own steps from the frame, with a config
+    /// whose server starts: none has started when the setup-mode answer is
+    /// asked for, and one has by the frame's address.
+    ///
+    /// The run's server enables the trial, which a build from an uncommitted
+    /// tree may do only under the tests' environment escape hatch, and this
+    /// crate forbids the `unsafe` that setting it in-process takes. So the
+    /// test runs itself again in a child process with it set.
+    #[cfg_attr(
+        not(target_os = "linux"),
+        ignore = "binds a 127.x address other than 127.0.0.1, which only Linux's loopback answers"
+    )]
+    #[test]
+    fn no_broker_runs_until_the_feeder_is_in_setup_mode() {
+        use wellfed_stock::build_info::ALLOW_UNREVIEWED_ENV;
 
-        let error = run.send_frame(&[0]).await.unwrap_err();
+        if std::env::var_os(ALLOW_UNREVIEWED_ENV).is_none() {
+            let child = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", SETUP_MODE_TEST, "--nocapture"])
+                .env(ALLOW_UNREVIEWED_ENV, "1")
+                .output()
+                .unwrap();
+            let stdout = String::from_utf8_lossy(&child.stdout);
+            assert!(
+                child.status.success() && stdout.contains("1 passed"),
+                "{stdout}{}",
+                String::from_utf8_lossy(&child.stderr)
+            );
+            return;
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("installer.json");
+        crate::stock::installer_config(&config, "127.41.6.5:21883".parse().unwrap(), None).unwrap();
+        let frame = wellfed_client::install::SetupFrame {
+            ssid: "Home".into(),
+            password: "secret12".into(),
+            host: "127.41.6.5".into(),
+            port: 1883,
+            id: "1234".into(),
+        };
+        let events = Events::default();
+        let prompter = Ordered {
+            events: events.clone(),
+            asked: Vec::new(),
+        };
+        let (mut run, mut install) = run_with(
+            dir.path(),
+            Start::Stock(Provision::Frame(frame)),
+            prompter,
+            events.clone(),
+        );
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let error = runtime.block_on(run.drive(&mut install)).unwrap_err();
 
         assert!(matches!(error, Error::Handover(_)), "{error:?}");
-        assert_eq!(run.io.prompter.asked, [Prompt::SetupMode]);
+        assert_eq!(run.io.prompter.asked, [(Prompt::SetupMode, 0)]);
         assert_eq!(
             events.count(|event| matches!(event, Event::StockServerStarted)),
-            0
+            1,
+            "the config starts a server once the feeder is in setup mode"
         );
     }
 
@@ -1988,6 +2100,34 @@ mod waits {
         run.await_stock(&mut install).await.unwrap();
         waited(began.elapsed(), ENROLL + STOCK_GRACE);
         timed_out(&mut install);
+    }
+
+    /// Only the address stock connected from in this run is probed for the
+    /// replacement during the install: a given address, one a feeder
+    /// answered at, or the enrollment's may belong to another device now.
+    #[test]
+    fn the_install_wait_probes_only_where_stock_connected_from() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut run, _, _) = run(dir.path(), Start::Stock(Provision::Done));
+        let record = wellfed_formats::stock::Enrollment {
+            client_id: "AF_OTHER".into(),
+            username: "stock".into(),
+            password: "its-password".into(),
+            address: "192.168.4.30".parse().unwrap(),
+            enrolled_at: chrono::DateTime::UNIX_EPOCH,
+        };
+        let config = dir.path().join("installer.json");
+        wellfed_stock::enroll::create(&record, &wellfed_formats::stock::Enrollment::path(&config))
+            .unwrap();
+        run.address = Some("192.168.4.10:7100".parse().unwrap());
+        run.found = Some("192.168.4.20:7100".parse().unwrap());
+        assert_eq!(run.stock_api(), None);
+
+        run.peer = Some("192.168.4.40".parse().unwrap());
+        assert_eq!(
+            run.stock_api(),
+            Some(SocketAddr::new("192.168.4.40".parse().unwrap(), PORT))
+        );
     }
 
     #[tokio::test(start_paused = true)]
