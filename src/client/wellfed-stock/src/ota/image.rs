@@ -86,6 +86,10 @@ const IMAGE_BYTES: usize = 1_376_288;
 pub const PORT: u16 = 8088;
 pub const ACCEPT_WINDOW_SECONDS: i64 = 15 * 60;
 
+/// The longest one transfer may run, including after the server stops
+/// accepting: its lease stays until every transfer has ended.
+const CONNECTION_SECONDS: u64 = 300;
+
 /// The one file the server holds, under its token.
 pub const ROUTE: &str = "replacement.bin";
 
@@ -122,13 +126,21 @@ pub async fn current(config_path: &Path, host: std::net::IpAddr) -> Option<Lease
 /// [`current`]'s, which a dispatch needs. A server that stops closes its
 /// socket first but lets a running transfer go on for up to five minutes,
 /// keeping its lease until then, so a lease file beside `config_path` counts
-/// as a server whatever the port says. Without one, anything that answers on
-/// the port counts too, and so does a connect that does not finish within a
-/// second or fails any other way: only a refusal says nothing is there.
+/// as a server whatever the port says, unless it is past the latest moment
+/// its server could still be sending: the lease of a killed process stays
+/// behind, and would otherwise hold every settle to the long rule. A lease
+/// that can't be read still counts. Without a live lease, anything that
+/// answers on the port counts too, and so does a connect that does not
+/// finish within a second or fails any other way: only a refusal says
+/// nothing is there.
 pub async fn listening(config_path: &Path, host: std::net::IpAddr) -> ImageServer {
-    match tokio::fs::metadata(Lease::path(config_path)).await {
+    match tokio::fs::read(Lease::path(config_path)).await {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Ok(_) | Err(_) => return ImageServer::Listening,
+        Err(_) => return ImageServer::Listening,
+        Ok(data) => match serde_json::from_slice::<Lease>(&data) {
+            Ok(lease) if !lease_is_live(&lease, Timestamp::now()) => {}
+            Ok(_) | Err(_) => return ImageServer::Listening,
+        },
     }
 
     let connect = tokio::net::TcpStream::connect((host, PORT));
@@ -137,6 +149,18 @@ pub async fn listening(config_path: &Path, host: std::net::IpAddr) -> ImageServe
             ImageServer::Gone
         }
         Ok(Ok(_) | Err(_)) | Err(_) => ImageServer::Listening,
+    }
+}
+
+/// Whether a lease's server may still be sending at `now`: it stops
+/// accepting at `expires_at`, and its last transfer ends at most
+/// [`CONNECTION_SECONDS`] later. A lease read from disk whose end can't be
+/// represented is as late as it gets, so it stays live.
+fn lease_is_live(lease: &Lease, now: Timestamp) -> bool {
+    let drain = SignedDuration::from_secs(CONNECTION_SECONDS.cast_signed());
+    match lease.expires_at.checked_add(drain) {
+        Ok(last_transfer_end) => now <= last_transfer_end,
+        Err(_) => true,
     }
 }
 
@@ -346,7 +370,7 @@ async fn run(
                         .max_headers(16)
                         .max_buf_size(8192);
 
-                    let result = tokio::time::timeout(Duration::from_secs(300),
+                    let result = tokio::time::timeout(Duration::from_secs(CONNECTION_SECONDS),
                         http.serve_connection(TokioIo::new(stream), service)).await;
                     if !matches!(result, Ok(Ok(()))) {
                         tracing::warn!("OTA HTTP connection failed or exceeded its deadline");
@@ -715,6 +739,33 @@ mod tests {
         assert_eq!(listening(&config, host).await, ImageServer::Listening);
 
         std::fs::remove_file(Lease::path(&config)).unwrap();
+        assert_eq!(listening(&config, host).await, ImageServer::Gone);
+    }
+
+    #[cfg_attr(
+        not(target_os = "linux"),
+        ignore = "binds a 127.x address other than 127.0.0.1, which only Linux's loopback answers"
+    )]
+    #[tokio::test]
+    async fn a_lease_past_its_last_possible_transfer_is_no_server() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("installer.json");
+        let host = std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 248));
+        let drain = SignedDuration::from_secs(CONNECTION_SECONDS.cast_signed());
+        let lease = |expires_at| Lease {
+            token: Uuid::new_v4(),
+            peer: Ipv4Addr::new(10, 0, 0, 2),
+            expires_at,
+            sha256: canonical::sha256(b"build"),
+            build: "ab".repeat(32),
+        };
+
+        let draining = lease(Timestamp::now() - drain + SignedDuration::from_secs(30));
+        storage::write_json(&Lease::path(&config), &draining).unwrap();
+        assert_eq!(listening(&config, host).await, ImageServer::Listening);
+
+        let orphaned = lease(Timestamp::now() - drain - SignedDuration::from_secs(30));
+        storage::write_json(&Lease::path(&config), &orphaned).unwrap();
         assert_eq!(listening(&config, host).await, ImageServer::Gone);
     }
 
