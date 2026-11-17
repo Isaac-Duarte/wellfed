@@ -53,14 +53,21 @@ impl SharedBoard {
         self.status().map(drop)
     }
 
-    /// The board's status, published as it answered.
+    /// The board's status, published as it answered. The board's lock is
+    /// held until the publish is done: a job that switched a relay between
+    /// the read and the publish would otherwise have its state overwritten
+    /// with the older answer.
     fn status(&self) -> wellfed_relay::Result<Status> {
-        let status = self.lock().status()?;
+        let mut board = self.lock();
+        let status = board.status()?;
+
         for channel in Channel::ALL {
             self.publish(channel.number(), status.channels.get(channel));
         }
         let reading = reading(&status);
         self.store.update(|state| state.board = Some(reading));
+
+        drop(board);
         Ok(status)
     }
 
