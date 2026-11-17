@@ -165,8 +165,9 @@ pub fn checkpointed() {
 }
 
 /// A run of flash write steps taken back to back (a factory reset's, a
-/// handover's), paced by the watchdog feeder: each step's leases (an erase,
-/// or a store's erase and programs) in a feed period of their own.
+/// handover's, an install's sectors and its activation), paced by the
+/// watchdog feeder: each step's leases (an erase, a store's erase and
+/// programs, or a bank-1 sector's) in a feed period of their own.
 ///
 /// Every flash lease masks IRQs and so stops SysTick: the feeder's wait
 /// between checkpoints, counted in ticks, stretches by the masked time of

@@ -26,6 +26,18 @@
 //! goes last and is read back. Any stop before that leaves bank 1 invalid,
 //! so the loader keeps booting bank 0.
 //!
+//! **Paced by the watchdog feeder.** Each sector's write, and the
+//! activation, waits until the feeder task has checkpointed since the last
+//! (`supervision::Pace`). Every flash lease masks IRQs and stops the tick
+//! the feeder's 250 ms wait is counted in, while the watchdog's progress
+//! gap is measured on the system timer; sectors whose chunks come as fast
+//! as the stage takes them would fit several sectors' leases (about 90 ms
+//! masked each) into one feed period and hold the feeder off past the gap.
+//! Paced, one feed period holds one step's leases, whatever the client's
+//! rate. A sector waiting for its turn is staged whole and wants no chunk,
+//! so a client reads an empty `wanted` and asks again, as it does while a
+//! sector is written.
+//!
 //! **No write while a feed may move.** Every store and bank write takes the
 //! write turn (`interlock::WriteTurn`) first, which it gets only while the
 //! loop holds no claim on the outputs, never by the forced path: a flash
@@ -69,6 +81,10 @@ use crate::trial;
 pub const IDLE_MS: u32 = 50;
 /// While chunks come or a check runs.
 pub const BUSY_MS: u32 = 1;
+/// While a staged sector or the activation waits for the watchdog feeder
+/// to checkpoint (`supervision::Pace`): a feed period is 250 ms, so this
+/// adds at most a few milliseconds to a step's wait.
+pub const PACE_POLL_MS: u32 = 10;
 /// After its answer is read, a give-way or a restart waits this long for
 /// the bytes to leave, and at most `LEAVE_MAX_MS` in all.
 pub const LEAVE_MS: u32 = 1_000;
@@ -613,6 +629,9 @@ pub struct Update<I> {
     /// The last failed sector write, for the stop record.
     write_fault: Option<WriteFault>,
     sectors: u32,
+    /// The install's sector writes and its activation, one step per feed
+    /// period of the watchdog feeder.
+    pace: crate::supervision::Pace,
 }
 
 impl<I: SlotIo + Clone> Update<I> {
@@ -638,6 +657,7 @@ impl<I: SlotIo + Clone> Update<I> {
             stopped: None,
             write_fault: None,
             sectors: 0,
+            pace: crate::supervision::Pace::default(),
         }
     }
 
@@ -1225,38 +1245,79 @@ impl<I: SlotIo + Clone> Update<I> {
             return next(IDLE_MS, Some(record));
         }
 
-        let mut outcome = None;
-        let leased = mailbox::installing();
-        let fault = &mut self.write_fault;
-        let took = mailbox::take_chunk(|offset, data| {
-            outcome = Some(if leased {
-                take(install, flash, offset, data, now, fault)
-            } else {
-                Err(Stop::Cancelled)
+        // Take chunks until one completes a sector; a sector already staged,
+        // or the activation, takes none while it waits for its turn.
+        if !install.ready() && install.staged().is_none() {
+            let mut outcome = None;
+            let leased = mailbox::installing();
+            let took = mailbox::take_chunk(|offset, data| {
+                outcome = Some(if leased {
+                    install
+                        .chunk(offset, data, now)
+                        .map(|taken| matches!(taken, Taken::Program(_)))
+                } else {
+                    Err(Stop::Cancelled)
+                });
             });
-        });
-        if !took {
-            return next(BUSY_MS, None);
+            if !took {
+                return next(BUSY_MS, None);
+            }
+            match outcome {
+                Some(Err(stop)) => {
+                    let record = self.stop(stop);
+                    return next(IDLE_MS, Some(record));
+                }
+                Some(Ok(true)) => {}
+                _ => return next(BUSY_MS, None),
+            }
         }
 
-        match outcome {
-            Some(Err(stop)) => {
-                let record = self.stop(stop);
-                next(IDLE_MS, Some(record))
-            }
-            Some(Ok(true)) => self.written(flash, now),
-            _ => next(BUSY_MS, None),
+        if !self.pace.ready() {
+            return next(PACE_POLL_MS, None);
         }
+        // The lease that let the chunks in still holds feeds off.
+        if !mailbox::installing() {
+            let record = self.stop(Stop::Cancelled);
+            return next(IDLE_MS, Some(record));
+        }
+        if self.install.as_ref().is_some_and(Install::ready) {
+            return self.activate(flash, now);
+        }
+        self.write_staged(flash, now)
     }
 
-    /// A sector went in: log progress, or activate after the last.
+    /// Write the staged sector and read it back.
+    fn write_staged(&mut self, flash: &mut impl Flash, now: u32) -> Step {
+        let Some(install) = self.install.as_mut() else {
+            return next(IDLE_MS, None);
+        };
+        let Some(program) = install.staged() else {
+            return next(BUSY_MS, None);
+        };
+
+        let sector = (program.offset - BANK1_OFFSET) / SECTOR_BYTES;
+        let written = under_marker(|| write_sector(flash, sector, program.data));
+        self.pace.wrote();
+        self.write_fault = written.err();
+        if let Err(stop) = install.programmed(written.is_ok()) {
+            let record = self.stop(stop);
+            return next(IDLE_MS, Some(record));
+        }
+        self.written(flash, now)
+    }
+
+    /// A sector went in: log progress, or activate after the last, at once
+    /// when no feeder paces the writes and otherwise at its next turn.
     fn written(&mut self, flash: &mut impl Flash, now: u32) -> Step {
         self.sectors += 1;
         let Some(install) = self.install.as_ref() else {
             return next(IDLE_MS, None);
         };
         if install.ready() {
-            return self.activate(flash, now);
+            if self.pace.ready() {
+                return self.activate(flash, now);
+            }
+            return next(PACE_POLL_MS, None);
         }
         let total = install
             .admitted()
@@ -1440,26 +1501,6 @@ fn candidate(admitted: &Admitted) -> Candidate {
         build_id: admitted.signed.manifest.build_id,
         kind: admitted.signed.kind,
     }
-}
-
-/// One chunk into the install; `Ok(true)` when it completed a sector,
-/// which is then written and read back.
-fn take(
-    install: &mut Install,
-    flash: &mut impl Flash,
-    offset: u32,
-    data: &[u8],
-    now: u32,
-    fault: &mut Option<WriteFault>,
-) -> Result<bool, Stop> {
-    let Taken::Program(program) = install.chunk(offset, data, now)? else {
-        return Ok(false);
-    };
-    let sector = (program.offset - BANK1_OFFSET) / SECTOR_BYTES;
-    let written = under_marker(|| write_sector(flash, sector, program.data));
-    *fault = written.err();
-    install.programmed(written.is_ok())?;
-    Ok(true)
 }
 
 /// Erase one sector, program it page by page and read every page back.
