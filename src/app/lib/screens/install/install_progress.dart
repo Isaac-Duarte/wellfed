@@ -118,12 +118,16 @@ class InstallClaimPage extends StatelessWidget {
     leading: Leading.none,
     title: 'Wellfed is running. Now claim it.',
     content: [
-      if (state.windowAsked)
+      if (state.windowAsked) ...[
+        const PanelPhoto(held: [1, 2], caption: 'Lock, then Dispense'),
+        const SizedBox(height: Space.s4),
         const NumberedSteps([
           'Hold the **Lock** button, then also the **Dispense** button, for 5 seconds. The lock light blinks fast.',
-        ])
-      else if (state.code.isEmpty) ...[
+        ]),
+      ] else if (state.code.isEmpty) ...[
         if (state.settingUpAgain) ...[
+          const PanelPhoto(held: [1, 3], caption: 'Lock and Mic'),
+          const SizedBox(height: Space.s4),
           const NumberedSteps([
             'If the lock light is on, hold **Lock** for 5 seconds to unlock the panel.',
             'Hold **Lock** and **Mic** together for 5 seconds.',
@@ -133,6 +137,8 @@ class InstallClaimPage extends StatelessWidget {
         ],
         if (state.bluetoothOff) ...[InstallBluetoothOff(flow: flow), const SizedBox(height: Space.s4)],
         if (state.setupHint && !state.settingUpAgain && !state.bluetoothOff) ...[
+          const PanelPhoto(held: [1, 3], caption: 'Lock and Mic'),
+          const SizedBox(height: Space.s3),
           const Notice(
             tone: Tone.warning,
             lead: 'Hold Lock + Mic for 5 s on the feeder.',

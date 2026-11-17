@@ -526,7 +526,6 @@ where
             self.track.enter(install.phase());
             match step {
                 Step::SendFrame(frame) => {
-                    self.serve()?;
                     self.send_frame(frame.bytes()).await?;
                     self.frame_out = Some(Instant::now());
                     install.frame_sent();
@@ -606,7 +605,8 @@ where
     }
 
     /// Stock's server with the trial enabled and the enrollment window
-    /// open; started once, before stock is pointed at it.
+    /// open; started once, before stock is pointed at it, and never while
+    /// the owner holds Reset.
     fn serve(&mut self) -> Result<(), Error> {
         if self.stock.start()? {
             self.io.report.event(Event::StockServerStarted);
@@ -616,12 +616,18 @@ where
 
     async fn send_frame(&mut self, frame: &[u8]) -> Result<(), Error> {
         // Reset held about 5 s on an unlocked stock panel starts its factory
-        // restore, which leaves stock in setup mode (observed).
+        // restore, which leaves stock in setup mode (observed). Not while
+        // stock is connected to a broker: it then reports the hold (`RESET`)
+        // and only restarts, keeping its Wi-Fi, so no setup network opens
+        // (observed with a stock an earlier frame pointed at this phone). So
+        // the broker starts only once the feeder is in setup mode, and still
+        // before the frame points stock at it.
         self.io
             .prompter
             .done(Prompt::SetupMode)
             .await
             .map_err(Error::Handover)?;
+        self.serve()?;
         let from = self
             .io
             .prompter
@@ -775,6 +781,16 @@ where
                     }
                     _ => {}
                 }
+            }
+            // Stock's telemetry goes stale only 90 s after its last report, and
+            // the replacement starts well within that: its device API answering
+            // where stock connected from says stock is gone already.
+            if let Ok(address) = self.address()
+                && crate::listen::answers(address).await
+            {
+                self.io.report.event(Event::StockRestarting);
+                install.stock_gone();
+                return;
             }
             tokio::time::sleep(self.poll).await;
         }
@@ -1920,6 +1936,25 @@ mod waits {
         assert!(
             matches!(step, Step::Failed(InstallError::TimedOut(_))),
             "{step:?}"
+        );
+    }
+
+    /// The broker is not up while the owner holds Reset: a stock an earlier
+    /// frame pointed at this phone would connect and report the hold, and
+    /// then only restart. Here nobody answers the setup-mode ask, so the run
+    /// ends there, with no server started (this run's would fail to start).
+    #[tokio::test]
+    async fn no_broker_runs_until_the_feeder_is_in_setup_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut run, _, events) = run(dir.path(), Start::Stock(Provision::Done));
+
+        let error = run.send_frame(&[0]).await.unwrap_err();
+
+        assert!(matches!(error, Error::Handover(_)), "{error:?}");
+        assert_eq!(run.io.prompter.asked, [Prompt::SetupMode]);
+        assert_eq!(
+            events.count(|event| matches!(event, Event::StockServerStarted)),
+            0
         );
     }
 

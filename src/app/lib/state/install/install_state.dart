@@ -2,6 +2,24 @@ import 'package:flutter/foundation.dart';
 
 import 'package:wellfed/src/rust/api/install.dart';
 
+/// How the replacement takes its first owner, decided by the image the APK
+/// carries: the run pairs a consumer image through Bluetooth setup and a bench
+/// image through its recovery window, and every screen that names buttons or
+/// lights follows the same route.
+enum ClaimRoute {
+  /// A consumer image: Bluetooth setup, which the feeder starts at boot (Lock
+  /// and Mic start it again).
+  bluetooth,
+
+  /// A bench image: the recovery window, opened with Lock, then Dispense.
+  recoveryWindow;
+
+  /// The route of an image of `provisioning`. Only a bench image pairs through
+  /// the recovery window, as the run decides it.
+  static ClaimRoute of(ImageProvisioning? provisioning) =>
+      provisioning == ImageProvisioning.bench ? ClaimRoute.recoveryWindow : ClaimRoute.bluetooth;
+}
+
 /// Which screen an install shows. The steps themselves are Rust's: this
 /// follows what the run reports and carries the owner's answers back.
 enum InstallStage {
@@ -150,6 +168,7 @@ final class InstallFacts {
     this.bluetoothOff = false,
     this.repairFailed,
     this.phoneIp,
+    this.claim = ClaimRoute.bluetooth,
   });
 
   /// What an earlier run left on the feeder.
@@ -166,6 +185,9 @@ final class InstallFacts {
 
   /// Where the feeder reaches this phone.
   final String? phoneIp;
+
+  /// How the image this install carries takes its owner.
+  final ClaimRoute claim;
 }
 
 /// How one install stands: one class for each screen it can show.
@@ -178,6 +200,9 @@ sealed class InstallState {
 
   /// What an earlier run left on the feeder.
   PendingInstall get pending => facts.pending;
+
+  /// How the image this install carries takes its owner.
+  ClaimRoute get claim => facts.claim;
 
   /// Android refused Bluetooth to a pick-up that may need it.
   bool get bluetoothRefused => facts.bluetoothRefused;
@@ -341,11 +366,11 @@ final class InstallClaim extends InstallState {
 
   /// The owner gave a new Wi-Fi for a feeder that never joined: the run goes
   /// through Bluetooth setup again, and the claim screen says how to get the
-  /// feeder there.
+  /// feeder there. Only ever on the Bluetooth route.
   final bool settingUpAgain;
 
   /// Bluetooth has found nothing for a while: a feeder that is not advertising
-  /// by itself takes the owner's hold.
+  /// by itself takes the owner's hold. Only ever on the Bluetooth route.
   final bool setupHint;
 
   /// A bench image's recovery window is waiting for the owner.

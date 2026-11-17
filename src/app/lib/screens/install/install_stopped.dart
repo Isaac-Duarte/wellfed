@@ -54,7 +54,7 @@ class InstallStoppedPage extends StatelessWidget {
         'A new install has to wait',
         'The feeder is on its original firmware, but it has not stayed connected '
             "long enough to rule out the earlier install. A new one isn't "
-            'possible until it has stayed connected to this $deviceName for 10 minutes '
+            'possible until it has stayed connected to this $deviceName for 3 minutes '
             'without a break. Leave it plugged in, keep Wellfed open and listen '
             'again.',
       ),
@@ -82,9 +82,9 @@ class InstallStoppedPage extends StatelessWidget {
         'Waiting to hear from the feeder',
         'This $deviceName never heard how an earlier install ended, even if you have '
             'put the original firmware back since. Leave the feeder plugged in. '
-            'That install closes 20 minutes after it went out, once the feeder '
-            'has reported its version and been quiet for 10. Nothing is sent a '
-            'second time.',
+            'That install closes once the feeder has reported its original '
+            'version and stayed quiet for 3 minutes. Nothing is sent a second '
+            'time.',
       ),
       _ => (
         "We don't know yet if it installed",
@@ -145,8 +145,8 @@ class InstallStoppedPage extends StatelessWidget {
       'An earlier install is still open',
       'This $deviceName never heard how it ended, even if you have put the original '
           'firmware back since, so Wellfed will not ask again yet. Listen with '
-          'the feeder plugged in: 20 minutes after that install, once it has '
-          'reported its version and been quiet for 10, you can start again.',
+          'the feeder plugged in: once it has reported its original version and '
+          'stayed quiet for 3 minutes, you can start again.',
     ),
     StopCase_RequestRefused(:final why) => switch (why) {
       RequestRefusal.stale => (
@@ -196,9 +196,15 @@ class InstallStoppedPage extends StatelessWidget {
         SetupRefusal.full => 'It holds 8 phones and servers. An owner removes one first.',
         SetupRefusal.notWritable => "It can't save right now. Try again in a minute.",
         SetupRefusal.invalid => 'It rejected the $deviceName name or the Wi-Fi. Check them and start again.',
-        null =>
-          'The Bluetooth exchange broke off. Move closer and try again. It '
-              'runs Wellfed and ${_stockHeld()}.',
+        null => switch (state.claim) {
+          ClaimRoute.bluetooth =>
+            'The Bluetooth exchange broke off. Move closer and try again. It '
+                'runs Wellfed and ${_stockHeld()}.',
+          ClaimRoute.recoveryWindow =>
+            'The feeder closed the connection before the code went through. '
+                'Open its recovery window again (Lock, then Dispense) and try '
+                'again. It runs Wellfed and ${_stockHeld()}.',
+        },
       },
     ),
     StopCase_OtherFeeder() => (

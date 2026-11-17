@@ -255,6 +255,9 @@ extension InstallSteps on InstallFlow {
     _phoneIp = await _ports.phoneAddress();
     _stop = null;
     _resetProgress();
+    // Starting over asks for a Reset hold, and a stock connected to this
+    // phone's broker only reports the hold and restarts, keeping its Wi-Fi.
+    _stopListening();
     _listening = Listening.idle;
     _listeningForEarlier = false;
     _waitReason = null;

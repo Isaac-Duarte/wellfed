@@ -199,6 +199,7 @@ Always send `repeatDay`: without it stock records an error, and the one-off flag
 | Reset holds | One: Reset about 5 s on an unlocked panel starts the factory restore. The panel handler has no Wi-Fi-only hold | static, emulation |
 | What the restore clears | Everything stock keeps: it erases `0x3e8000`–`0x3ea000` (the broker, Wi-Fi and binding records), `0x7d0000`–`0x7d6000` (the plans and the record rings) and `0x7da000`, then restarts. The replacement starts with no meals, since the installer doesn't read stock's plans ([consumer installation](../../../firmware/consumer-installation.md)) | static |
 | Setup mode | Only through the Reset hold. A set-up stock that can't reach its Wi-Fi retries forever and never opens its setup access point on its own | static |
+| Hold while connected | A stock connected to a broker posts `RESET` on the hold and only restarts, keeping its Wi-Fi and broker records, so no setup network opens. Not connected, the same hold runs the restore above. What reply, if any, would make a connected stock restore is not recovered | observed |
 | MQTT `RESTORE` | Erases the same plan sectors, but keeps the Wi-Fi settings | static |
 | Home Assistant, history, remote control and the app | None on the device: history and remote control live in the cloud, the vendor app is the client, and there is no Home Assistant | static |
 

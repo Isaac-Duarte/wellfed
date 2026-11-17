@@ -406,7 +406,9 @@ class InstallFlow extends ChangeNotifier {
       bluetoothOff: _bluetoothOff,
       repairFailed: _repairFailed,
       phoneIp: _phoneIp,
+      claim: ClaimRoute.of(provisioning),
     );
+    final bool bluetooth = facts.claim == ClaimRoute.bluetooth;
     return switch (_stage) {
       InstallStage.loading => InstallLoading(facts),
       InstallStage.unavailable => InstallUnavailable(facts),
@@ -438,8 +440,10 @@ class InstallFlow extends ChangeNotifier {
         deadline: _deadline,
         pressDispense: _pressDispense,
         searchingBluetooth: _searchingBluetooth,
-        settingUpAgain: _settingUpAgain,
-        setupHint: _setupHint,
+        // A flag an earlier run left must not put Bluetooth words on a bench
+        // image's claim: the run pairs it through the recovery window.
+        settingUpAgain: bluetooth && _settingUpAgain,
+        setupHint: bluetooth && _setupHint,
         windowAsked: windowAsked,
       ),
       InstallStage.finishing => InstallFinishing(

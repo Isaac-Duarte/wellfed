@@ -297,7 +297,7 @@ void main() {
         expect(again.unjoined, UnjoinedFeeder.setUpAgain);
 
         expect(find.text('Wellfed is running. Now claim it.'), findsOneWidget);
-        expect(find.textContaining('Mic', findRichText: true), findsOneWidget);
+        expect(find.textContaining('Mic together', findRichText: true), findsOneWidget);
       });
 
       testWidgets('a feeder paired with no record is picked up by identity', (tester) async {

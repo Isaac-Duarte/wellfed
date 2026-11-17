@@ -28,7 +28,7 @@ use crate::{
     ota::{
         self,
         report::{self, REPORT_LIMIT},
-        trial::{ORIGINAL_VERSION, Phase as TrialPhase, REPLACEMENT_VERSION},
+        trial::{ImageServer, ORIGINAL_VERSION, Phase as TrialPhase, REPLACEMENT_VERSION},
     },
     protocol::{Message, Reply},
     storage,
@@ -47,6 +47,16 @@ const RESOLVE_AFTER_SECONDS: i64 = 20 * 60;
 
 /// Resolution also needs an observed connection without OTA reports.
 const QUIET_SECONDS: i64 = 10 * 60;
+
+/// With no image server listening, the 20 minutes guard nothing: no download
+/// can start or go on, and each server start draws a new URL token, so none
+/// can finish the request later. What is left is a download that ended just
+/// before the server went: stock checks and activates it and restarts within
+/// seconds (physical: "checksum ok, Update OTA success" and the restart, about
+/// 40 s after the request). Its progress reports restart the quiet interval,
+/// so three quiet minutes after both the request and the last report cover
+/// that with room.
+const UNSERVED_QUIET_SECONDS: i64 = 3 * 60;
 
 /// Missing feeder telemetry breaks the observation interval even when the
 /// server remains connected to its own broker. Stock 1.1.15 heartbeats about
@@ -105,7 +115,7 @@ pub enum Rejection {
     )]
     ImageServer,
     #[error(
-        "resolution needs the latest uncertain/failed trial, 20 minutes since submission, 10 quiet connected minutes without OTA reports and a fresh source- or target-version report"
+        "resolution needs the latest uncertain/failed trial, stock's version reported in its current connected session, and quiet connected time without OTA reports: 20 minutes since submission and 10 quiet minutes while an image server listens, 3 quiet minutes after both the submission and the last OTA report once none does"
     )]
     ResolutionEvidence,
     #[error("only the latest submitted or uncertain trial closes on the replacement's answer")]
@@ -623,9 +633,14 @@ impl Controller {
     /// Close the latest uncertain or failed trial from fresh version evidence.
     /// Sends nothing. Missing feeder telemetry or an OTA report breaks the
     /// observation interval; elapsed time alone cannot establish an idle device.
+    /// `image` says whether an image server still listens where stock
+    /// downloads from: while one does, the request's download may still start,
+    /// so the wait covers its accept window; once none does, a short quiet
+    /// interval is enough ([`UNSERVED_QUIET_SECONDS`]).
     pub fn resolve_trial(
         &mut self,
         request: ota::trial::ResolveInput,
+        image: ImageServer,
         now: DateTime<Utc>,
     ) -> std::result::Result<ota::trial::Record, Rejection> {
         if self.storage_failed {
@@ -642,7 +657,7 @@ impl Controller {
             .values()
             .max_by_key(|r| r.sequence)
             .map(|r| r.input.request_id);
-        let quiet = (now - self.ota_quiet_since).num_seconds() >= QUIET_SECONDS;
+        let quiet_since = self.ota_quiet_since;
         let telemetry_since = self.telemetry_since;
         let status = &self.status;
         let record = self
@@ -657,13 +672,21 @@ impl Controller {
             return Err(Rejection::Conflict);
         }
 
+        let waited = match image {
+            ImageServer::Listening => {
+                (now - record.created_at).num_seconds() >= RESOLVE_AFTER_SECONDS
+                    && (now - quiet_since).num_seconds() >= QUIET_SECONDS
+            }
+            ImageServer::Gone => {
+                (now - quiet_since.max(record.created_at)).num_seconds() >= UNSERVED_QUIET_SECONDS
+            }
+        };
         let evidence = latest == Some(request.request_id)
             && status.device_online
             && status
                 .version_reported_at
                 .is_some_and(|seen| seen >= telemetry_since && seen > record.created_at)
-            && (now - record.created_at).num_seconds() >= RESOLVE_AFTER_SECONDS
-            && quiet;
+            && waited;
 
         let phase = match reported_version(status) {
             _ if !evidence => return Err(Rejection::ResolutionEvidence),

@@ -28,6 +28,21 @@ pub struct ResolveInput {
     pub note: String,
 }
 
+/// Whether anything listens on the image server's port at the address stock
+/// downloads from, when a resolution is asked for.
+///
+/// A request's install needs that server: stock downloads the image from it
+/// and writes as it downloads, and every server start draws a new URL token,
+/// so a server that has gone can never finish an earlier request. While one
+/// listens the resolution waits out its accept window; once none does, only
+/// a download that ended just before it went can still be activating, and a
+/// short quiet interval covers that.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ImageServer {
+    Listening,
+    Gone,
+}
+
 /// What the operator's client saw: the trial's build answering its device
 /// API from `bank` (which must be 0) after the submission. `build` is the
 /// identity the API reported, 64 lowercase hex; the note is free text.

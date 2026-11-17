@@ -16,7 +16,7 @@ use wellfed_stock::{
     ota::{
         self,
         image::Lease,
-        trial::{AnsweredInput, Phase, ResolveInput},
+        trial::{AnsweredInput, ImageServer, Phase, ResolveInput},
     },
     protocol::{Message, Reply},
 };
@@ -170,7 +170,11 @@ fn a_failed_ledger_save_refuses_operations_but_keeps_observing() {
     ready(&mut c, "1.1.15");
     assert_eq!(refused(&mut c, input(), Utc::now()), Rejection::Storage);
     assert_eq!(
-        c.resolve_trial(resolve(request.request_id), Utc::now()),
+        c.resolve_trial(
+            resolve(request.request_id),
+            ImageServer::Listening,
+            Utc::now()
+        ),
         Err(Rejection::Storage)
     );
 
@@ -394,7 +398,7 @@ fn the_replacements_answer_closes_only_the_latest_open_install() {
         Err(Rejection::UnknownRequest)
     );
     assert_eq!(
-        c.resolve_trial(resolve(request.request_id), now),
+        c.resolve_trial(resolve(request.request_id), ImageServer::Listening, now),
         Err(Rejection::UnknownRequest)
     );
 
@@ -572,7 +576,7 @@ fn an_uncertain_install_resolves_only_after_a_quiet_period_with_version_evidence
     submit(&mut c, request.clone(), t0).unwrap();
 
     assert!(matches!(
-        c.resolve_trial(resolve(request.request_id), t0),
+        c.resolve_trial(resolve(request.request_id), ImageServer::Listening, t0),
         Err(Rejection::Conflict)
     ));
 
@@ -585,7 +589,11 @@ fn an_uncertain_install_resolves_only_after_a_quiet_period_with_version_evidence
     keep_connected(&mut c, t0 + Duration::minutes(15));
     observe(&mut c, config.clone(), t0 + Duration::minutes(15));
     assert!(matches!(
-        c.resolve_trial(resolve(request.request_id), t0 + Duration::minutes(15)),
+        c.resolve_trial(
+            resolve(request.request_id),
+            ImageServer::Listening,
+            t0 + Duration::minutes(15)
+        ),
         Err(Rejection::ResolutionEvidence)
     ));
 
@@ -599,7 +607,11 @@ fn an_uncertain_install_resolves_only_after_a_quiet_period_with_version_evidence
     keep_connected(&mut c, t0 + Duration::minutes(25));
     observe(&mut c, config.clone(), t0 + Duration::minutes(25));
     assert!(matches!(
-        c.resolve_trial(resolve(request.request_id), t0 + Duration::minutes(25)),
+        c.resolve_trial(
+            resolve(request.request_id),
+            ImageServer::Listening,
+            t0 + Duration::minutes(25)
+        ),
         Err(Rejection::ResolutionEvidence)
     ));
 
@@ -611,17 +623,19 @@ fn an_uncertain_install_resolves_only_after_a_quiet_period_with_version_evidence
         note: " ".to_owned(),
     };
     assert!(matches!(
-        c.resolve_trial(blank, at),
+        c.resolve_trial(blank, ImageServer::Listening, at),
         Err(Rejection::InvalidNote)
     ));
 
-    let record = c.resolve_trial(resolve(request.request_id), at).unwrap();
+    let record = c
+        .resolve_trial(resolve(request.request_id), ImageServer::Listening, at)
+        .unwrap();
     assert_eq!(record.phase, Phase::NotInstalled);
     assert!(record.resolution_note.is_some());
 
     // Resolution is not repeatable and permits a fresh explicit request.
     assert!(matches!(
-        c.resolve_trial(resolve(request.request_id), at),
+        c.resolve_trial(resolve(request.request_id), ImageServer::Listening, at),
         Err(Rejection::Conflict)
     ));
     // A new request wants a fresh report, which an old session's does not give.
@@ -659,7 +673,11 @@ fn feeder_telemetry_gaps_restart_resolution_quiet_time_with_or_without_expiry_ti
             observe(&mut c, config.clone(), returning);
             assert!(c.status.device_online);
             assert!(matches!(
-                c.resolve_trial(resolve(request.request_id), returning),
+                c.resolve_trial(
+                    resolve(request.request_id),
+                    ImageServer::Listening,
+                    returning
+                ),
                 Err(Rejection::ResolutionEvidence)
             ));
 
@@ -667,7 +685,7 @@ fn feeder_telemetry_gaps_restart_resolution_quiet_time_with_or_without_expiry_ti
             keep_connected(&mut c, almost);
             observe(&mut c, config.clone(), almost);
             assert!(matches!(
-                c.resolve_trial(resolve(request.request_id), almost),
+                c.resolve_trial(resolve(request.request_id), ImageServer::Listening, almost),
                 Err(Rejection::ResolutionEvidence)
             ));
 
@@ -676,9 +694,13 @@ fn feeder_telemetry_gaps_restart_resolution_quiet_time_with_or_without_expiry_ti
             let complete = returning + Duration::minutes(10);
             observe(&mut c, config, complete);
             assert_eq!(
-                c.resolve_trial(resolve(request.request_id), complete)
-                    .unwrap()
-                    .phase,
+                c.resolve_trial(
+                    resolve(request.request_id),
+                    ImageServer::Listening,
+                    complete
+                )
+                .unwrap()
+                .phase,
                 Phase::NotInstalled
             );
             assert_eq!(c.status.ota_trials.len(), 1);
@@ -703,7 +725,11 @@ fn backwards_host_clock_restarts_the_resolution_observation_interval() {
     let config = json!({"cmd":"GET_CONFIG","softwareVersion":"1.1.15"});
     observe(&mut c, config.clone(), adjusted);
     assert!(matches!(
-        c.resolve_trial(resolve(request.request_id), adjusted),
+        c.resolve_trial(
+            resolve(request.request_id),
+            ImageServer::Listening,
+            adjusted
+        ),
         Err(Rejection::ResolutionEvidence)
     ));
 
@@ -711,9 +737,13 @@ fn backwards_host_clock_restarts_the_resolution_observation_interval() {
     keep_connected(&mut c, complete);
     observe(&mut c, config, complete);
     assert_eq!(
-        c.resolve_trial(resolve(request.request_id), complete)
-            .unwrap()
-            .phase,
+        c.resolve_trial(
+            resolve(request.request_id),
+            ImageServer::Listening,
+            complete
+        )
+        .unwrap()
+        .phase,
         Phase::NotInstalled
     );
 }
@@ -746,8 +776,119 @@ fn stock_s_61_second_heartbeat_keeps_the_quiet_interval_running() {
         at,
     );
 
-    let record = c.resolve_trial(resolve(request.request_id), at).unwrap();
+    let record = c
+        .resolve_trial(resolve(request.request_id), ImageServer::Listening, at)
+        .unwrap();
     assert_eq!(record.phase, Phase::NotInstalled);
+}
+
+/// Stock cut off in the middle of its download comes back on its own version.
+/// While an image server listens, that waits out the 20 minutes; once none
+/// does, nothing can finish the request, and three quiet minutes after the
+/// last OTA report settle it from the same evidence.
+#[test]
+fn with_no_image_server_a_quiet_return_on_stock_resolves_within_minutes() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = enabled(&dir);
+
+    let t0 = Utc::now();
+    c.connected(t0);
+    let request = input();
+    submit(&mut c, request.clone(), t0).unwrap();
+    observe(
+        &mut c,
+        json!({"cmd":"OTA_PROGRESS","msgId":request.request_id,"progress":47}),
+        t0 + Duration::seconds(30),
+    );
+
+    // The power cut: the session drops, and the server's broker comes back
+    // (a new process, say) to stock's own version in a new session.
+    c.disconnected(t0 + Duration::minutes(2));
+    assert_eq!(c.status.ota_trials[0].phase, Phase::Uncertain);
+    let back = t0 + Duration::minutes(10);
+    c.connected(back);
+    let version = json!({"cmd":"ATTR_PUSH_EVENT","softwareVersion":"1.1.15","powerType":1});
+    observe(&mut c, version.clone(), back);
+
+    let almost = back + Duration::seconds(179);
+    keep_connected(&mut c, almost);
+    for image in [ImageServer::Listening, ImageServer::Gone] {
+        assert!(matches!(
+            c.resolve_trial(resolve(request.request_id), image, almost),
+            Err(Rejection::ResolutionEvidence)
+        ));
+    }
+
+    // An OTA report in the new session restarts the quiet interval.
+    let report = back + Duration::minutes(4);
+    keep_connected(&mut c, report);
+    observe(
+        &mut c,
+        json!({"cmd":"OTA_INFORM","msgId":request.request_id,"state":5}),
+        report,
+    );
+    let quiet = report + Duration::minutes(2);
+    keep_connected(&mut c, quiet);
+    assert!(matches!(
+        c.resolve_trial(resolve(request.request_id), ImageServer::Gone, quiet),
+        Err(Rejection::ResolutionEvidence)
+    ));
+
+    let complete = report + Duration::minutes(3);
+    keep_connected(&mut c, complete);
+    assert!(matches!(
+        c.resolve_trial(
+            resolve(request.request_id),
+            ImageServer::Listening,
+            complete
+        ),
+        Err(Rejection::ResolutionEvidence)
+    ));
+    let record = c
+        .resolve_trial(resolve(request.request_id), ImageServer::Gone, complete)
+        .unwrap();
+    assert_eq!(record.phase, Phase::NotInstalled);
+}
+
+/// Stock refusing the download (2003: the image port unreachable) in a
+/// session quiet long before the request settles three quiet minutes after
+/// its refusal, not on the session's earlier quiet.
+#[test]
+fn with_no_image_server_a_refusal_settles_three_quiet_minutes_after_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = enabled(&dir);
+
+    let t0 = Utc::now();
+    c.connected(t0);
+    keep_connected(&mut c, t0 + Duration::minutes(30));
+    let sent = t0 + Duration::minutes(30);
+    let version = json!({"cmd":"ATTR_PUSH_EVENT","softwareVersion":"1.1.15","powerType":1});
+    observe(&mut c, version.clone(), sent);
+    let request = input();
+    submit(&mut c, request.clone(), sent).unwrap();
+    observe(
+        &mut c,
+        json!({"cmd":"OTA_INFORM","msgId":request.request_id,"errCode":2003}),
+        sent + Duration::seconds(25),
+    );
+    assert_eq!(c.status.ota_trials[0].phase, Phase::ReportedError);
+    keep_connected(&mut c, sent + Duration::minutes(1));
+    observe(&mut c, version, sent + Duration::minutes(1));
+
+    let almost = sent + Duration::seconds(25) + Duration::seconds(179);
+    keep_connected(&mut c, almost);
+    assert!(matches!(
+        c.resolve_trial(resolve(request.request_id), ImageServer::Gone, almost),
+        Err(Rejection::ResolutionEvidence)
+    ));
+    let complete = sent + Duration::seconds(25) + Duration::minutes(3);
+    keep_connected(&mut c, complete);
+    assert_eq!(
+        c.resolve_trial(resolve(request.request_id), ImageServer::Gone, complete)
+            .unwrap()
+            .phase,
+        Phase::NotInstalled
+    );
 }
 
 /// A device's open trial counts however the device is reached: written through
@@ -913,12 +1054,14 @@ fn a_report_holds_through_an_unbroken_session_and_not_past_a_drop() {
     let before = connect_at + Duration::minutes(9);
     keep_connected(&mut c, before);
     assert!(matches!(
-        c.resolve_trial(resolve(request.request_id), before),
+        c.resolve_trial(resolve(request.request_id), ImageServer::Listening, before),
         Err(Rejection::ResolutionEvidence)
     ));
     let mark = connect_at + Duration::minutes(10);
     keep_connected(&mut c, mark);
-    let record = c.resolve_trial(resolve(request.request_id), mark).unwrap();
+    let record = c
+        .resolve_trial(resolve(request.request_id), ImageServer::Listening, mark)
+        .unwrap();
     assert_eq!(record.phase, Phase::NotInstalled);
 
     // A dropped session voids it, whatever quiet time follows, until a new one.
@@ -934,7 +1077,7 @@ fn a_report_holds_through_an_unbroken_session_and_not_past_a_drop() {
     let later = dropped + Duration::minutes(11);
     keep_connected(&mut c, later);
     assert!(matches!(
-        c.resolve_trial(resolve(request.request_id), later),
+        c.resolve_trial(resolve(request.request_id), ImageServer::Listening, later),
         Err(Rejection::ResolutionEvidence)
     ));
 
@@ -948,7 +1091,7 @@ fn a_report_holds_through_an_unbroken_session_and_not_past_a_drop() {
     let later = gap + Duration::minutes(11);
     keep_connected(&mut c, later);
     assert!(matches!(
-        c.resolve_trial(resolve(request.request_id), later),
+        c.resolve_trial(resolve(request.request_id), ImageServer::Listening, later),
         Err(Rejection::ResolutionEvidence)
     ));
 }

@@ -34,6 +34,7 @@ use wellfed_formats::{
 
 use wellfed_signed::MARKER;
 
+use crate::ota::trial::ImageServer;
 use crate::protocol::plaf103;
 use crate::{Error, Listener, Result, Task, config::Config, storage};
 
@@ -115,6 +116,19 @@ pub async fn current(config_path: &Path, host: std::net::IpAddr) -> Option<Lease
         Ok(Ok(_))
     )
     .then_some(lease)
+}
+
+/// Whether anything listens on the image server's port at `host`, lease or
+/// not. The opposite caution to [`current`]'s, which a dispatch needs: here
+/// anything that answers counts as the server, and so does a connect that
+/// does not finish within a second, since only a refusal says none is
+/// there.
+pub async fn listening(host: std::net::IpAddr) -> ImageServer {
+    let connect = tokio::net::TcpStream::connect((host, PORT));
+    match tokio::time::timeout(Duration::from_secs(1), connect).await {
+        Ok(Err(_)) => ImageServer::Gone,
+        Ok(Ok(_)) | Err(_) => ImageServer::Listening,
+    }
 }
 
 /// A replacement build, loaded once from its frozen review.
@@ -654,6 +668,24 @@ mod tests {
         assert!(current(&config, host).await.is_none());
 
         drop(listener);
+    }
+
+    /// Only a refused connect says the image server has gone; a lease file
+    /// plays no part.
+    #[cfg_attr(
+        not(target_os = "linux"),
+        ignore = "binds a 127.x address other than 127.0.0.1, which only Linux's loopback answers"
+    )]
+    #[tokio::test]
+    async fn the_image_server_is_gone_only_when_its_port_refuses() {
+        let host = std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 251));
+        assert_eq!(listening(host).await, ImageServer::Gone);
+
+        let listener = TcpListener::bind((host, PORT)).await.unwrap();
+        assert_eq!(listening(host).await, ImageServer::Listening);
+
+        drop(listener);
+        assert_eq!(listening(host).await, ImageServer::Gone);
     }
 
     /// A review directory holding `image`, a manifest naming `identity`, and
