@@ -197,10 +197,10 @@ class InstallStoppedPage extends StatelessWidget {
         SetupRefusal.notWritable => "It can't save right now. Try again in a minute.",
         SetupRefusal.invalid => 'It rejected the $deviceName name or the Wi-Fi. Check them and start again.',
         null => switch (state.claim) {
-          ClaimRoute.bluetooth =>
+          ImageProvisioning.consumer =>
             'The Bluetooth exchange broke off. Move closer and try again. It '
                 'runs Wellfed and ${_stockHeld()}.',
-          ClaimRoute.recoveryWindow =>
+          ImageProvisioning.bench =>
             'The feeder closed the connection before the code went through. '
                 'Open its recovery window again (Lock, then Dispense) and try '
                 'again. It runs Wellfed and ${_stockHeld()}.',

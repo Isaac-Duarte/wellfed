@@ -64,6 +64,29 @@ void main() {
       }
     });
 
+    test('an image of unknown type takes the consumer route, in the permissions and on the screens alike', () async {
+      for (final (ImageCheck image, ImageProvisioning route) in [
+        (const ImageCheck.absent(), ImageProvisioning.consumer),
+        (const ImageCheck.notPinned(), ImageProvisioning.consumer),
+        (const ImageCheck.mismatch(detail: 'other'), ImageProvisioning.consumer),
+        (
+          const ImageCheck.ready(provisioning: ImageProvisioning.bench, build: 'ab', version: 7),
+          ImageProvisioning.bench,
+        ),
+      ]) {
+        final ports = FakeInstallPorts(image: image);
+        final flow = InstallFlow(FakeBook(), ports);
+        addTearDown(flow.dispose);
+
+        await flow.load();
+        await flow.begin();
+
+        expect(flow.provisioning, route, reason: '$image');
+        expect(flow.state.claim, route, reason: '$image');
+        expect(ports.askedBluetooth, [route == ImageProvisioning.consumer], reason: '$image');
+      }
+    });
+
     testWidgets('starting over lets the listener go before the Reset hold', (tester) async {
       final ports = FakeInstallPorts();
       await installStopped(tester, ports, const StopCase.uncertain());

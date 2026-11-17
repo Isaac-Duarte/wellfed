@@ -92,6 +92,9 @@ class FakeInstallPorts implements InstallPorts {
   bool allowed = true;
   int asked = 0;
 
+  /// Whether each permission ask included Bluetooth.
+  final askedBluetooth = <bool>[];
+
   final specs = <InstallSpec>[];
   final runs = <FakeRun>[];
   final listeners = <FakeListener>[];
@@ -226,6 +229,7 @@ class FakeInstallPorts implements InstallPorts {
   @override
   Future<bool> askPermissions({required bool bluetooth}) async {
     asked++;
+    askedBluetooth.add(bluetooth);
     return allowed;
   }
 

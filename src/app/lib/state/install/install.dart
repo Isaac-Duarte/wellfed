@@ -195,10 +195,11 @@ class InstallFlow extends ChangeNotifier {
   /// How long a listener listens, for "3 of 20 min".
   Duration get listenWait => _ports.listenWait;
 
-  /// How the APK's image pairs, once it is known to be ready.
-  ImageProvisioning? get provisioning => switch (_image) {
+  /// How the APK's image pairs. One of unknown type (no run starts with it) is
+  /// taken as the consumer image a release APK carries, on every step alike.
+  ImageProvisioning get provisioning => switch (_image) {
     ImageCheck_Ready(:final ImageProvisioning provisioning) => provisioning,
-    _ => null,
+    _ => ImageProvisioning.consumer,
   };
 
   /// A run is going: leaving means stopping it.
@@ -406,9 +407,9 @@ class InstallFlow extends ChangeNotifier {
       bluetoothOff: _bluetoothOff,
       repairFailed: _repairFailed,
       phoneIp: _phoneIp,
-      claim: ClaimRoute.of(provisioning),
+      claim: provisioning,
     );
-    final bool bluetooth = facts.claim == ClaimRoute.bluetooth;
+    final bool bluetooth = facts.claim == ImageProvisioning.consumer;
     return switch (_stage) {
       InstallStage.loading => InstallLoading(facts),
       InstallStage.unavailable => InstallUnavailable(facts),
