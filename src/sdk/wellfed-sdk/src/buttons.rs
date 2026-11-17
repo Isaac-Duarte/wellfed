@@ -77,9 +77,7 @@ unsafe extern "C" fn key_task(_: *mut c_void) -> u32 {
     let step = service.step();
     if let Some(record) = step.record {
         let mut report = startup::Report::new();
-        if let Ok(line) = report.record(format_args!("PLKEY1 {}\r\n", Line(record))) {
-            sdk::log(line);
-        }
+        sdk::log(report.record(format_args!("PLKEY1 {}\r\n", Line(record))));
     }
     step.delay_ms
 }

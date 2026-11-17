@@ -125,7 +125,7 @@ An owner can read what the feeder's UART prints without opening the feeder: `wel
 **Safe from an interrupt, never waiting.** A task logs with the scheduler suspended, so only an interrupt can find another writer mid-copy. It drops its line from the tail (the UART still prints it) and counts it, rather than wait for a writer that can't run until it returns. The dropped line still takes a number. No interrupt logs today.
 
 - Readers never block writers. A reader copies a line, then checks the ring's oldest line hasn't moved past it (a seqlock), starting over a few times at most.
-- A line too long for the ring (over 255 bytes; the record buffer is 192) is counted the same way.
+- A line too long for the ring (over 320 bytes) is counted the same way. No record line is: each record buffer is checked against that limit when it compiles, and the longest, the settings writer's, holds 287 bytes. A line's length takes two bytes of its header, since the writer's lines pass 255.
 
 **Overrun drops the oldest.** A line that needs room drops whole lines from the old end. A session whose cursor fell behind learns how many it missed: each batch's `dropped` counts the numbers after its cursor that the batch doesn't hold.
 

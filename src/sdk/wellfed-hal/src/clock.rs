@@ -86,14 +86,12 @@ fn update<T>(change: impl FnOnce(&mut WallClock, u32, &mut u32) -> T) -> T {
 #[inline(never)]
 fn log_lost(lost: Lost) {
     let mut report = startup::Report::new();
-    if let Ok(line) = report.record(format_args!(
+    sdk::log(report.record(format_args!(
         "PLTIM1 forget reason=count had_time={} at_ms={} count_ms={}\r\n",
         u8::from(lost.had_time),
         sdk::uptime_ms(),
         lost.count_ms
-    )) {
-        sdk::log(line);
-    }
+    )));
 }
 
 /// The SysTimer extended to milliseconds. The first read starts the count
@@ -206,9 +204,7 @@ pub fn resume(restart: Restart) {
             no_resume_name(why)
         )),
     };
-    if let Ok(line) = line {
-        sdk::log(line);
-    }
+    sdk::log(line);
 }
 
 /// Store the clock for a warm reset if the last store is `KEEP_MS` old,
@@ -320,9 +316,7 @@ fn log(origin: Origin, result: Result<Jump, SyncError>, count_ms: u32) {
             name(error)
         )),
     };
-    if let Ok(line) = line {
-        sdk::log(line);
-    }
+    sdk::log(line);
 }
 
 /// A record word for each origin.
@@ -368,12 +362,10 @@ pub fn offset_at(unix_ms: u64) -> Option<i32> {
 pub fn log_rtc() {
     let [tr, cr, isr, prer] = sdk::rtc_registers();
     let mut report = startup::Report::new();
-    if let Ok(line) = report.record(format_args!(
+    sdk::log(report.record(format_args!(
         "PLTIM1 rtc tr={tr:08x} cr={cr:08x} isr={isr:08x} prer={prer:08x} at_ms={}\r\n",
         sdk::uptime_ms()
-    )) {
-        sdk::log(line);
-    }
+    )));
 }
 
 /// Forget every sync and the count, as a reset does (host tests).

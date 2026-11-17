@@ -99,10 +99,8 @@ fn records_format_for_the_host() {
         bytes: [0; LINE],
     });
     let mut report = wellfed_sdk::hal::startup::Report::new();
-    assert!(
-        report.record(format_args!("PLRNG1 {longest}\r\n")).is_ok(),
-        "{longest}"
-    );
+    report.record(format_args!("PLRNG1 {longest}\r\n"));
+    assert!(!report.truncated(), "{longest}");
 
     let done = Record::Done {
         source: Source::Jitter,

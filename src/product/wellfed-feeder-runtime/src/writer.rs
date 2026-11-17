@@ -769,20 +769,11 @@ impl<F: FlashOps> Product<F> for FeederStores<F> {
 #[cfg(target_os = "none")]
 static WRITER: wellfed_sdk::Slot<Writer<wellfed_sdk::SdkStorage>> = wellfed_sdk::Slot::new();
 
-#[cfg(target_os = "none")]
-struct Line(Record);
-
-#[cfg(target_os = "none")]
-impl fmt::Display for Line {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        device::describe(self.0, f)
-    }
-}
-
 /// The SDK runtime's settings stage: one writer step, logged as a `PLCFG1`
-/// record; the delay to the next, 0 to end. Its signature must match the
-/// runtime's `extern "Rust"` declaration in `wellfed-sdk`'s `runtime.rs`
-/// (the linker does not check it); the assertion below pins it.
+/// record in a buffer sized for its longest ([`device::LINE`]); the delay
+/// to the next, 0 to end. Its signature must match the runtime's
+/// `extern "Rust"` declaration in `wellfed-sdk`'s `runtime.rs` (the linker
+/// does not check it); the assertion below pins it.
 ///
 /// # Safety
 /// Called only from the service task, with the runtime's fixed provider,
@@ -793,7 +784,6 @@ pub unsafe fn wellfed_store_step(
     provider: *mut wellfed_hal::flash_lock::provider::Provider,
 ) -> u32 {
     use wellfed_hal::flash::park::Hardware;
-    use wellfed_hal::startup;
 
     let Some(mut writer) = WRITER.enter_or_init(Default::default) else {
         return 0;
@@ -803,12 +793,19 @@ pub unsafe fn wellfed_store_step(
     wellfed_hal::writer_wake::settle(step.rested);
 
     if let Some(record) = step.record {
-        let mut report = startup::Report::new();
-        if let Ok(line) = report.record(format_args!("PLCFG1 {}\r\n", Line(record))) {
-            sdk::log(line);
-        }
+        log_record(record);
     }
     step.delay_ms
+}
+
+/// Logs a writer record as its `PLCFG1` line. Out of line, so the line's
+/// buffer is on the stack only while it is formatted, never under the
+/// writer's step, the service task's deeper path.
+#[cfg(target_os = "none")]
+#[inline(never)]
+fn log_record(record: Record) {
+    let mut report = wellfed_hal::startup::Report::<{ device::LINE }>::sized();
+    sdk::log(device::line(&mut report, record));
 }
 
 #[cfg(target_os = "none")]

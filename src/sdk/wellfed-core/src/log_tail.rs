@@ -25,12 +25,13 @@
 use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering, fence};
 
 /// The longest line the tail keeps; a longer one is counted as dropped.
-/// A record line is at most 191 bytes (the SDK's record buffer), so none
-/// is today.
-pub const LINE_MAX: usize = 255;
+/// Above every record buffer (`wellfed_hal::startup::Report`, whose sizes
+/// are checked against this when they compile), so no record line is: the
+/// settings writer's, the longest, is 287 bytes at most.
+pub const LINE_MAX: usize = 320;
 /// A line's header in the ring: its number (`u32`, little-endian) and its
-/// text's length (one byte).
-const HEADER: usize = 5;
+/// text's length (`u16`, little-endian), since a record line can pass 255.
+const HEADER: usize = 6;
 /// Reads started over because writers overwrote the line being read,
 /// before the read gives up until its next pass.
 const ATTEMPTS: usize = 4;
@@ -108,8 +109,7 @@ impl<const N: usize> LogTail<N> {
         let head = self.head.load(Ordering::Relaxed);
         let mut tail = self.tail.load(Ordering::Relaxed);
         while distance(tail, head) + size > N {
-            let len = self.byte(tail.wrapping_add(4));
-            tail = tail.wrapping_add(position(HEADER + usize::from(len)));
+            tail = tail.wrapping_add(position(HEADER + self.len(tail)));
         }
         // Readers learn which lines are gone before a byte of them changes:
         // a reader that sees an overwritten byte then sees this tail (the
@@ -125,8 +125,10 @@ impl<const N: usize> LogTail<N> {
             at = at.wrapping_add(1);
         }
         // At most LINE_MAX, which the check above made sure of.
-        self.set(at, u8::try_from(text.len()).unwrap_or(u8::MAX));
-        at = at.wrapping_add(1);
+        for byte in u16::try_from(text.len()).unwrap_or(u16::MAX).to_le_bytes() {
+            self.set(at, byte);
+            at = at.wrapping_add(1);
+        }
         for &byte in text {
             self.set(at, byte);
             at = at.wrapping_add(1);
@@ -177,7 +179,7 @@ impl<const N: usize> LogTail<N> {
             let seq = u32::from_le_bytes(core::array::from_fn(|i| {
                 self.byte(pos.wrapping_add(position(i)))
             }));
-            let len = usize::from(self.byte(pos.wrapping_add(4)));
+            let len = self.len(pos);
             self.check(pos)?;
             let next = pos.wrapping_add(position(HEADER + len));
 
@@ -226,6 +228,13 @@ impl<const N: usize> LogTail<N> {
             return Err(Overrun);
         }
         Ok(())
+    }
+
+    /// The text length in the header of the line at `pos`.
+    fn len(&self, pos: u32) -> usize {
+        let low = self.byte(pos.wrapping_add(4));
+        let high = self.byte(pos.wrapping_add(5));
+        usize::from(u16::from_le_bytes([low, high]))
     }
 
     fn byte(&self, at: u32) -> u8 {
@@ -377,6 +386,23 @@ mod tests {
         let batch = tail.read(Some(1), &mut out).unwrap();
         assert_eq!(&out[..batch.len], b"last\n");
         assert_eq!((batch.seq, batch.dropped), (4, 2));
+    }
+
+    /// A line longer than a one-byte length could say (the settings
+    /// writer's reach 266 bytes without their ending) comes back whole.
+    #[test]
+    fn a_line_past_255_bytes_comes_back_whole() {
+        let tail = LogTail::<RING>::new();
+        let long = format!("PLCFG1 saved {}", "x".repeat(LINE_MAX - 13));
+        assert_eq!(long.len(), LINE_MAX);
+
+        tail.push(b"first");
+        tail.push(format!("{long}\r\n").as_bytes());
+        tail.push(b"last");
+
+        let (batch, lines) = read_all(&tail, None).unwrap();
+        assert_eq!(lines, ["first", long.as_str(), "last"]);
+        assert_eq!((batch.seq, batch.dropped), (3, 0));
     }
 
     #[test]

@@ -13,9 +13,11 @@ use wellfed_core::ota::install::{
     Bank0Check, Bank0Error, Blocked, Marking, Refused, RefusedReason, Stop, StopStage,
 };
 use wellfed_core::record::{Confirm, Event, Record, Tag, Update, Watch};
+use wellfed_hal::flash_lock::arming;
 use wellfed_hal::ota::{confirm, update};
+use wellfed_hal::startup::Report;
 use wellfed_hal::{audio, ble};
-use wellfed_signed::offer::OfferError;
+use wellfed_signed::offer::{KEY_ID_LEN, KeyStatement, OfferError};
 
 struct Body<F>(F);
 
@@ -485,5 +487,111 @@ fn stage_and_reason_records_format_as_before() {
     ];
     for (got, expected) in cases {
         assert_eq!(got, expected);
+    }
+}
+
+/// The update and confirmation records at their longest fit the record
+/// buffer the runtime logs them through (`startup::LINE`), so none is cut
+/// on the UART, and each reads back as its tag.
+#[test]
+fn update_and_confirm_records_at_their_longest_fit_the_line() {
+    let found = update::Found {
+        recorded_len: Some(u32::MAX),
+        found_len: Some(u32::MAX),
+        recorded: Some([0xff; 4]),
+        found: Some([0xff; 4]),
+    };
+    let mut updates = vec![
+        update::Record::Bank0 {
+            len: u32::MAX,
+            recorded: true,
+        },
+        update::Record::Bank0Check {
+            check: Bank0Check::Unchecked,
+            found,
+        },
+        update::Record::Offer { version: u32::MAX },
+        update::Record::GaveWay { version: u32::MAX },
+        update::Record::GiveWayFailed,
+        update::Record::Manifest {
+            version: u32::MAX,
+            bytes: u32::MAX,
+        },
+        update::Record::Progress {
+            sectors: u32::MAX,
+            total: u32::MAX,
+        },
+        update::Record::Activated {
+            version: u32::MAX,
+            bytes: u32::MAX,
+            sectors: u32::MAX,
+            marking: Marking::Uncertain,
+        },
+        update::Record::Key {
+            statement: KeyStatement::Add([0xff; 32]),
+        },
+        update::Record::Key {
+            statement: KeyStatement::Revoke([0xff; KEY_ID_LEN]),
+        },
+    ];
+    for &blocked in Blocked::ALL {
+        updates.push(update::Record::Bank0Check {
+            check: Bank0Check::Blocked(blocked),
+            found,
+        });
+        updates.push(update::Record::GiveWayRefused { blocked, found });
+    }
+    for &error in Bank0Error::ALL {
+        updates.push(update::Record::Bank0Unrecorded { error });
+    }
+    for &step in SectorStep::ALL {
+        updates.push(update::Record::Stopped {
+            stop: Stop::Write,
+            write: Some(update::WriteFault {
+                sector: u32::MAX,
+                step,
+                offset: u32::MAX,
+                expected: u32::MAX,
+                read: u32::MAX,
+                reread: u32::MAX,
+                erase_ms: u32::MAX,
+            }),
+        });
+    }
+
+    for record in updates {
+        let mut report = Report::new();
+        let line = report.record(format_args!(
+            "{} {}\r\n",
+            record.tag(),
+            Body(|f: &mut fmt::Formatter<'_>| update::describe(record, f))
+        ));
+        let text = line.to_str().unwrap().to_owned();
+        assert!(!report.truncated(), "cut: {record:?}");
+        assert_eq!(read(&text).tag, record.tag(), "{text}");
+    }
+
+    let confirms = [
+        confirm::Record::Already,
+        confirm::Record::Arming(arming::Event::Skip { marker: u32::MAX }),
+        confirm::Record::Arming(arming::Event::Armed {
+            watchdog: true,
+            installed: true,
+        }),
+        confirm::Record::Confirmed {
+            healthy_ms: u32::MAX,
+            version: u32::MAX,
+        },
+    ];
+    for record in confirms {
+        let mut report = Report::new();
+        let line = report.record(format_args!(
+            "{} {}\r\n",
+            Tag::Confirm,
+            Body(|f: &mut fmt::Formatter<'_>| confirm::describe(record, f))
+        ));
+        let text = line.to_str().unwrap().to_owned();
+        assert!(!report.truncated(), "cut: {record:?}");
+        assert_eq!(read(&text).kind(), Some(Tag::Confirm), "{text}");
     }
 }
