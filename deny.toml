@@ -25,10 +25,12 @@ ignore = [
     # drops it.
     { id = "RUSTSEC-2026-0543", reason = "chrono: unmaintained, pulled in by rmcp 3.11 (wellfed-bench's MCP server only) with no upgrade" },
     # mqtt5 0.50's broker always depends on humantime-serde, which uses it
-    # only to (de)serialize the broker's config durations. wellfed-stock
-    # builds that config in code and never reads one from input. No mqtt5
-    # release drops it.
-    { id = "RUSTSEC-2026-0542", reason = "humantime: unmaintained, pulled in by mqtt5 0.50's broker config through humantime-serde with no upgrade" },
+    # only to (de)serialize the broker's config durations. It reaches every
+    # binary that links wellfed-stock: the Android app (wellfed-app-bridge
+    # through wellfed-install), the CLI and the bench tools. wellfed-stock
+    # builds that config in code and never deserializes one, so the crate
+    # never runs on input. No mqtt5 release drops it.
+    { id = "RUSTSEC-2026-0542", reason = "humantime: unmaintained, pulled in by mqtt5 0.50's broker config through humantime-serde (app, CLI, bench; never fed input) with no upgrade" },
 ]
 
 [licenses]

@@ -388,9 +388,21 @@ mod tests {
         assert_eq!(response.ts, 1_792_271_861_000);
     }
 
+    /// The zone data ships inside the binary, so a jiff-tzdb update moves
+    /// some feeders' clocks with it (2025b to 2026f moved 14 zones, among
+    /// them America/Vancouver's fall-back and Africa/Casablanca). Pinning the
+    /// release makes that a deliberate change: check what the new release
+    /// changed, then update this.
+    #[test]
+    fn the_bundled_zone_data_is_pinned() {
+        assert_eq!(jiff_tzdb::VERSION, "2026f");
+    }
+
     /// Southern, half-hour, half-hour-shift and DST-ending zones, as the
     /// reply gave them when it was built on chrono-tz: a change of zone
-    /// library must not move a feeder's clock.
+    /// library must not move a feeder's clock. These zones did not change
+    /// between chrono-tz's tzdb 2025b and the bundled 2026f; others did
+    /// (`the_bundled_zone_data_is_pinned`).
     #[test]
     fn other_zones_keep_their_offsets_and_changes() {
         let cases: [(&str, f64, [i64; 5]); 5] = [

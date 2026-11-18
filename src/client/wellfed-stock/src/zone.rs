@@ -52,6 +52,9 @@ impl FromStr for Zone {
         if canonical != name {
             return Err(unknown());
         }
+        // The bundled data always parses (jiff-tzdb's own tests load every
+        // zone), so a failure here can only mean a broken build; refusing the
+        // name is the safe answer, and jiff's error would say nothing more.
         let zone = TimeZone::tzif(canonical, tzif).map_err(|_| unknown())?;
         Ok(Self {
             name: canonical,

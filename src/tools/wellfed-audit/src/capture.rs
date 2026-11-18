@@ -57,10 +57,12 @@ pub enum CaptureError {
     Coverage,
 }
 
-/// An ISO 8601 timestamp that carries its offset. One without an offset is
-/// refused apart, since the bench always records one.
+/// An RFC 3339 timestamp: `YYYY-MM-DDTHH:MM:SS`, an optional fraction, then
+/// `Z` or `±HH:MM`. One without an offset is refused apart, since the bench
+/// always records one. jiff's own parser takes more (basic format, a missing
+/// seconds field, `+0000`, a bracketed zone), which evidence must not.
 pub(crate) fn timestamp(text: &str) -> Result<Time> {
-    if let Ok(time) = text.parse::<Timestamp>() {
+    if let Some(time) = rfc3339(text) {
         return Ok(time);
     }
 
@@ -69,6 +71,22 @@ pub(crate) fn timestamp(text: &str) -> Result<Time> {
         || CaptureError::NoTimezone { text: text.into() },
     )?;
     Err(CaptureError::Timestamp { text: text.into() }.into())
+}
+
+/// `text` as strict RFC 3339, if it is.
+fn rfc3339(text: &str) -> Option<Time> {
+    let zulu;
+    let text = match text.strip_suffix('Z') {
+        Some(body) => {
+            zulu = format!("{body}+00:00");
+            zulu.as_str()
+        }
+        None => text,
+    };
+    jiff::fmt::strtime::parse("%Y-%m-%dT%H:%M:%S%.f%:z", text)
+        .ok()?
+        .to_timestamp()
+        .ok()
 }
 
 /// `later - earlier` in seconds, from whole microseconds, the resolution the
@@ -303,6 +321,22 @@ pub(crate) mod tests {
             timestamp("2026-10-22T10:00:00+00:00").unwrap(),
             timestamp("2026-10-22T10:00:00Z").unwrap()
         );
+
+        // RFC 3339 only: jiff's own parser takes each of these, and evidence
+        // must not.
+        for text in [
+            "2026-10-22T10:00Z",
+            "2026-10-22T10Z",
+            "20261022T100000Z",
+            "2026-10-22T10:00:00+0000",
+            "2026-10-22T10:00:00+00",
+            "2026-10-22T10:00:00+00:00[Europe/Lisbon]",
+            "2026-10-22 10:00:00Z",
+        ] {
+            let Err(crate::Error::Capture(CaptureError::Timestamp { .. })) = timestamp(text) else {
+                panic!("{text} is not RFC 3339");
+            };
+        }
 
         for text in ["2026-10-22T10:00:00", "2026-10-22T10:00:00.25"] {
             let Err(crate::Error::Capture(CaptureError::NoTimezone { .. })) = timestamp(text)
