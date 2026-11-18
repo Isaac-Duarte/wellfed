@@ -1,14 +1,15 @@
 //! The API's TCP edge: the listener on [`PORT`] and a socket per session
 //! slot, every call non-blocking so the loop never waits on a client. The
 //! server owns the bytes; these move them between its buffers and the
-//! platform's sockets, and close a slot's socket when either side ends it.
+//! platform's sockets, and close a slot's socket when either side ends it,
+//! resetting it when the server says it stopped moving bytes.
 
-use wellfed_device::io::{Accepted, Received};
-use wellfed_device_api::SESSIONS;
+use wellfed_device::io::{Accepted, Received, Reset};
+use wellfed_device_api::{Close, SESSIONS, STALL_MS};
 use wellfed_proto::api::PORT;
 
 use super::super::platform::Platform;
-use super::{RETRY_MS, Record, Serve};
+use super::{RETRY_MS, Record, ResetBy, Serve};
 
 impl<S: Copy> Serve<S> {
     pub(super) fn open_sockets<P: Platform<Socket = S>>(
@@ -93,7 +94,7 @@ impl<S: Copy> Serve<S> {
             match platform.receive(socket, room) {
                 Received::Empty => {}
                 Received::Data(n) => self.server.received(slot, n),
-                Received::Closed => self.drop_slot(platform, slot, record),
+                Received::Closed => self.drop_slot(platform, slot, Close::Graceful, record),
             }
         }
     }
@@ -112,26 +113,60 @@ impl<S: Copy> Serve<S> {
                 match platform.send(socket, pending) {
                     Some(n) => self.server.sent(slot, n),
                     None => {
-                        self.drop_slot(platform, slot, record);
+                        self.drop_slot(platform, slot, Close::Graceful, record);
                         continue;
                     }
                 }
             }
-            if self.server.closing(slot) {
-                self.drop_slot(platform, slot, record);
+            if let Some(close) = self.server.closing(slot) {
+                self.drop_slot(platform, slot, close, record);
             }
         }
     }
 
+    /// Close `slot`'s connection as the server named, and free the slot.
     fn drop_slot<P: Platform<Socket = S>>(
         &mut self,
         platform: &mut P,
         slot: usize,
+        close: Close,
         record: &mut impl FnMut(Record),
     ) {
         if let Some(socket) = self.sockets[slot].take() {
-            platform.close(socket);
+            match close {
+                Close::Graceful => platform.close(socket),
+                Close::Abort => record(Record::Reset {
+                    by: ResetBy::Abort,
+                    reset: platform.abort(socket),
+                }),
+            }
         }
         self.server.closed(slot, |r| record(Record::Server(r)));
+    }
+
+    /// Every [`STALL_MS`]: reset the API connections already closed whose
+    /// client's window stayed shut. The server's stall rule sees only the
+    /// bytes it still holds; the stack takes several kilobytes first, so a
+    /// connection whose last bytes all went to the stack ends gracefully
+    /// (a timeout, a half-close, a host that never opens its window) and
+    /// would hold its connection for good.
+    pub(super) fn sweep<P: Platform<Socket = S>>(
+        &mut self,
+        platform: &mut P,
+        now_ms: u32,
+        record: &mut impl FnMut(Record),
+    ) {
+        if !wellfed_core::deadline_passed(now_ms, self.next_sweep) {
+            return;
+        }
+        self.next_sweep = now_ms.wrapping_add(STALL_MS);
+
+        let reset = platform.sweep(PORT);
+        if reset != Reset::Done(0) {
+            record(Record::Reset {
+                by: ResetBy::Sweep,
+                reset,
+            });
+        }
     }
 }

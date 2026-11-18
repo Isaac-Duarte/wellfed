@@ -22,6 +22,16 @@ pub enum Received {
     Closed,
 }
 
+/// What resetting connections that stopped moving bytes did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Reset {
+    /// This many connections were reset.
+    Done(u32),
+    /// The call never reached the network stack's thread, so nothing was
+    /// reset (a connection being aborted is still closed).
+    Unreachable,
+}
+
 /// One mDNS datagram, if one waits.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Datagram {

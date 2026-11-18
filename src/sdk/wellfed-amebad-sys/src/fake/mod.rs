@@ -22,8 +22,8 @@ use wellfed_board::safe::{PORT_A_HIGH, PORT_A_LOW, PORT_B_LOW};
 
 use super::{
     AUDIO_PAGE_SAMPLES, AUDIO_PAGES, Advertising, BleEvent, BlePoll, BleService, BleStats,
-    GpioRouting, Irq, Isr, JoinCredentials, LpClock, SECTOR_BYTES, Systick, TaskStep, WifiEvent,
-    WifiPoll,
+    GpioRouting, Irq, Isr, JoinCredentials, LpClock, SECTOR_BYTES, Systick, TaskStep, TcpReset,
+    WifiEvent, WifiPoll,
 };
 
 /// What the fake models of the chosen board beyond its pins: its inputs'
@@ -119,6 +119,14 @@ pub struct Hardware {
 
     /// Every socket closed, in order.
     pub tcp_closed: Vec<i32>,
+    /// Every connection reset, in order.
+    pub tcp_aborted: Vec<i32>,
+    /// What each reset answers.
+    pub tcp_reset: TcpReset,
+    /// The port of every sweep, in order.
+    pub tcp_sweeps: Vec<u16>,
+    /// What each sweep answers.
+    pub tcp_swept: TcpReset,
     /// Every send fails.
     pub tcp_send_fails: bool,
     /// Every listener fails to open.
@@ -372,6 +380,10 @@ impl Default for Hardware {
             supply_adc: 3000,
 
             tcp_closed: Vec::new(),
+            tcp_aborted: Vec::new(),
+            tcp_reset: TcpReset::Reset(1),
+            tcp_sweeps: Vec::new(),
+            tcp_swept: TcpReset::Reset(0),
             tcp_send_fails: false,
             tcp_listen_fails: false,
             api_waiting: VecDeque::new(),

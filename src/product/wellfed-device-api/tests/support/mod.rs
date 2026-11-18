@@ -20,7 +20,7 @@ use wellfed_device_api::mailbox::Lock;
 use wellfed_device_api::pairing::{Config, Event as PairingEvent, Pairing};
 use wellfed_device_api::setup::{Received, Responder};
 use wellfed_device_api::wifi::Credentials;
-use wellfed_device_api::{Pass, Reason, Record, SESSIONS, Server};
+use wellfed_device_api::{Close, Pass, Reason, Record, SESSIONS, Server};
 use wellfed_proto::api::{
     ClientMessage, DeviceMessage, EventBody, FRAME_MAX, Hello, MESSAGE_MAX, Op, Open, Outcome,
     PROLOGUE, PROTOCOL_MAJOR, Refusal, RequestId, Welcome,
@@ -47,6 +47,8 @@ pub struct Rig<D = Fake> {
     identity: Keypair,
     now: u32,
     records: Vec<Record>,
+    /// How each slot the rig saw end was closed, in order.
+    closes: Vec<Close>,
     /// The writer has not reached the queued writes yet.
     writes_held: bool,
 }
@@ -79,6 +81,7 @@ impl<D: Faked> Rig<D> {
             identity: Keypair::from_secret(FEEDER),
             now: 1_000,
             records: Vec::new(),
+            closes: Vec::new(),
             writes_held: false,
         };
         // As the device opens it: the recovery chord held, unlocked.
@@ -193,6 +196,11 @@ impl<D: Faked> Rig<D> {
         self.server.sent(slot, len);
     }
 
+    /// How each slot [`Self::ended`] saw end was closed, in order.
+    pub fn closes(&self) -> &[Close] {
+        &self.closes
+    }
+
     /// The reasons recorded for connections ended so far.
     pub fn ended_for(&self) -> Vec<Reason> {
         self.records
@@ -289,9 +297,10 @@ impl<D: Faked> Rig<D> {
 
     /// Whether the slot ended; it is freed once its last bytes are out.
     pub fn ended(&mut self, slot: usize) -> bool {
-        if !self.server.closing(slot) {
+        let Some(close) = self.server.closing(slot) else {
             return false;
-        }
+        };
+        self.closes.push(close);
         let records = &mut self.records;
         self.server.closed(slot, |r| records.push(r));
         true

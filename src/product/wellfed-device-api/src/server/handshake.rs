@@ -19,7 +19,7 @@
 use super::recovery::Rescue;
 use super::request::proto_role;
 use super::samples::Samples;
-use super::{Phase, Server, proto_encode, slot_id};
+use super::{Close, Phase, Server, proto_encode, slot_id};
 use crate::clients::{CLIENTS, Client, Label, Role};
 use crate::pairing::{self, Pairing};
 use crate::{Device, Reason, Record, SESSIONS};
@@ -177,7 +177,7 @@ impl Server {
                         return Err(Reason::Invite);
                     };
                     let Phase::Handshake { handshake, .. } =
-                        core::mem::replace(&mut slot.phase, Phase::Closing)
+                        core::mem::replace(&mut slot.phase, Phase::Closing(Close::Graceful))
                     else {
                         return Err(Reason::Noise);
                     };
@@ -227,7 +227,7 @@ impl Server {
             return Ok(());
         }
         if let Some(refusal) = *refusal {
-            slot.phase = Phase::Closing;
+            slot.phase = Phase::Closing(Close::Graceful);
             record(Record::Ended {
                 slot: slot_id(index),
                 reason: refusal_reason(refusal),
@@ -236,7 +236,7 @@ impl Server {
         }
 
         let Phase::Handshake { handshake, .. } =
-            core::mem::replace(&mut slot.phase, Phase::Closing)
+            core::mem::replace(&mut slot.phase, Phase::Closing(Close::Graceful))
         else {
             return Ok(());
         };

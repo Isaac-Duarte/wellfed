@@ -19,7 +19,7 @@ use super::{
     AUDIO_PAGE_SAMPLES, FlashMmuEntry, GpioRouting, Irq, Isr, JoinCredentials, LpClock,
     SECTOR_BYTES, SYSTICK_CTRL, Systick, TaskCount, TaskStack, TaskStep, WifiEvent, WifiPoll,
 };
-use super::{Accepted, ApiRecv, Datagram};
+use super::{Accepted, ApiRecv, Datagram, TcpReset};
 #[cfg(feature = "bluetooth")]
 use super::{Advertising, BleEvent, BlePoll, BleService, BleStats};
 
@@ -1437,6 +1437,8 @@ pub fn task_stacks(out: &mut [TaskStack]) -> TaskCount {
 
 unsafe extern "C" {
     fn wellfed_tcp_close(socket: i32);
+    fn wellfed_tcp_abort(socket: i32) -> i32;
+    fn wellfed_tcp_sweep(port: u32) -> i32;
 }
 
 unsafe extern "C" {
@@ -1502,6 +1504,26 @@ pub(crate) fn audio_close() {
 pub fn tcp_close(socket: i32) {
     // SAFETY: the C shim in `example_entry.c`; any buffer is live for the call.
     unsafe { wellfed_tcp_close(socket) }
+}
+
+/// What the reset shims return: a count, or -1.
+fn tcp_reset(value: i32) -> TcpReset {
+    u32::try_from(value).map_or(TcpReset::Unreachable, TcpReset::Reset)
+}
+
+/// Reset a device API connection and close its socket: lwIP sends an RST and
+/// frees the connection with whatever it still queued, at once. The socket
+/// is closed whatever the answer.
+pub fn tcp_abort(socket: i32) -> TcpReset {
+    // SAFETY: the C shim in `example_entry.c`; it takes only the descriptor.
+    tcp_reset(unsafe { wellfed_tcp_abort(socket) })
+}
+
+/// Reset the connections on `port` that the firmware already closed and
+/// whose client's window has stayed shut for 22.5 s (`example_entry.c`).
+pub fn tcp_sweep(port: u16) -> TcpReset {
+    // SAFETY: the C shim in `example_entry.c`; it takes only the port.
+    tcp_reset(unsafe { wellfed_tcp_sweep(port.into()) })
 }
 
 unsafe extern "C" {

@@ -6,7 +6,7 @@
 //! shape, interrupt state), so a port that drifts fails its host tests.
 
 use super::*;
-use crate::{Accepted, ApiRecv, Datagram};
+use crate::{Accepted, ApiRecv, Datagram, TcpReset};
 
 fn lp_clock_state(bit: u32) -> LpClock {
     with(|h| LpClock {
@@ -935,6 +935,20 @@ pub(crate) fn audio_close() {
 
 pub fn tcp_close(socket: i32) {
     with(|h| h.tcp_closed.push(socket));
+}
+
+pub fn tcp_abort(socket: i32) -> TcpReset {
+    with(|h| {
+        h.tcp_aborted.push(socket);
+        h.tcp_reset
+    })
+}
+
+pub fn tcp_sweep(port: u16) -> TcpReset {
+    with(|h| {
+        h.tcp_sweeps.push(port);
+        h.tcp_swept
+    })
 }
 
 pub fn uptime_ms() -> u32 {

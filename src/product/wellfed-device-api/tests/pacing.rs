@@ -6,7 +6,7 @@
 mod support;
 
 use support::Rig;
-use wellfed_device_api::{Reason, STALL_MS};
+use wellfed_device_api::{Close, Reason, STALL_MS};
 use wellfed_proto::api::{
     ClientMessage, DeviceMessage, FRAME_MAX, FeederOp, FeederOutcome, Op, Outcome, RequestId,
     SettingsChanges,
@@ -68,6 +68,7 @@ fn a_client_that_stops_reading_is_closed_and_the_loop_rests_meanwhile() {
     });
     assert!(passes.count() < 3, "dropped at the limit");
     assert_eq!(rig.ended_for(), [Reason::Stalled]);
+    assert_eq!(rig.closes(), [Close::Abort], "reset, not left to the stack");
     assert_eq!(rig.sessions(), 0, "its slot is free");
     assert!(!rig.pass(), "back to resting");
     assert!(rig.accept().is_some(), "and the slot takes a new client");
@@ -91,6 +92,7 @@ fn bytes_that_move_restart_the_limit() {
     }
     assert!(rig.ended(slot), "nothing moved since");
     assert_eq!(rig.ended_for(), [Reason::Stalled]);
+    assert_eq!(rig.closes(), [Close::Abort]);
 }
 
 /// A slot already ending stays only until its last bytes are out, and those
@@ -112,6 +114,28 @@ fn a_closing_slot_whose_client_stopped_reading_is_freed() {
     assert!(rig.ended(slot));
     assert_eq!(rig.sessions(), 0);
     assert_eq!(rig.ended_for(), [Reason::Revoked], "it ended only once");
+    assert_eq!(rig.closes(), [Close::Abort], "its last bytes never left");
+}
+
+/// Every other end closes gracefully, so its last bytes reach a client that
+/// reads them: here a revocation's, and a handshake that timed out with
+/// nothing queued.
+#[test]
+fn an_ending_whose_last_bytes_leave_closes_gracefully() {
+    let (mut rig, slot) = unread_answer();
+    rig.revoke_everyone();
+    let _ = rig.collect(slot);
+    rig.pass();
+    assert!(rig.ended(slot));
+
+    let opening = rig.accept().unwrap();
+    for _ in 0..=wellfed_device_api::HANDSHAKE_MS / PASS_MS {
+        rig.pass();
+    }
+    assert!(rig.ended(opening));
+
+    assert_eq!(rig.ended_for(), [Reason::Revoked, Reason::Timeout]);
+    assert_eq!(rig.closes(), [Close::Graceful, Close::Graceful]);
 }
 
 /// A client that reads, closed by nothing: only unsent bytes run the limit.

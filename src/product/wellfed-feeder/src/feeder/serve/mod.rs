@@ -82,7 +82,7 @@ use wellfed_device_api::{self as server, Pass, SESSIONS, Server};
 
 pub use device_view::DeviceView;
 pub(super) use device_view::desiccant_now;
-pub use records::{Record, describe};
+pub use records::{Record, ResetBy, describe};
 pub use telemetry::TaskCache;
 
 /// The answer page buffer: a trace's page or a bank-1 page, whichever is
@@ -138,6 +138,7 @@ pub struct Serve<S> {
     clients_seen: u32,
     boot: Option<Boot>,
     retry_at: u32,
+    next_sweep: u32,
     next_power: u32,
     next_rssi: u32,
     next_heap: u32,
@@ -169,6 +170,7 @@ impl<S: Copy> Serve<S> {
             clients_seen: 0,
             boot: None,
             retry_at: 0,
+            next_sweep: server::STALL_MS,
             next_power: 0,
             next_rssi: 0,
             next_heap: 0,
@@ -320,6 +322,7 @@ impl<S: Copy> Serve<S> {
         record: &mut impl FnMut(Record),
     ) {
         self.send(platform, record);
+        self.sweep(platform, now_ms, record);
         self.samples(platform, now_ms, supply);
 
         if wellfed_core::deadline_passed(now_ms, self.next_heap) {

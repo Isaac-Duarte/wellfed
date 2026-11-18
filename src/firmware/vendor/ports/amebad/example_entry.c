@@ -26,6 +26,9 @@
 #include "lwip/dhcp.h"
 #include "lwip/prot/dhcp.h"
 #include "lwip/sockets.h"
+#include "lwip/tcp.h"
+#include "lwip/priv/tcp_priv.h"
+#include "lwip/priv/tcpip_priv.h"
 #include <platform/platform_stdlib.h>
 #include "wellfed_wifi_credentials.h"
 #include "rl6548.h"
@@ -704,6 +707,146 @@ static int wellfed_ready(int s, int write)
 void wellfed_tcp_close(int s)
 {
     lwip_close(s);
+}
+
+/* Resetting a device API connection that stopped moving bytes (its client
+ * stopped reading and closed its window).
+ *
+ * A graceful lwip_close cannot end such a connection: lwIP 2.0.2 (built
+ * from the SDK's source with its lwipopts.h) keeps the pcb, its unsent
+ * queue and the FIN behind it, and its persist timer probes a zero window
+ * for as long as the client answers, never giving up. Each one holds one of
+ * the SDK's ten TCP pcbs until the client reads, closes or leaves.
+ * SO_LINGER {1, 0} would make lwip_close abort, but LWIP_SO_LINGER is off
+ * in the SDK's lwipopts.h, and turning it on changes struct netconn for
+ * every object built against it.
+ *
+ * So this finds the socket's pcb by its address pair and calls tcp_abort
+ * on it, in the tcpip thread as lwIP requires (LWIP_TCPIP_CORE_LOCKING is
+ * off), through tcpip_api_call, which waits for it. tcp_abort sends an
+ * RST, frees the pcb with its queues, and calls the netconn's error
+ * callback (err_tcp), which clears the netconn's pcb: lwIP does the same
+ * to a netconn's pcb under memory pressure (tcp_kill_prio). The caller's
+ * nonblocking socket is used by no other task, so no write or close is in
+ * progress on it. lwip_close then frees the netconn and the socket with no
+ * pcb left to close. When the pcb is already gone (the client reset it
+ * first) nothing matches and the close alone suffices.
+ */
+struct wellfed_abort_call {
+    /* First, so the tcpip thread's pointer to it is a pointer to this. */
+    struct tcpip_api_call_data call;
+    struct sockaddr_in local;
+    struct sockaddr_in remote;
+    int reset;
+};
+
+static int wellfed_ip_is(const ip_addr_t *ip, const struct sockaddr_in *at)
+{
+    return IP_IS_V4_VAL(*ip) && ip4_addr_get_u32(ip_2_ip4(ip)) == at->sin_addr.s_addr;
+}
+
+/* Always ERR_OK, so a failure from tcpip_api_call is its own: it could not
+ * make the semaphore it waits on, and the callback never ran. */
+static err_t wellfed_abort_in_tcpip(struct tcpip_api_call_data *call)
+{
+    struct wellfed_abort_call *target = (struct wellfed_abort_call *)call;
+    for (struct tcp_pcb *pcb = tcp_active_pcbs; pcb != NULL; pcb = pcb->next) {
+        if (pcb->local_port == lwip_ntohs(target->local.sin_port)
+            && pcb->remote_port == lwip_ntohs(target->remote.sin_port)
+            && wellfed_ip_is(&pcb->local_ip, &target->local)
+            && wellfed_ip_is(&pcb->remote_ip, &target->remote)) {
+            /* Frees pcb: the walk stops here. */
+            tcp_abort(pcb);
+            target->reset = 1;
+            break;
+        }
+    }
+    return ERR_OK;
+}
+
+/* Connections reset (0 or 1), or -1 when the tcpip thread was never reached
+ * (the socket is closed gracefully regardless, and the sweep below takes the
+ * pcb if it stays stuck). */
+int wellfed_tcp_abort(int s)
+{
+    struct wellfed_abort_call target;
+    memset(&target, 0, sizeof(target));
+    socklen_t size = sizeof(target.local);
+    socklen_t remote_size = sizeof(target.remote);
+    int reset = 0;
+    if (lwip_getsockname(s, (struct sockaddr *)&target.local, &size) == 0
+        && lwip_getpeername(s, (struct sockaddr *)&target.remote, &remote_size) == 0
+        && target.local.sin_family == AF_INET && target.remote.sin_family == AF_INET) {
+        reset = tcpip_api_call(wellfed_abort_in_tcpip, &target.call) == ERR_OK ? target.reset : -1;
+    }
+    lwip_close(s);
+    return reset;
+}
+
+/* Resetting device API connections the application already closed that
+ * are stuck behind a zero window.
+ *
+ * The explicit abort above covers a stall the server sees in its own
+ * queue. It cannot see bytes lwIP already took (up to TCP_SND_BUF), so a
+ * connection whose last bytes all sit in lwIP is closed gracefully, and
+ * then sits in FIN_WAIT_1 or LAST_ACK probing a zero window for good: a
+ * paused subscriber timed out, a client that half-closed and stopped
+ * reading, or any host that advertises a zero window from its first
+ * segment, whose handshake reply never leaves.
+ *
+ * So the loop calls this every 30 s, in the tcpip thread through
+ * tcpip_api_call as the abort does, and it resets every active pcb that
+ * meets all three:
+ * - its local port is the device API's, so no other service's pcb is
+ *   touched (mDNS and NTP are UDP; the listener is never on the active
+ *   list);
+ * - no netconn owns it: a successful close in lwip_netconn_do_close_internal
+ *   (api_msg.c) clears callback_arg with tcp_arg(pcb, NULL), and a close
+ *   that has to wait restores it, as does every live or accepted
+ *   connection (setup_tcp), and a connection not yet accepted carries the
+ *   listener's (tcp_listen_input). So no socket or netconn points at a pcb
+ *   reset here, and its error callback is already NULL: tcp_abort calls
+ *   nothing back;
+ * - its zero window has lasted at least WELLFED_SWEEP_PERSIST probes:
+ *   persist_backoff counts them from 1, resets to 0 when the window opens
+ *   (tcp_receive), and reaches 5 after 22.5 s of a closed window
+ *   (tcp_persist_backoff's 1.5, 3, 6 and 12 s). A client that is only
+ *   reading slowly keeps its last bytes and FIN.
+ * tcp_abort sends an RST and frees the pcb with its queues. Its successor
+ * is read first, and freeing one pcb frees no other, so the walk goes on.
+ */
+#define WELLFED_SWEEP_PERSIST 5
+
+struct wellfed_sweep_call {
+    /* First, so the tcpip thread's pointer to it is a pointer to this. */
+    struct tcpip_api_call_data call;
+    u16_t port;
+    int reset;
+};
+
+static err_t wellfed_sweep_in_tcpip(struct tcpip_api_call_data *call)
+{
+    struct wellfed_sweep_call *sweep = (struct wellfed_sweep_call *)call;
+    struct tcp_pcb *pcb = tcp_active_pcbs;
+    while (pcb != NULL) {
+        struct tcp_pcb *next = pcb->next;
+        if (pcb->local_port == sweep->port && pcb->callback_arg == NULL
+            && pcb->persist_backoff >= WELLFED_SWEEP_PERSIST) {
+            tcp_abort(pcb);
+            sweep->reset++;
+        }
+        pcb = next;
+    }
+    return ERR_OK;
+}
+
+/* Connections reset, or -1 when the tcpip thread was never reached. */
+int wellfed_tcp_sweep(unsigned int port)
+{
+    struct wellfed_sweep_call sweep;
+    memset(&sweep, 0, sizeof(sweep));
+    sweep.port = (u16_t)port;
+    return tcpip_api_call(wellfed_sweep_in_tcpip, &sweep.call) == ERR_OK ? sweep.reset : -1;
 }
 
 /* The device API's sockets. The loop task serves every client and

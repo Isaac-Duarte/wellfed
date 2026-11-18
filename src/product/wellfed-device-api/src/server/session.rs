@@ -5,7 +5,7 @@
 use super::handshake::find;
 use super::recovery::Rescue;
 use super::request::{Action, Reply, proto_role};
-use super::{Phase, Server, proto_encode, slot_id};
+use super::{Close, Phase, Server, proto_encode, slot_id};
 use crate::pairing::Pairing;
 use crate::{
     Device, EventRead, HANDSHAKE_MS, IDLE_MS, KeyChange, KeyOutcome, Reader, Reason, Record,
@@ -80,7 +80,7 @@ impl Server {
     ) -> Result<bool, Reason> {
         let slot = &mut self.slots[index];
         match &mut slot.phase {
-            Phase::Free | Phase::Closing => Ok(false),
+            Phase::Free | Phase::Closing(_) => Ok(false),
             Phase::Opening => {
                 if deadline_passed(now_ms, slot.since_ms.wrapping_add(HANDSHAKE_MS)) {
                     return Err(Reason::Timeout);
@@ -186,7 +186,7 @@ impl Server {
             .seal(&self.plain[..len], &mut self.out)
             .map_err(|_| Reason::Noise)?;
         slot.wire.send(&self.out[..sealed])?;
-        slot.phase = Phase::Closing;
+        slot.phase = Phase::Closing(Close::Graceful);
         record(Record::Ended {
             slot: slot_id(index),
             reason: Reason::Joined,

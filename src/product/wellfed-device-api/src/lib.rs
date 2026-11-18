@@ -95,7 +95,7 @@ pub use device::{
 pub use record::{Reason, Record};
 pub use server::handshake::{fingerprint, key_prefix};
 pub use server::request::proto_role;
-pub use server::{Pass, Server};
+pub use server::{Close, Pass, Server};
 
 use wellfed_proto::api::{FRAME_MAX, MESSAGE_MAX, UPDATE_CHUNK_MAX};
 use wellfed_session::frame;

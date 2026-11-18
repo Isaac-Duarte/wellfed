@@ -8,7 +8,7 @@ use wellfed_core::buttons::{Button, Buttons, Gesture};
 use wellfed_device_api::clients::Role;
 use wellfed_device_api::mailbox::Lock;
 use wellfed_device_api::pairing::Event as PairingEvent;
-use wellfed_device_api::{Device, KeyChange, KeyOutcome, Reason};
+use wellfed_device_api::{Close, Device, KeyChange, KeyOutcome, Reason};
 use wellfed_model as model;
 use wellfed_model::{Answer, Generation, Joined, Op};
 use wellfed_proto::api::{self as proto, EventBody};
@@ -92,7 +92,7 @@ fn revoking_a_client_closes_its_open_session() {
     assert_eq!(revoke, Answer::Done { generation: None });
     rig.publish();
     assert!(rig.ended(Reason::Revoked));
-    assert!(rig.server.closing(member.slot));
+    assert_eq!(rig.server.closing(member.slot), Some(Close::Graceful));
 }
 
 /// The history's revocations: the client revoked and who asked.
@@ -450,12 +450,17 @@ fn redeem(rig: &mut Rig, invite: Invite, secret: [u8; 32]) -> Option<Joined> {
         if !bytes.is_empty() {
             match join.receive(&bytes).unwrap() {
                 Some(JoinStep::Send(bytes)) => outbox.extend(bytes),
-                Some(JoinStep::Done(joined)) => return Some(joined),
+                Some(JoinStep::Done(joined)) => {
+                    // The answer ends the connection, closed gracefully so
+                    // it reaches the client.
+                    assert_eq!(rig.server.closing(slot), Some(Close::Graceful));
+                    return Some(joined);
+                }
                 None => {}
             }
         }
         rig.device.write();
-        if rig.server.closing(slot) && rig.server.tx(slot).is_empty() {
+        if rig.server.closing(slot).is_some() && rig.server.tx(slot).is_empty() {
             let records = &mut rig.records;
             rig.server.closed(slot, |r| records.push(r));
             return None;
@@ -530,6 +535,7 @@ fn recover_until(
         }
         while let Some(reply) = recovery.poll_reply() {
             let Reply::EnterCode { .. } = reply else {
+                assert_eq!(rig.server.closing(slot), Some(Close::Graceful));
                 return Some(reply);
             };
             // Each press goes down and comes up alone, as the button
@@ -549,7 +555,7 @@ fn recover_until(
                 }
             }
         }
-        if rig.server.closing(slot) && rig.server.tx(slot).is_empty() {
+        if rig.server.closing(slot).is_some() && rig.server.tx(slot).is_empty() {
             let records = &mut rig.records;
             rig.server.closed(slot, |r| records.push(r));
             return None;
@@ -610,7 +616,7 @@ fn a_recovery_client_that_stops_reading_gives_up_its_offer() {
         rig.pass();
     }
     assert!(rig.ended(Reason::Stalled));
-    assert!(rig.server.closing(slot));
+    assert_eq!(rig.server.closing(slot), Some(Close::Abort));
     let records = &mut rig.records;
     rig.server.closed(slot, |r| records.push(r));
     assert_eq!(rig.server.sessions(), 0);
