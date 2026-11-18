@@ -14,7 +14,7 @@ use std::io;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 
 use tokio::net::{TcpStream, UdpSocket};
-use wellfed_device::io::{Accepted, Datagram, Received};
+use wellfed_device::io::{Accepted, Datagram, Received, Reset};
 
 /// A socket the loop's driver holds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -177,13 +177,16 @@ impl Sockets {
     /// Reset a connection, as the firmware's driver does one that stopped
     /// moving bytes: a zero linger makes dropping it send an RST, so the
     /// client sees what it would see from the feeder.
-    pub fn abort(&mut self, socket: Socket) {
+    pub fn abort(&mut self, socket: Socket) -> Reset {
+        let mut reset = 0;
         if let Socket::Stream(id) = socket
             && let Some(stream) = self.stream(id)
+            && stream.set_zero_linger().is_ok()
         {
-            let _ = stream.set_zero_linger();
+            reset = 1;
         }
         self.close(socket);
+        Reset::Done(reset)
     }
 
     /// A failed send is only a lost answer: the asker asks again.

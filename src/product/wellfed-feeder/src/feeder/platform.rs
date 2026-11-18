@@ -24,7 +24,7 @@ use wellfed_proto::trace::PAGE_MAX;
 use super::alerts::Alerts;
 use super::supply::Radio;
 use crate::stats::Totals;
-use wellfed_device::io::{Accepted, BleDrop, BleLink, Datagram, Received};
+use wellfed_device::io::{Accepted, BleDrop, BleLink, Datagram, Received, Reset};
 use wellfed_device::store::events::{BODY_BYTES, Dropped, EventsFill, Read};
 use wellfed_device::store::net::BuildWifi;
 use wellfed_device::store::traces::{TraceRead, TracesFill};
@@ -390,10 +390,14 @@ pub trait Platform {
     /// Bytes sent, `None` once the socket failed.
     fn send(&mut self, socket: Self::Socket, bytes: &[u8]) -> Option<usize>;
     fn close(&mut self, socket: Self::Socket);
-    /// Reset a device API connection that stopped moving bytes: the stack
-    /// frees it and whatever it still queued at once, where a close would
-    /// leave both waiting on the client's closed window.
-    fn abort(&mut self, socket: Self::Socket);
+    /// Reset a device API connection that stopped moving bytes, and close
+    /// its socket: the stack frees it and whatever it still queued at once,
+    /// where a close would leave both waiting on the client's closed window.
+    fn abort(&mut self, socket: Self::Socket) -> Reset;
+    /// Reset the connections on `port` already closed whose client's window
+    /// stayed shut: a close leaves bytes the stack took before the server's
+    /// stall rule could see them waiting behind it for good.
+    fn sweep(&mut self, port: u16) -> Reset;
     fn mdns_open(&mut self) -> Option<Self::Socket>;
     fn mdns_send(&mut self, socket: Self::Socket, bytes: &[u8], ip: u32, port: u16) -> bool;
     fn mdns_receive(&mut self, socket: Self::Socket, into: &mut [u8]) -> Datagram;

@@ -35,7 +35,7 @@ use wellfed_core::log_tail::{Batch as LogBatch, LogTail};
 use wellfed_core::ota::install::{Answer, CandidateState, Progress, Refused};
 use wellfed_core::supply::{self, Reading, Sample};
 use wellfed_core::tone::Tune;
-use wellfed_device::io::{Accepted, BleDrop, Datagram, Received};
+use wellfed_device::io::{Accepted, BleDrop, Datagram, Received, Reset};
 use wellfed_device::store::events::{BODY_BYTES, Dropped, EventsFill, Read};
 use wellfed_device::store::net::BuildWifi;
 use wellfed_device::store::traces::{self, TraceRead, TraceRing, TracesFill};
@@ -1059,8 +1059,13 @@ impl Platform for SimPlatform {
         self.sockets.close(socket);
     }
 
-    fn abort(&mut self, socket: Socket) {
-        self.sockets.abort(socket);
+    fn abort(&mut self, socket: Socket) -> Reset {
+        self.sockets.abort(socket)
+    }
+
+    /// The host's stack frees a closed connection itself.
+    fn sweep(&mut self, _port: u16) -> Reset {
+        Reset::Done(0)
     }
 
     fn mdns_open(&mut self) -> Option<Socket> {

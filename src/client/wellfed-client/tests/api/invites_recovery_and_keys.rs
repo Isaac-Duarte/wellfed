@@ -450,7 +450,12 @@ fn redeem(rig: &mut Rig, invite: Invite, secret: [u8; 32]) -> Option<Joined> {
         if !bytes.is_empty() {
             match join.receive(&bytes).unwrap() {
                 Some(JoinStep::Send(bytes)) => outbox.extend(bytes),
-                Some(JoinStep::Done(joined)) => return Some(joined),
+                Some(JoinStep::Done(joined)) => {
+                    // The answer ends the connection, closed gracefully so
+                    // it reaches the client.
+                    assert_eq!(rig.server.closing(slot), Some(Close::Graceful));
+                    return Some(joined);
+                }
                 None => {}
             }
         }
@@ -530,6 +535,7 @@ fn recover_until(
         }
         while let Some(reply) = recovery.poll_reply() {
             let Reply::EnterCode { .. } = reply else {
+                assert_eq!(rig.server.closing(slot), Some(Close::Graceful));
                 return Some(reply);
             };
             // Each press goes down and comes up alone, as the button

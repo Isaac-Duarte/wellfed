@@ -379,6 +379,15 @@ pub enum ApiRecv {
     Closed,
 }
 
+/// What resetting device API connections did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TcpReset {
+    /// This many connections were reset.
+    Reset(u32),
+    /// The call never reached lwIP's thread: it had no semaphore to wait on.
+    Unreachable,
+}
+
 /// What a non-blocking accept found.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Accepted {

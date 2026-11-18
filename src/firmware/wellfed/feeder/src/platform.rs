@@ -19,7 +19,7 @@ use wellfed_core::ota::install::{Answer, Progress, Refused};
 use wellfed_core::store::slot::SlotIo;
 use wellfed_core::supply::Reading;
 use wellfed_core::tone::Tune;
-use wellfed_device::io::{Accepted, BleDrop, BleLink, Datagram, Received};
+use wellfed_device::io::{Accepted, BleDrop, BleLink, Datagram, Received, Reset};
 use wellfed_device::store;
 use wellfed_device::store::events::{BODY_BYTES, Dropped, EventsFill, Read};
 use wellfed_device::store::net::BuildWifi;
@@ -548,8 +548,12 @@ impl Platform for Plaf103 {
         sdk::tcp_close(socket);
     }
 
-    fn abort(&mut self, socket: i32) {
-        sdk::tcp_abort(socket);
+    fn abort(&mut self, socket: i32) -> Reset {
+        reset(sdk::tcp_abort(socket))
+    }
+
+    fn sweep(&mut self, port: u16) -> Reset {
+        reset(sdk::tcp_sweep(port))
     }
 
     fn mdns_open(&mut self) -> Option<i32> {
@@ -739,5 +743,12 @@ fn datagram(received: sdk::Datagram) -> Datagram {
         sdk::Datagram::Got { len, ip, port } => Datagram::Got { len, ip, port },
         sdk::Datagram::None => Datagram::None,
         sdk::Datagram::Error => Datagram::Error,
+    }
+}
+
+const fn reset(reset: sdk::TcpReset) -> Reset {
+    match reset {
+        sdk::TcpReset::Reset(count) => Reset::Done(count),
+        sdk::TcpReset::Unreachable => Reset::Unreachable,
     }
 }

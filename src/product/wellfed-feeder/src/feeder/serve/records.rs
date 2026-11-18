@@ -4,6 +4,7 @@
 
 use core::fmt;
 
+use wellfed_device::io::Reset;
 use wellfed_device_api as server;
 use wellfed_proto::api::PORT;
 
@@ -31,6 +32,13 @@ pub enum Record {
     Unheard {
         count: u32,
     },
+    /// Connections the stack was told to reset: a stalled session's, or
+    /// those the sweep found closed and stuck behind a shut window. A sweep
+    /// is logged only when it reset one or never reached the stack.
+    Reset {
+        by: ResetBy,
+        reset: Reset,
+    },
     /// Once a minute: the heap, and the mDNS datagrams seen and answered.
     Stats {
         free: u32,
@@ -39,6 +47,24 @@ pub enum Record {
         answers: u32,
         failed: u32,
     },
+}
+
+/// What asked the stack to reset connections.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResetBy {
+    /// The server ended a session that stopped moving bytes.
+    Abort,
+    /// The periodic sweep of closed connections.
+    Sweep,
+}
+
+impl ResetBy {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Abort => "abort",
+            Self::Sweep => "sweep",
+        }
+    }
 }
 
 /// One record's body (`PLAPI1`).
@@ -57,6 +83,10 @@ pub fn describe(record: Record, f: &mut impl fmt::Write) -> fmt::Result {
         }
         Record::Time(record) => time::describe(record, f),
         Record::Unheard { count } => write!(f, "alerts unheard={count}"),
+        Record::Reset { by, reset } => match reset {
+            Reset::Done(count) => write!(f, "tcp reset by={} reset={count}", by.name()),
+            Reset::Unreachable => write!(f, "tcp reset by={} unreachable=1", by.name()),
+        },
         Record::Stats {
             free,
             min,
