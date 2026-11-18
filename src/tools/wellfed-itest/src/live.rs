@@ -51,6 +51,13 @@ pub enum LiveError {
     NmcliVerb { verb: &'static str, stderr: String },
     #[error("A power cycle needs --power")]
     NoPower,
+    /// Without `--power` the suite never switches relay 1, and every
+    /// scenario talks to the running feeder: an unpowered one would only
+    /// be waited out, scenario by scenario.
+    #[error(
+        "Relay 1, the feeder's supply, is off: switch it on (`wellfed-bench on`) and let the feeder boot, or pass --power"
+    )]
+    FeederOff,
     #[error("The UART capture is not running")]
     NoCapture,
     #[error("The UART capture stopped: {0}")]
@@ -90,6 +97,10 @@ impl<'b> LiveRig<'b> {
     /// Check everything that can refuse before the bench changes: configs,
     /// the UART port and unused evidence names.
     pub(super) fn open(bench: &'b mut Bench, args: &ItestArgs) -> Result<Self> {
+        if !args.power {
+            require(bench.get(POWER)?, || LiveError::FeederOff)?;
+        }
+
         let root = bench.root.clone();
         let name = args.name().to_string();
         let hotspot: HotspotFile = wellfed_rig::load(&root, &args.hotspot)?;

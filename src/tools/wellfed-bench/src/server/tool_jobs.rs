@@ -40,6 +40,7 @@ use wellfed_bench_formats::live::{ActivityKind, AnswerError, JobId, PendingPromp
 use wellfed_core::buttons::{Button, Buttons};
 use wellfed_core::virtual_panel::DEFAULT_HOLD_MS;
 use wellfed_install::prompt::{Answer, DispensePurpose, Prompt};
+use wellfed_relay::POWER;
 use wellfed_rig::commands::Bench;
 use wellfed_rig::tools::own_group_with_input;
 
@@ -127,6 +128,13 @@ pub(crate) enum ToolJobError {
         path.display()
     )]
     WellfedMissing { path: PathBuf },
+    /// `wellfed restore-stock` offers stock over the running feeder's
+    /// device API, which an unpowered feeder never answers: the tool would
+    /// only wait out its own timeouts.
+    #[error(
+        "Relay 1, the feeder's supply, is off: switch it on (`wellfed-bench on`) and let the feeder boot first; nothing was started"
+    )]
+    FeederOff,
     /// The tool wrote a line on its standard output that is no prompt; it was
     /// stopped.
     #[error("wellfed wrote {line:?} where a prompt goes; it was stopped")]
@@ -333,6 +341,9 @@ pub(crate) fn restore_stock(
     tools: &ToolPaths,
     asking: &Asking,
 ) -> Result<u8, JobError> {
+    let powered = bench.get(POWER)?;
+    wellfed_formats::require(powered, || ToolJobError::FeederOff)?;
+
     let talked = converse(
         bench,
         tools,

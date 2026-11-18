@@ -181,6 +181,7 @@ async fn a_cancel_stops_the_tool_and_takes_its_question_away() {
     let _one = ONE_SERVER.lock().await;
     let checkout = Checkout::new(0.0);
     stand_in(&checkout, "wellfed", WAITS);
+    checkout.board.lock().on[1] = true;
     let server = Running::start(checkout.open());
 
     let id = server.submit(&["restore-stock"]).await.unwrap();
@@ -223,6 +224,7 @@ echo 'Press Dispense now'
 i=0; while [ $i -lt 300 ]; do sleep 0.1; i=$((i+1)); done
 "#,
     );
+    checkout.board.lock().on[1] = true;
     let server = Running::start(checkout.open());
 
     let id = server.submit(&["restore-stock"]).await.unwrap();

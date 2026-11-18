@@ -47,6 +47,7 @@ use wellfed_bench_formats::banks::{Bank, Content, Source as Wrote};
 use wellfed_bench_formats::{CAPTURES, since_epoch};
 use wellfed_formats::require;
 use wellfed_formats::{STOCK_BACKUPS, VERIFICATION};
+use wellfed_relay::POWER;
 
 /// Each capture segment; the classifier reads it once it ends.
 const SEGMENT: Duration = Duration::from_secs(60);
@@ -137,6 +138,13 @@ pub enum OtaError {
         manifest: String,
         error: wellfed_formats::Error,
     },
+    /// Every offer, cancel and status read goes to the running feeder over
+    /// its device API, and an unpowered one never answers: the run would
+    /// only wait out its minutes. The bench switches no relay here.
+    #[error(
+        "Relay 1, the feeder's supply, is off: switch it on (`wellfed-bench on`) and let the feeder boot first; nothing was offered"
+    )]
+    FeederOff,
     /// `--fault give-way-only`: the push ended without the give-way.
     #[error("The give-way did not happen: {0}")]
     GiveWay(Arc<PushError>),
@@ -1142,6 +1150,7 @@ impl Bench {
     /// `ota --cancel`: one cancel over the device API, and what came of it.
     fn ota_cancel(&mut self, args: &OtaArgs) -> Result<u8> {
         self.status.step(CANCEL_STEP);
+        self.require_feeder_powered()?;
         let answer = self.tools.cancel_update(&args.keys, &args.config)?;
         match answer {
             crate::device::Answer::Update(view) => {
@@ -1297,6 +1306,9 @@ impl Bench {
     /// integration suite offers the result through its own server.
     pub fn ota_stage(&mut self, args: &OtaArgs, timing: &mut Timing) -> Result<Option<Staged>> {
         let plan = self.ota_plan(args, timing)?;
+        // After the arguments, before a build or the consumer check's read:
+        // nothing below can finish without a running feeder.
+        self.require_feeder_powered()?;
 
         if plan.build && !self.ota_build(args, &plan.review, timing)? {
             return Ok(None);
@@ -1340,6 +1352,13 @@ impl Bench {
 
         self.ota_sign(plan, &frozen, motion, target, timing)
             .map(Some)
+    }
+
+    /// Relay 1 reads on. The board's own reading, not the bench's record:
+    /// the operator or the board's RECOVER button may have cut it since.
+    fn require_feeder_powered(&mut self) -> Result<()> {
+        let powered = self.get(POWER)?;
+        require(powered, || OtaError::FeederOff.into())
     }
 
     /// A consumer image goes on the bench only when the feeder already lists

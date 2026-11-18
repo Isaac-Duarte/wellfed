@@ -209,8 +209,8 @@ impl JobCommand {
 
     /// Whether the job may switch relays. The over-the-air loop only
     /// captures, and the suite cold boots only with `--power`: the others
-    /// get a board that refuses every switch, as when they ran alone and
-    /// never opened it.
+    /// get a board that refuses every switch but still reads, so they can
+    /// refuse an unpowered feeder rather than wait on it.
     fn switches_relays(&self) -> bool {
         match self {
             Self::Ota(_) => false,
@@ -431,7 +431,7 @@ fn open(bed: &Bed, spec: &JobSpec, run: &Run) -> Result<Bench, JobError> {
     let relay = if spec.command.switches_relays() {
         Relay::of(Box::new(bed.board.clone()))
     } else {
-        Relay::detached()
+        Relay::read_only(Box::new(bed.board.clone()))
     };
     let tools = Processes::new(
         bed.root.clone(),
