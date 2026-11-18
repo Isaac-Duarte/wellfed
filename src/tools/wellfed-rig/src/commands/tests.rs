@@ -1560,7 +1560,7 @@ fn ota_installs_the_pinned_stock_review_by_its_payload_hash_without_health() {
     )
     .unwrap();
 
-    let mut rig = rig();
+    let mut rig = powered_rig();
     let mut args = plain_review(&rig);
     let review = rig.bench.root.join(VERIFICATION).join("stock-review");
     fs::create_dir_all(&review).unwrap();
