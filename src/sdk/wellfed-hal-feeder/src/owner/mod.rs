@@ -549,6 +549,7 @@ impl<S> Owner<S> {
             status.result = OwnerResult {
                 id: shared.mailbox.id,
                 requested: shared.mailbox.portions,
+                requester: shared.mailbox.requester,
                 ..OwnerResult::default()
             };
             status.intent_reserved = false;

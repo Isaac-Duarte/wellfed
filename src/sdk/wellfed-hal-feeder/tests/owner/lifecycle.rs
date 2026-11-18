@@ -10,6 +10,21 @@ use wellfed_core_feeder::feed::storage::{OwnerOutcome, OwnerRecovery};
 use wellfed_hal::sdk::{self, fake};
 use wellfed_hal_feeder::owner::{Owner, OwnerConfig, OwnerFault, OwnerState, SubmitResult};
 
+/// The requester a submission names is the owner's from the moment it is
+/// queued, through the step that takes it, as the journal reserves it.
+#[test]
+fn a_feed_carries_its_requester_from_the_queue() {
+    let f = boot();
+    let client = Requester([2, 0xab, 0xcd, 0x01, 0x02]);
+    assert_eq!(f.owner.submit(1, 1, client), SubmitResult::Enqueued);
+    let queued = f.status();
+    assert_eq!(queued.state, OwnerState::Queued);
+    assert_eq!(queued.result.requester, client, "queued");
+
+    f.step();
+    assert_eq!(f.status().result.requester, client, "taken");
+}
+
 #[test]
 fn serialized_lifecycle_and_durable_success() {
     let mut f = boot();

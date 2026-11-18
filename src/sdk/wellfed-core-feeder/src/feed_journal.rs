@@ -12,6 +12,10 @@
 //! feed a reset interrupted resolves under the requester it would have
 //! been recorded with had it finished.
 //!
+//! The requester joined major 1 in place before the beta rather than as a
+//! minor: an older build would carry its bytes forward unread onto its next
+//! reservation, naming the wrong asker for a feed it never knew.
+//!
 //! Bank 0 runs this journal for the life of the feeder, so its record only
 //! changes by additive minors in the spare room: the journal reads its
 //! units whole, so its length never changes within a major (a cut erase
