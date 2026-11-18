@@ -135,6 +135,19 @@ const FREERTOS_CONFIG: &str = "project/realtek_amebaD_va0_example/inc/inc_hp/Fre
 const FLASH_CONFIG: &str = "component/soc/realtek/amebad/fwlib/usrcfg/rtl8721dlp_flashcfg.c";
 /// Object suffixes the vendor makefiles leave beside a source.
 const OBJECT_SUFFIXES: [&str; 5] = [".o", ".d", ".i", ".s", ".su"];
+/// Included by every makefile a build runs (each core's `asdk` tree and
+/// `src/src_*`); only the menuconfig tools skip it.
+const MAKE_INCLUDE: &str = "Makefile.include.gen";
+/// The vendor recipes list ordered steps as sibling prerequisites (`all:
+/// CORE_TARGETS COPY_RAM_OBJS`, `image2: … make_subdirs linker_image2`) and
+/// rely on make running them left to right. GNU make 4.4 runs the
+/// prerequisites of a `.NOTPARALLEL` target one at a time while their own
+/// prerequisites, the objects, still compile in parallel, so `make -j` keeps
+/// the vendor order. These are every phony entry point the trees define with
+/// more than one prerequisite, and `all`'s callers.
+const SERIAL_STEPS: &str = "\n.NOTPARALLEL: all lib lib_lp lib_mp lib_all image2 image2_ns \
+    image3_s mp_image2_ns mp_image3_s ucps_image2 bootloader flashloader imgtool_flashloader \
+    rom rom_ns\n";
 
 fn project(path: &str) -> String {
     format!("{PROJECT}/{path}")
@@ -190,6 +203,8 @@ fn managed_sdk_paths(profile: Profile) -> BTreeSet<String> {
             hooks::SOURCE.to_string(),
             project("project_lp/asdk/Makefile"),
             project("project_hp/asdk/Makefile"),
+            project(&format!("project_lp/asdk/{MAKE_INCLUDE}")),
+            project(&format!("project_hp/asdk/{MAKE_INCLUDE}")),
             project("project_lp/asdk/ld/rlx8721d_img2.ld"),
             project("project_hp/asdk/ld/rlx8721d_img2_is.ld"),
             // Restored from the pinned revision before every application build.
@@ -692,6 +707,11 @@ fn rust_overlays(
             &format!("{anchor} {}", link_additions(model, core, &archive)),
             SdkAnchor::Image2LinkRule,
         )?;
+        overlay(sdk, &relative, &text, overrides)?;
+    }
+    for core in Core::BOTH {
+        let relative = project(&format!("project_{}/asdk/{MAKE_INCLUDE}", core.dir()));
+        let text = format!("{}{SERIAL_STEPS}", pinned(sdk, &relative)?);
         overlay(sdk, &relative, &text, overrides)?;
     }
     for directory in [

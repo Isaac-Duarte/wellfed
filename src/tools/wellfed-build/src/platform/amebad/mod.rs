@@ -521,9 +521,17 @@ impl Build<'_> {
 
         for core in Core::BOTH {
             println!("Building {}...", core.name());
-            // The vendor recipes aren't safe for parallel make; keep their default order.
+            // The vendor recipes are safe in parallel only with the overlay
+            // that serializes their steps (`sdk::SERIAL_STEPS`), which the
+            // Rust profiles apply; the baseline stays the unchanged SDK.
+            let jobs = if job.profile.has(Stage::Rust) {
+                std::thread::available_parallelism().map_or(1, usize::from)
+            } else {
+                1
+            };
             let status = Command::new("make")
                 .arg("all")
+                .arg(format!("-j{jobs}"))
                 .current_dir(
                     self.sdk
                         .join(PROJECT)

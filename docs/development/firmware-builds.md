@@ -13,6 +13,24 @@ The build wrapper supports **Linux x86_64 and aarch64**. Realtek's compiler is a
 - libclang, for bindgen;
 - the 32-bit loader and runtime that Realtek's i686 compiler needs.
 
+### On an Apple Silicon Mac running Asahi Linux
+
+Fedora Asahi ships FEX (`fex-emu`, registered with binfmt) and `muvm`. The kernel uses 16 KB pages and FEX needs 4 KB ones, so run every firmware command inside `muvm`. `make check` and the other host checks run outside it.
+
+1. Run the build with its output sent to a file inside the VM:
+
+   ```sh
+   muvm -e PATH -- bash -c "cd $PWD && make -C src/firmware/vendor firstboot > build-output.log 2>&1; echo EXIT \$? >> build-output.log"
+   ```
+
+   You should see the `EXIT` line at the end of `build-output.log`. `muvm` doesn't pass the command's output back when there is no terminal: it prints only `environment variable not found` and an IPv6 note, which you can ignore, and exits 0 whatever the build did. So read the file, not `muvm`'s exit status.
+
+2. Run one `muvm` command at a time. A second `muvm` call joins the VM already running instead of starting its own, and the two runs interfere. If you stop a build part way, check that no `muvm` process is left before you start another.
+
+`-e PATH` passes your `PATH` into the VM, so it finds rustup's `cargo` and `rustc`. The Realtek compiler then runs under FEX, at about one compile per CPU.
+
+A build stopped mid-compile can leave vendor outputs in its SDK worktree, and the next build of that profile refuses it ("SDK worktree has changes outside this profile's overrides"). Remove the worktree with `git -C private/upstream/ameba-rtos-d worktree remove --force` and that profile's `sdk` path, then build again.
+
 The builder is `wellfed-build` (`src/tools/wellfed-build`). The make targets build it and run it as its own executable, not through `cargo run`, which sets `RUSTUP_TOOLCHAIN`, which a firmware build refuses.
 
 ## Devices, firmwares and profiles
@@ -98,7 +116,7 @@ A consumer image trusts the release key, not the bench key, so once installed th
 
 5. To freeze the image for installing, continue with [development updates](uart-development.md).
 
-Builds run KM0 before KM4 and keep input and artifact hashes, logs and successful manifests. Bindgen gets the SDK and newlib paths from the wrapper through `WELLFED_SDK_DIR` and `WELLFED_NEWLIB_INCLUDE`.
+Builds run KM0 before KM4 and keep input and artifact hashes, logs and successful manifests. The Rust profiles compile each core's C in parallel, one job per CPU: an overlay of each core's `Makefile.include.gen` makes GNU make 4.4 or later run the vendor recipes' steps in their listed order while the objects under them compile together, and parallel builds match serial ones byte for byte. Older make reads the same overlay as "build serially". The baseline stays serial and unchanged. Bindgen gets the SDK and newlib paths from the wrapper through `WELLFED_SDK_DIR` and `WELLFED_NEWLIB_INCLUDE`.
 
 ### Where output goes
 

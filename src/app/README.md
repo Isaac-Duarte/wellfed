@@ -179,6 +179,23 @@ The versions this was built with:
 
 Then `make check-app` from the repository root regenerates the bindings and checks they are unchanged, formats, analyzes, runs the widget tests and builds a debug APK, and on a Linux or macOS host that desktop's app too. The bridge's own tests run in `make check`, against the simulated feeder.
 
+### On an Apple Silicon Mac running Asahi Linux
+
+Flutter runs natively on aarch64 Linux, but the Android NDK and build-tools' `aapt2` ship only for x86_64. They run under FEX, which needs 4 KB pages, so run `make check-app` inside `muvm` as the [firmware build guide](../../docs/development/firmware-builds.md#on-an-apple-silicon-mac-running-asahi-linux) describes: one `muvm` at a time, with output sent to a file.
+
+1. Install a full JDK (17 or newer, with `javac`), for example Eclipse Temurin for aarch64 in `~/.local/jdk-21`, and run `flutter config --jdk-dir ~/.local/jdk-21`. Fedora's default Java is a runtime only, and Gradle refuses it.
+2. Install the Android packages with `sdkmanager`. Compile SDK 37 is the package `platforms;android-37.0`.
+3. Run the check with Flutter, the SDK and the JDK passed into the VM:
+
+   ```sh
+   muvm -e PATH="$HOME/.local/flutter/bin:$PATH" -e ANDROID_HOME="$HOME/Android/Sdk" -e JAVA_HOME="$HOME/.local/jdk-21" -- \
+     bash -c "cd $PWD && make check-app > app-check.log 2>&1; echo EXIT \$? >> app-check.log"
+   ```
+
+   You should see `✓ Built build/app/outputs/flutter-apk/app-debug.apk` in `app-check.log`, then the Linux desktop build.
+
+The desktop build also needs the Ninja, GTK 3 and libsecret development packages listed above (`ninja-build`, `gtk3-devel` and `libsecret-devel` on Fedora). On an image-based Fedora such as Aurora, layer them with `rpm-ostree install` and reboot, or build inside a `toolbox` container.
+
 ## The Linux desktop app
 
 It is the same app, started with `flutter run -d linux`, or built with `flutter build linux` into `build/linux/x64/release/bundle/`. So far it starts and finds feeders on the LAN. Recovery over the LAN needs nothing more, but has not been walked on Linux yet. Bluetooth setup goes through the bridge's `btleplug` over BlueZ, the CLI's radio, and has not run against a feeder. The install, firmware updates and restores run as on the other desktops ([below](#installing-updating-and-restoring-on-a-computer)). Alerts post while the app is open ([on a computer](#on-a-computer)), through the desktop's notification server, which a bare window manager may not run.
