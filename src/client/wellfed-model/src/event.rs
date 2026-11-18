@@ -108,9 +108,12 @@ pub enum CoreEvent {
         /// How far the clock moved, when it was valid before.
         jump_ms: Option<i32>,
     },
-    /// Events the feeder could not record (its queue overflowed).
+    /// Events the feeder could not record (its queue overflowed, or the
+    /// ring refused them), `feeds` of them feeds' `Fed` results. Only a
+    /// `Fed` counts: a dropped `Missed` is no lost feed, since none ran.
     Lost {
         count: u16,
+        feeds: u16,
     },
     /// An install stopped before activation, a cancel among them.
     UpdateStop {

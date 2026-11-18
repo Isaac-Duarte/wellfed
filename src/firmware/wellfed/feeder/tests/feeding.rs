@@ -359,6 +359,7 @@ fn owner_records_decode_for_the_bench() {
                 outcome: OwnerOutcome::Cancelled,
                 reason: FeedReason::Cancelled,
                 motion_possible: false,
+                ..OwnerResult::default()
             },
             durability: Durability::Durable,
             trace: FeedTrace::default(),
@@ -437,6 +438,7 @@ fn a_feeds_result_and_its_current_are_logged() {
             outcome: OwnerOutcome::Done,
             reason: FeedReason::Done,
             motion_possible: false,
+            ..OwnerResult::default()
         },
         durability: Durability::Durable,
         trace,
@@ -511,6 +513,7 @@ fn a_feeds_records_fit_a_log_line_at_their_widest() {
         outcome: OwnerOutcome::Uncertain,
         reason: FeedReason::MarkStuck,
         motion_possible: true,
+        ..OwnerResult::default()
     };
     let feed = u64::MAX;
     let interlock = interlock::Status {

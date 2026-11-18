@@ -342,7 +342,10 @@ sealed class HistoryBody with _$HistoryBody {
   }) = HistoryBody_Revoked;
   const factory HistoryBody.clockSet({required FedBy by}) =
       HistoryBody_ClockSet;
-  const factory HistoryBody.lost({required int count}) = HistoryBody_Lost;
+
+  /// Events the feeder could not record, `feeds` of them feeds' results.
+  const factory HistoryBody.lost({required int count, required int feeds}) =
+      HistoryBody_Lost;
   const factory HistoryBody.feedingBlocked({Blocked? reason}) =
       HistoryBody_FeedingBlocked;
   const factory HistoryBody.mealSoon({

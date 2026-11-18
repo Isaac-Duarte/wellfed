@@ -17,7 +17,7 @@ use wellfed_core::store::slot::{RECORD_BYTES, SlotIo, crc32};
 use wellfed_core_feeder::feed::controller::{FeedReason, FeedRequest};
 use wellfed_core_feeder::feed::progress::{BowlMode, Direction};
 use wellfed_core_feeder::feed::storage::{
-    OwnerOutcome, OwnerRecovery, OwnerResult, OwnerStorage, RotorPhase,
+    OwnerOutcome, OwnerRecovery, OwnerResult, OwnerStorage, Requester, RotorPhase,
 };
 use wellfed_core_feeder::feed_journal::{
     FeedJournal, JournalConfig, JournalError, REQUEST_ID_AT, REQUEST_ID_END,
@@ -35,6 +35,11 @@ const CONFIG: JournalConfig = JournalConfig {
     max_portions: 3,
 };
 
+/// Who asks for every feed these tests reserve, in the product's encoding
+/// (a client by its key fingerprint), so every torn write below covers the
+/// requester's bytes too.
+const CLIENT: Requester = Requester([2, 0xab, 0xcd, 0x01, 0x02]);
+
 fn request(j: &FeedJournal<FlashIo>, id: u64) -> FeedRequest {
     FeedRequest {
         id,
@@ -44,6 +49,7 @@ fn request(j: &FeedJournal<FlashIo>, id: u64) -> FeedRequest {
         credit_next_event: j.view.recovery.credit_next_event,
         phase_known: j.view.recovery.phase_known,
         homing: false,
+        requester: CLIENT,
     }
 }
 
@@ -234,7 +240,13 @@ fn invalid_arguments() {
         outcome: OwnerOutcome::Done,
         reason: FeedReason::Done,
         motion_possible: true,
+        requester: CLIENT,
     };
+
+    // A result keeps its reservation's requester.
+    result.requester = Requester::NONE;
+    assert!(!j.finish(&result, &phase));
+    result.requester = CLIENT;
 
     result.id = 6;
     assert!(!j.finish(&result, &phase));
@@ -851,6 +863,7 @@ fn assert_resolved(j: &FeedJournal<FlashIo>, sequence: u64) {
             outcome: OwnerOutcome::Uncertain,
             reason: FeedReason::None,
             motion_possible: true,
+            requester: CLIENT,
         }
     );
     assert_eq!(v.recovery.high_water_id, 42);
@@ -1002,6 +1015,8 @@ fn a_torn_record_beside_a_pending_one_resolves_but_a_foreign_one_faults() {
             outcome: OwnerOutcome::Uncertain,
             reason: FeedReason::None,
             motion_possible: true,
+            // Lost with the cut record: nobody is known to have asked.
+            requester: Requester::NONE,
         }
     );
     assert_eq!(reopen(&mut f, &mut j, &CONFIG), JournalError::Ok);

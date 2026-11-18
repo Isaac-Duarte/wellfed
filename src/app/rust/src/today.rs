@@ -202,7 +202,7 @@ pub(crate) fn event_entry(event: &Event) -> HistoryEntry {
         EventBody::Core(CoreEvent::ClockSync { by, .. }) => {
             HistoryBody::ClockSet { by: source_of(by) }
         }
-        EventBody::Core(CoreEvent::Lost { count }) => HistoryBody::Lost { count },
+        EventBody::Core(CoreEvent::Lost { count, feeds }) => HistoryBody::Lost { count, feeds },
         EventBody::Feeder(FeederEvent::FeedingBlocked { reason }) => {
             HistoryBody::FeedingBlocked { reason }
         }

@@ -25,7 +25,7 @@ use super::alerts::Alerts;
 use super::supply::Radio;
 use crate::stats::Totals;
 use wellfed_device::io::{Accepted, BleDrop, BleLink, Datagram, Received};
-use wellfed_device::store::events::{BODY_BYTES, EventsFill, Read};
+use wellfed_device::store::events::{BODY_BYTES, Dropped, EventsFill, Read};
 use wellfed_device::store::net::BuildWifi;
 use wellfed_device::store::traces::{TraceRead, TracesFill};
 use wellfed_device_api::Reader;
@@ -280,9 +280,9 @@ pub trait Platform {
     /// the queue has no `slot` left.
     fn queue_event(&mut self, at: Option<u32>, body: [u8; BODY_BYTES], slot: EventSlot) -> bool;
     /// Records dropped since the last call (by the queue, or by the ring
-    /// refusing them), once the queue has a slot for the `Lost` event that
-    /// reports them; 0 until then.
-    fn take_lost(&mut self) -> u32;
+    /// refusing them), and the feeds' results among them, once the queue
+    /// has a slot for the `Lost` event that reports them; none until then.
+    fn take_lost(&mut self) -> Dropped;
     /// The oldest event the settings writer appended itself (a client store
     /// change's) that the loop has not yet taken: its time and body, for
     /// the alert rules.

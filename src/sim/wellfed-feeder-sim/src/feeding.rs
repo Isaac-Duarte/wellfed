@@ -80,7 +80,9 @@ use wellfed_core_feeder::feed::controller::{FeedReason, FeedRequest};
 use wellfed_core_feeder::feed::food_read::{FoodReads, FoodStep, FoodView};
 use wellfed_core_feeder::feed::observe::Observation;
 use wellfed_core_feeder::feed::progress::{BowlMode, Direction};
-use wellfed_core_feeder::feed::storage::{OwnerOutcome, OwnerRecovery, OwnerResult, RotorPhase};
+use wellfed_core_feeder::feed::storage::{
+    OwnerOutcome, OwnerRecovery, OwnerResult, Requester, RotorPhase,
+};
 use wellfed_core_feeder::feed_journal::{FeedJournal, JournalConfig, JournalError};
 use wellfed_core_feeder::floor::Floor;
 use wellfed_feeder::trace::DriveFigures;
@@ -445,6 +447,7 @@ impl Inner {
             credit_next_event: recovery.credit_next_event,
             phase_known: recovery.phase_known,
             homing: false,
+            requester: self.result.requester,
         };
         if !journal.reserve(&request) {
             // Nothing ran: the adapter answers the feed refused.
@@ -585,7 +588,7 @@ impl FeedOwner for SimOwner {
         }
     }
 
-    fn submit(&self, id: u64, portions: u16) -> SubmitResult {
+    fn submit(&self, id: u64, portions: u16, requester: Requester) -> SubmitResult {
         let mut inner = self.inner.borrow_mut();
         if inner.state == OwnerState::Fault {
             return SubmitResult::RejectStopped;
@@ -604,6 +607,7 @@ impl FeedOwner for SimOwner {
         inner.result = OwnerResult {
             id,
             requested: portions,
+            requester,
             ..OwnerResult::default()
         };
         inner.intent_reserved = false;

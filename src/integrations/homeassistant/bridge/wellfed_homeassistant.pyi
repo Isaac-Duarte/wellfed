@@ -286,8 +286,8 @@ class Feed:
     @property
     def by(self, /) -> By | None:
         """
-        Who asked; `None` for a feed a reset interrupted, whose requester
-        the feeder's journal does not keep.
+        Who asked; `None` for a feed a reset interrupted whose journal
+        record the cut lost too, so the feeder could not say who asked.
         """
     @property
     def client(self, /) -> str | None:

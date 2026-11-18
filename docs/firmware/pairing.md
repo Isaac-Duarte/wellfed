@@ -126,7 +126,7 @@ A store never writes over a record of its own it can't read, with four exception
 
 | Store | Major | Size | Spare room |
 | --- | --- | --- | --- |
-| Feed journal | 1 | 128 B | bytes 48–120, of which 48–80 are kept for a durable request id and its feed's id |
+| Feed journal | 1 | 128 B | bytes 56–120, of which 56–88 are kept for a durable request id and its feed's id (48–53 hold the feed's requester, 53–56 zero) |
 | Settings, the device's (`PLFSET01`) | 5 | 128 B | bytes 40–120 |
 | Settings, the feeder's (`PLFFDS01`) | 1 | 128 B | bytes 36–120 |
 | Clients | 1 | 584 B | past the record's end |
@@ -135,6 +135,8 @@ A store never writes over a record of its own it can't read, with four exception
 | Lifetime statistics | 2 (minor 1) | 320 B | bytes 288–312 |
 
 **The settings split, November 9, 2026.** The feeder's fields left the device's settings record (major 4 to 5) for a record of their own in sectors 48 and 49. No build migrates them, so the bench clears the old state: write the new build over UART to bank 0 as well as bank 1, since a bank 0 that reads major 4 would find the new major 5 record and open its settings read-only, and erase sectors 2–3 and 48–49 (`0x342000`–`0x344000`, `0x370000`–`0x372000`) in the same session. A Reset hold after the first boot does the same, with the rest of the factory reset. Without either, the old record still reads as an older major and the settings open on their defaults.
+
+**The journal's requester, November 18, 2026.** The feed journal's record took the feed's requester at bytes 48–53 in place, at major 1, before the beta, so a feed a reset interrupted names who asked. A new build reads an older record as naming nobody. An older build reads a new record as corrupt and stops feeding, failing closed, so write the new build over UART to bank 0 as well as bank 1. If an older build is ever flashed back, erase the journal's sectors 0–1 (`0x340000`–`0x342000`) over UART: a Reset hold and the hand-over to stock both keep the journal. Erasing it starts feed ids again at 1 while the event ring and a stored plan claim keep the old ones, so follow it with a Reset hold, or erase the ring (sectors 13–24, `0x34D000`–`0x359000`) and the plans (sectors 11–12, `0x34B000`–`0x34D000`) in the same session, so the history starts a new epoch.
 
 ## Clients
 

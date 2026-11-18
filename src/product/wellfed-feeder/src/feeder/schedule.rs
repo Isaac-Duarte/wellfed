@@ -639,15 +639,23 @@ impl Schedule {
         false
     }
 
-    /// The stored claim behind a restart's uncertain feed, which the
-    /// resolution reports as the feeder's own: the feed that followed the
-    /// claim's high water is the claimed occurrence's.
+    /// The stored claim behind a restart's uncertain feed: the feed that
+    /// followed the claim's high water is the claimed occurrence's. The
+    /// journal names the plan that reserved it; a reservation whose record
+    /// a cut lost names nobody, which the resolution reports as the
+    /// feeder's own, and the claim still says whose it was.
     pub fn claim_behind<P: Platform>(platform: &mut P, feed: u32, by: Source) -> Option<Claim> {
         let PlansResult::Current { view, .. } = platform.plans() else {
             return None;
         };
-        view.claim
-            .filter(|claim| by == Source::Feeder && claim.high_water.wrapping_add(1) == feed)
+        view.claim.filter(|claim| {
+            let claimed = match by {
+                Source::Feeder => true,
+                Source::Schedule(plan) => plan == claim.plan,
+                Source::Panel | Source::Client(_) => false,
+            };
+            claimed && claim.high_water.wrapping_add(1) == feed
+        })
     }
 }
 

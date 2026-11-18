@@ -13,7 +13,7 @@ use core::ops::Deref;
 
 use wellfed_core_feeder::feed::food_read::FoodReads;
 use wellfed_core_feeder::feed::observe::Observation;
-use wellfed_core_feeder::feed::storage::{OwnerResult, OwnerStorage, RotorPhase};
+use wellfed_core_feeder::feed::storage::{OwnerResult, OwnerStorage, Requester, RotorPhase};
 use wellfed_feeder::feed::{self, Durability};
 use wellfed_feeder::feeder::{Feeds, Marks, RefusedClaim};
 use wellfed_feeder::trace::DriveFigures;
@@ -34,7 +34,8 @@ pub trait FeedOwner {
     /// stepped again at the next pass (stopped, or refused).
     fn step(&self) -> Option<u32>;
     fn status(&self) -> OwnerStatus;
-    fn submit(&self, id: u64, portions: u16) -> SubmitResult;
+    /// `requester` is who asked, which the journal reserves with the feed.
+    fn submit(&self, id: u64, portions: u16, requester: Requester) -> SubmitResult;
     fn cancel(&self, id: u64) -> bool;
     fn acknowledge(&self, id: u64) -> bool;
     fn high_water_id(&self) -> u64;
@@ -59,8 +60,8 @@ impl<S: OwnerStorage> FeedOwner for Owner<S> {
         Owner::status(self)
     }
 
-    fn submit(&self, id: u64, portions: u16) -> SubmitResult {
-        Owner::submit(self, id, portions)
+    fn submit(&self, id: u64, portions: u16, requester: Requester) -> SubmitResult {
+        Owner::submit(self, id, portions, requester)
     }
 
     fn cancel(&self, id: u64) -> bool {
@@ -560,8 +561,9 @@ impl State {
         });
         // The journal holds the id under the high water `submit` checks.
         let number = u32::try_from(feed).unwrap_or(u32::MAX);
-        // Its trace, if it had one, was lost with the RAM it was in.
-        let body = feed::interrupted(number, &status.result, Source::Feeder);
+        // Its trace, if it had one, was lost with the RAM it was in. Who
+        // asked is the journal's.
+        let body = feed::interrupted(number, &status.result);
         outcome(body, None);
     }
 
@@ -596,7 +598,7 @@ impl State {
             return Err(Refusal::Busy);
         }
 
-        let result = owner.submit(feed, u16::from(portions));
+        let result = owner.submit(feed, u16::from(portions), feed::requester(by));
         rt.record(Record::Submitted {
             feed,
             portions,

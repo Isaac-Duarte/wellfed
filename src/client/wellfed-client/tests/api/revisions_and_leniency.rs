@@ -33,7 +33,7 @@ fn a_major_2_hello_gets_the_typed_version_refusal() {
 fn a_newer_build_s_event_comes_out_unknown_and_moves_the_cursor() {
     let mut rig = Rig::new();
     for count in 1..=3 {
-        rig.device.record(0, EventBody::Lost { count });
+        rig.device.record(0, EventBody::Lost { count, feeds: 0 });
     }
     let mut unknown = [0; proto::EVENT_BODY_MAX];
     unknown[..3].copy_from_slice(&[0xf0, 0x01, 0x07]);
@@ -126,7 +126,7 @@ fn every_body() -> Vec<EventBody> {
         },
         EventBody::Revoked { client: [1; 4], by },
         EventBody::ClockSync { by, jump_ms: None },
-        EventBody::Lost { count: 1 },
+        EventBody::Lost { count: 1, feeds: 0 },
         EventBody::Fed {
             feed: 1,
             requested: 1,
@@ -204,11 +204,11 @@ fn every_subscriber_receives_every_body() {
         rig.device.record(0, *body);
     }
     // A last event, so the session knows it has seen everything.
-    rig.device.record(0, EventBody::Lost { count: 9 });
+    rig.device.record(0, EventBody::Lost { count: 9, feeds: 0 });
     let all: Vec<EventBody> = bodies
         .iter()
         .copied()
-        .chain([EventBody::Lost { count: 9 }])
+        .chain([EventBody::Lost { count: 9, feeds: 0 }])
         .collect();
 
     let mut member = live(&mut rig, MEMBER);
@@ -219,7 +219,7 @@ fn every_subscriber_receives_every_body() {
         .unwrap();
     drive(&mut rig, &mut member, |live| {
         pushed(live).last().map(|e| EventBody::try_from(e.body))
-            == Some(Ok(EventBody::Lost { count: 9 }))
+            == Some(Ok(EventBody::Lost { count: 9, feeds: 0 }))
     })
     .unwrap();
 

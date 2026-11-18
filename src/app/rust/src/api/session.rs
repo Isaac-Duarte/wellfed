@@ -181,8 +181,10 @@ pub enum HistoryBody {
     ClockSet {
         by: FedBy,
     },
+    /// Events the feeder could not record, `feeds` of them feeds' results.
     Lost {
         count: u16,
+        feeds: u16,
     },
     FeedingBlocked {
         reason: Option<Blocked>,

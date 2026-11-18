@@ -26,9 +26,15 @@ fn journal_success_and_reboot_preserve_ids() {
 
     restart_with_journal(&mut f);
     assert!(f.status().state == OwnerState::Idle && f.status().high_water_id == 1);
-    assert_eq!(f.owner.submit(1, 1), SubmitResult::RejectId);
+    assert_eq!(
+        f.owner.submit(1, 1, Requester::NONE),
+        SubmitResult::RejectId
+    );
 
-    assert_eq!(f.owner.submit(2, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(2, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     assert!(f.owner.cancel(2));
     f.step();
     assert!(f.status().result_durable && f.journal.view.result.id == 2);
@@ -47,7 +53,10 @@ fn journal_success_and_reboot_preserve_ids() {
 
     assert!(f.owner.acknowledge(1));
     f.advance(1);
-    assert_eq!(f.owner.submit(2, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(2, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     f.advance(6);
     assert_eq!(f.status().state, OwnerState::Feeding);
 
@@ -58,7 +67,10 @@ fn journal_success_and_reboot_preserve_ids() {
 
     restart_with_journal(&mut f);
     assert!(f.status().state == OwnerState::Idle && !f.status().phase_known);
-    assert_eq!(f.owner.submit(3, 1), SubmitResult::RejectPhase);
+    assert_eq!(
+        f.owner.submit(3, 1, Requester::NONE),
+        SubmitResult::RejectPhase
+    );
     f.stop();
 }
 
@@ -77,7 +89,10 @@ fn the_rotor_phase_follows_each_feed_and_the_journal() {
     assert!(f.owner.acknowledge(1));
     f.advance(1);
 
-    assert_eq!(f.owner.submit(2, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(2, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     f.advance(6);
     assert_eq!(f.status().state, OwnerState::Feeding);
     assert!(!f.task().request.homing);
@@ -92,7 +107,10 @@ fn the_rotor_phase_follows_each_feed_and_the_journal() {
     restart_with_journal(&mut f);
     assert_eq!(f.status().state, OwnerState::Idle);
     assert_eq!(f.status().phase, RotorPhase::Unknown);
-    assert_eq!(f.owner.submit(3, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(3, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     f.step();
     assert!(f.task().request.homing);
     f.stop();
@@ -113,7 +131,10 @@ fn a_reboot_after_a_completed_feed_reads_the_rotor_at_a_mark() {
     restart_with_journal(&mut f);
     assert_eq!(f.status().state, OwnerState::Idle);
     assert_eq!(f.status().phase, RotorPhase::AtMark);
-    assert_eq!(f.owner.submit(2, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(2, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     f.step();
     assert!(!f.task().request.homing);
     f.stop();
@@ -150,14 +171,20 @@ fn a_torn_result_resolves_as_uncertain_at_the_next_boot() {
     // A resolved reservation stays resolved.
     restart_with_journal(&mut f);
     assert!(f.status().state == OwnerState::Idle && f.resolve_calls == 1);
-    assert_eq!(f.owner.submit(1, 1), SubmitResult::RejectId);
+    assert_eq!(
+        f.owner.submit(1, 1, Requester::NONE),
+        SubmitResult::RejectId
+    );
     f.stop();
 
     let mut f = boot_with_journal(false);
     // The final commit reaches media, but its callback reports failure: the
     // drive never started, but the journal holds the reservation.
     f.flash.budget = (UNIT + RECORD_BYTES) as i64;
-    assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(1, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     f.step();
     assert!(f.status().state == OwnerState::Fault && !f.status().result.motion_possible);
     assert!(f.status().stopped && f.status().optics_off && f.finish_calls == 0);
@@ -235,7 +262,10 @@ fn boot_on<R: Send + 'static>(
 /// budget may cut at any of its journal writes; then the reset.
 fn feed(f: &mut Fixture) {
     assert_eq!(f.status().state, OwnerState::Idle);
-    assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(1, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     f.step();
     f.advance(5);
     f.complete();
@@ -244,7 +274,10 @@ fn feed(f: &mut Fixture) {
 /// A feed that is driving when the reset comes.
 fn reset_mid_feed(dual: bool) -> Vec<Vec<u8>> {
     let (flash, _, during) = boot_on(Vec::new(), dual, -1, |f| {
-        assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+        assert_eq!(
+            f.owner.submit(1, 1, Requester::NONE),
+            SubmitResult::Enqueued
+        );
         f.step();
         f.advance(5);
         f.status()
@@ -266,18 +299,30 @@ fn a_reset_mid_feed_resolves_as_uncertain_and_the_owner_opens() {
             assert_eq!(f.journal.view.recovery.phase_known, !dual);
             assert_eq!(motor_pins(), MOTOR_MASK);
 
-            assert_eq!(f.owner.submit(2, 1), SubmitResult::RejectBusy);
+            assert_eq!(
+                f.owner.submit(2, 1, Requester::NONE),
+                SubmitResult::RejectBusy
+            );
             assert!(f.owner.acknowledge(1));
             f.step();
             assert_eq!(f.status().state, OwnerState::Idle);
-            assert_eq!(f.owner.submit(1, 1), SubmitResult::RejectId);
+            assert_eq!(
+                f.owner.submit(1, 1, Requester::NONE),
+                SubmitResult::RejectId
+            );
             if dual {
                 // Interrupted motion leaves a double bowl's phase unknown.
-                assert_eq!(f.owner.submit(2, 1), SubmitResult::RejectPhase);
+                assert_eq!(
+                    f.owner.submit(2, 1, Requester::NONE),
+                    SubmitResult::RejectPhase
+                );
                 return;
             }
 
-            assert_eq!(f.owner.submit(2, 1), SubmitResult::Enqueued);
+            assert_eq!(
+                f.owner.submit(2, 1, Requester::NONE),
+                SubmitResult::Enqueued
+            );
             f.step();
             f.advance(5);
             f.complete();
@@ -336,7 +381,10 @@ fn a_power_cut_creating_the_journal_leaves_a_feeder_that_feeds() {
         let (_, writes, ()) = boot_on(flash, false, -1, |f| {
             let s = f.status();
             assert!(s.state == OwnerState::Idle && s.high_water_id == 1);
-            assert_eq!(f.owner.submit(1, 1), SubmitResult::RejectId);
+            assert_eq!(
+                f.owner.submit(1, 1, Requester::NONE),
+                SubmitResult::RejectId
+            );
         });
         assert_eq!(writes, 0);
     }
@@ -347,7 +395,10 @@ fn a_power_cut_at_any_journal_write_of_a_feed_resolves_at_the_next_boot() {
     let (fresh, _, ()) = boot_on(Vec::new(), false, -1, |_| ());
     let (_, total, ()) = boot_on(fresh.clone(), false, -1, feed);
     let (_, reserving, ()) = boot_on(fresh.clone(), false, -1, |f| {
-        assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+        assert_eq!(
+            f.owner.submit(1, 1, Requester::NONE),
+            SubmitResult::Enqueued
+        );
         f.step();
         assert!(f.status().intent_reserved);
     });
@@ -383,7 +434,11 @@ fn a_power_cut_at_any_journal_write_of_a_feed_resolves_at_the_next_boot() {
                 state => panic!("cut {cut}: {state:?}"),
             };
             assert_eq!(f.status().state, OwnerState::Idle, "cut {cut}");
-            assert_eq!(f.owner.submit(next, 1), SubmitResult::Enqueued, "cut {cut}");
+            assert_eq!(
+                f.owner.submit(next, 1, Requester::NONE),
+                SubmitResult::Enqueued,
+                "cut {cut}"
+            );
         });
     }
 }

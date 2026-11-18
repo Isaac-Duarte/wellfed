@@ -934,7 +934,7 @@ fn messages() -> Vec<Fixture> {
                 Event {
                     seq: 302,
                     at: Some(1_792_674_060),
-                    body: EventBody::Lost { count: 3 },
+                    body: EventBody::Lost { count: 3, feeds: 1 },
                 },
             ]),
             feeder,

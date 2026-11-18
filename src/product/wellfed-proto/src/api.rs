@@ -1818,9 +1818,12 @@ pub enum EventBody {
         /// How far the clock moved, saturated to i32 (about 24 days).
         jump_ms: Option<i32>,
     },
-    /// Events the feeder could not record (its queue overflowed).
+    /// Events the feeder could not record (its queue overflowed, or the
+    /// ring refused them), `feeds` of them feeds' results: a client says
+    /// feeds are gone only when `feeds` is above zero.
     Lost {
         count: u16,
+        feeds: u16,
     },
     /// A feed ended. `completed` counts the portions the feedback sensor
     /// confirmed. `hopper` is what the food beam read during it: a feed
@@ -3289,7 +3292,7 @@ mod tests {
         let next = Event {
             seq: 3,
             at: None,
-            body: EventBody::Lost { count: 1 },
+            body: EventBody::Lost { count: 1, feeds: 0 },
         };
         let mut buf = [0; 128];
         let mut writer = EventBatchWriter::new(&mut buf);
@@ -3367,7 +3370,7 @@ mod tests {
         let lost = Event {
             seq: 1,
             at: None,
-            body: EventBody::Lost { count: 1 },
+            body: EventBody::Lost { count: 1, feeds: 0 },
         };
         writer.push(&RawEvent::encode(&lost).unwrap()).unwrap();
         let mut bytes = writer.batch().as_bytes().to_vec();
@@ -3416,7 +3419,10 @@ mod tests {
                 by: Source::Client(client),
                 jump_ms: Some(i32::MIN),
             },
-            EventBody::Lost { count: u16::MAX },
+            EventBody::Lost {
+                count: u16::MAX,
+                feeds: u16::MAX,
+            },
             EventBody::Fed {
                 feed: u32::MAX,
                 requested: u8::MAX,

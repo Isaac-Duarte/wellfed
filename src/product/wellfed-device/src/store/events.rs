@@ -39,6 +39,7 @@
 use core::ffi::c_uint;
 
 use wellfed_core::store::slot::{SlotIo, crc32, get_u32, put_u32};
+use wellfed_proto::api::EventBody;
 
 /// The event ring's fill, for the statistics.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -60,6 +61,66 @@ const CRC_AT: usize = 28;
 
 /// Units the log tracks at most.
 pub const MAX_UNITS: usize = 12;
+
+/// Events dropped before they reached the ring, and how many of them were
+/// feeds' results: what a `Lost` event reports, so a client says feeds are
+/// gone only when some were.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Dropped {
+    pub events: u32,
+    pub feeds: u32,
+}
+
+impl Dropped {
+    pub const NONE: Self = Self {
+        events: 0,
+        feeds: 0,
+    };
+    /// One event, not a feed's.
+    pub const EVENT: Self = Self {
+        events: 1,
+        feeds: 0,
+    };
+
+    /// The events `body` stands for: one, a feed's or not, or for a `Lost`
+    /// the events it reported.
+    pub fn of(body: &EventBody) -> Self {
+        match *body {
+            EventBody::Lost { count, feeds } => Self {
+                events: u32::from(count),
+                feeds: u32::from(feeds),
+            },
+            EventBody::Fed { .. } => Self {
+                events: 1,
+                feeds: 1,
+            },
+            _ => Self::EVENT,
+        }
+    }
+
+    /// As [`Self::of`] for a queued body; one that does not decode is one
+    /// event, not a feed's.
+    pub fn of_bytes(body: &[u8; BODY_BYTES]) -> Self {
+        wellfed_proto::decode_padded::<EventBody>(body).map_or(Self::EVENT, |body| Self::of(&body))
+    }
+
+    /// Both counts added, each saturating.
+    #[must_use]
+    pub const fn plus(self, other: Self) -> Self {
+        Self {
+            events: self.events.saturating_add(other.events),
+            feeds: self.feeds.saturating_add(other.feeds),
+        }
+    }
+
+    /// The `Lost` event that reports these, each count saturated to its
+    /// field; never more feeds than events.
+    pub fn event(self) -> EventBody {
+        let count = u16::try_from(self.events).unwrap_or(u16::MAX);
+        let feeds = u16::try_from(self.feeds.min(self.events)).unwrap_or(u16::MAX);
+        EventBody::Lost { count, feeds }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Record {

@@ -72,11 +72,11 @@ _Words _describe(BuildContext context, FeederController feeder, HistoryBody body
       'Clock set',
       by is FedBy_Feeder ? 'From its time server' : who(by),
     ),
-    HistoryBody_Lost(:final int count) => loud(
+    HistoryBody_Lost(:final int count, :final int feeds) => loud(
       Glyph.warning,
       c.warning,
       "Some events weren't kept",
-      '$count could not be recorded',
+      lostWords(count, feeds),
     ),
     HistoryBody_Gap() => quiet(Glyph.info, "Some events here weren't kept", ''),
     HistoryBody_FeedingBlocked(reason: Blocked.setup) => quiet(
@@ -132,4 +132,12 @@ String missedText(MissedReason reason) => switch (reason) {
   },
   MissedReason_Interrupted() => 'The feeder stopped first',
   MissedReason_Unknown() => 'For a reason this app does not know',
+};
+
+/// Events the feeder could not record. It counts the feeds among them, so
+/// feeds are named only when some were lost.
+String lostWords(int count, int feeds) => switch (feeds) {
+  0 => '$count could not be recorded',
+  1 => '$count could not be recorded, a feed among them',
+  _ => '$count could not be recorded, $feeds feeds among them',
 };

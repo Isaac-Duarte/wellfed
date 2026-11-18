@@ -6000,7 +6000,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 10:
         return HistoryBody_ClockSet(by: dco_decode_box_autoadd_fed_by(raw[1]));
       case 11:
-        return HistoryBody_Lost(count: dco_decode_u_16(raw[1]));
+        return HistoryBody_Lost(
+          count: dco_decode_u_16(raw[1]),
+          feeds: dco_decode_u_16(raw[2]),
+        );
       case 12:
         return HistoryBody_FeedingBlocked(
           reason: dco_decode_opt_box_autoadd_blocked(raw[1]),
@@ -10106,7 +10109,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return HistoryBody_ClockSet(by: var_by);
       case 11:
         var var_count = sse_decode_u_16(deserializer);
-        return HistoryBody_Lost(count: var_count);
+        var var_feeds = sse_decode_u_16(deserializer);
+        return HistoryBody_Lost(count: var_count, feeds: var_feeds);
       case 12:
         var var_reason = sse_decode_opt_box_autoadd_blocked(deserializer);
         return HistoryBody_FeedingBlocked(reason: var_reason);
@@ -14904,9 +14908,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case HistoryBody_ClockSet(by: final by):
         sse_encode_i_32(10, serializer);
         sse_encode_box_autoadd_fed_by(by, serializer);
-      case HistoryBody_Lost(count: final count):
+      case HistoryBody_Lost(count: final count, feeds: final feeds):
         sse_encode_i_32(11, serializer);
         sse_encode_u_16(count, serializer);
+        sse_encode_u_16(feeds, serializer);
       case HistoryBody_FeedingBlocked(reason: final reason):
         sse_encode_i_32(12, serializer);
         sse_encode_opt_box_autoadd_blocked(reason, serializer);

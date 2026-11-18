@@ -525,6 +525,7 @@ impl<S: OwnerStorage> OwnerTask<S> {
                 phase_known: self.recovery.phase_known,
                 homing: self.config.bowl_mode == BowlMode::Single
                     && self.phase == RotorPhase::Unknown,
+                requester: mailbox.requester,
             };
             self.queued_at = mailbox.queued_at;
 
@@ -539,6 +540,7 @@ impl<S: OwnerStorage> OwnerTask<S> {
             self.result = OwnerResult {
                 id: self.request.id,
                 requested: self.request.portions,
+                requester: self.request.requester,
                 ..OwnerResult::default()
             };
             // A fresh beat at rest before the active gap applies, so a loop

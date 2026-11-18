@@ -42,6 +42,7 @@
 //! nowhere.
 
 use crate::feed::progress::{BowlMode, Direction, FeedProgress, ProgressResult};
+use crate::feed::storage::Requester;
 use wellfed_core::{HALF_RANGE, interval_valid};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -268,6 +269,8 @@ pub struct FeedRequest {
     /// SINGLE_BOWL only: the rotor may rest between marks, so the first
     /// mark inside the inhibit window homes it, uncredited.
     pub homing: bool,
+    /// Who asked, which the journal reserves with the feed.
+    pub requester: Requester,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

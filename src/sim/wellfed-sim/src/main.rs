@@ -28,7 +28,9 @@ use wellfed_core::store::slot::SlotIo;
 use wellfed_core_feeder::feed::controller::FeedRequest;
 use wellfed_core_feeder::feed::food_read::FoodReads;
 use wellfed_core_feeder::feed::progress::{BowlMode, Direction};
-use wellfed_core_feeder::feed::storage::{OwnerRecovery, OwnerResult, OwnerStorage, RotorPhase};
+use wellfed_core_feeder::feed::storage::{
+    OwnerRecovery, OwnerResult, OwnerStorage, Requester, RotorPhase,
+};
 use wellfed_core_feeder::feed_journal::{FeedJournal, JournalConfig, JournalError};
 use wellfed_hal::interlock::{
     ClaimStep, ClaimWait, INTERLOCK, WRITER_POLL_MS, WriteStep, WriteTurn,
@@ -817,8 +819,10 @@ fn submit(id: u64, portions: u16) -> Submission {
             }
         }
     }
+    // The harness drives the SDK's owner below any product, so nobody is
+    // named as asking.
     // SAFETY: see `w`.
-    let result = unsafe { (*w()).owner.submit(id, portions) };
+    let result = unsafe { (*w()).owner.submit(id, portions, Requester::NONE) };
     code(result.code())
 }
 

@@ -21,7 +21,7 @@ use wellfed_core::supply::Reading;
 use wellfed_core::tone::Tune;
 use wellfed_device::io::{Accepted, BleDrop, BleLink, Datagram, Received};
 use wellfed_device::store;
-use wellfed_device::store::events::{BODY_BYTES, EventsFill, Read};
+use wellfed_device::store::events::{BODY_BYTES, Dropped, EventsFill, Read};
 use wellfed_device::store::net::BuildWifi;
 use wellfed_device::store::traces::{TraceRead, TracesFill};
 use wellfed_device_api::Reader;
@@ -372,7 +372,7 @@ impl Platform for Plaf103 {
         }
     }
 
-    fn take_lost(&mut self) -> u32 {
+    fn take_lost(&mut self) -> Dropped {
         events::take_lost()
     }
 

@@ -43,7 +43,7 @@ fn a_subscriber_reads_every_event_after_its_cursor_and_learns_of_a_gap() {
     assert_eq!(seen, [(1, 2), (3, 0), (4, 0), (5, 0)]);
 
     // A new event reaches the subscriber live.
-    rig.device.record(0, EventBody::Lost { count: 1 });
+    rig.device.record(0, EventBody::Lost { count: 1, feeds: 0 });
     let mut live = None;
     run(&mut rig, &mut owner, |session| {
         if let Some(Incoming::Pushed(model::Pushed::Event(event))) =
@@ -144,7 +144,7 @@ fn the_largest_events_fill_a_frame_and_the_rest_follow() {
 fn a_gap_ends_a_batch_and_arrives_next() {
     let mut rig = Rig::new();
     for count in 1..=10 {
-        rig.device.record(0, EventBody::Lost { count });
+        rig.device.record(0, EventBody::Lost { count, feeds: 0 });
     }
     rig.device.events.retain(|e| !(4..=6).contains(&e.seq));
     rig.device.lost = Some((4, 6));

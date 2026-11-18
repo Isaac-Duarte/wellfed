@@ -33,8 +33,8 @@ pub(crate) fn time(at: Option<Timestamp>, zone: &TimeZone) -> String {
     )
 }
 
-/// Who asked; nobody known for a feed a reset interrupted that no plan
-/// had claimed.
+/// Who asked; nobody known for a feed a reset interrupted whose journal
+/// record the cut lost too, and that no plan had claimed.
 fn source(by: Option<Source>) -> String {
     match by {
         Some(Source::Panel) => "panel".to_owned(),
@@ -43,6 +43,19 @@ fn source(by: Option<Source>) -> String {
         Some(Source::Schedule { plan }) => format!("plan {plan}"),
         Some(Source::Unknown) => "a source unknown to this CLI".to_owned(),
         None => "unknown".to_owned(),
+    }
+}
+
+/// Events the feeder could not record. Feeds are said to be gone only when
+/// the feeder counted some among them.
+pub(crate) fn lost(count: u16, feeds: u16) -> String {
+    let events = if count == 1 { "event" } else { "events" };
+    match feeds {
+        0 => format!("the feeder could not record {count} {events}"),
+        1 => format!("the feeder could not record {count} {events}; 1 feed among them is gone"),
+        feeds => format!(
+            "the feeder could not record {count} {events}; {feeds} feeds among them are gone"
+        ),
     }
 }
 
@@ -413,9 +426,7 @@ pub(crate) fn event(event: &Event, zone: &TimeZone) -> String {
             );
             format!("clock set by {} ({jump})", source(Some(by)))
         }
-        EventBody::Core(CoreEvent::Lost { count }) => {
-            format!("the feeder could not record {count} events; feeds among them are gone")
-        }
+        EventBody::Core(CoreEvent::Lost { count, feeds }) => lost(count, feeds),
         EventBody::Feeder(FeederEvent::Fed { .. }) => {
             Feed::from_event(event).map_or_else(String::new, |feed| fed(&feed))
         }

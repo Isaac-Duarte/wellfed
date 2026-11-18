@@ -587,7 +587,7 @@ return other(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( FeedResult result)?  fed,TResult Function( int slot,  PlatformInt64 dueMs,  MissedReason reason)?  missed,TResult Function()?  restarted,TResult Function( bool locked,  FedBy by)?  lock,TResult Function( FedBy by)?  settingsChanged,TResult Function( FedBy by)?  wifiChanged,TResult Function( FedBy by)?  plansChanged,TResult Function( String fingerprint)?  joined,TResult Function( String fingerprint)?  updateKeyAdded,TResult Function( String fingerprint,  FedBy by)?  revoked,TResult Function( FedBy by)?  clockSet,TResult Function( int count)?  lost,TResult Function( Blocked? reason)?  feedingBlocked,TResult Function( int minute,  int portions)?  mealSoon,TResult Function( bool? adapter)?  supply,TResult Function( Blocked reason)?  dispenseRefused,TResult Function( FoodLevel level)?  food,TResult Function( int slot,  PlatformInt64 dueMs,  FedBy by)?  skipped,TResult Function( int slot,  PlatformInt64 dueMs,  FedBy by)?  unskipped,TResult Function( BigInt from,  BigInt to)?  gap,TResult Function()?  other,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( FeedResult result)?  fed,TResult Function( int slot,  PlatformInt64 dueMs,  MissedReason reason)?  missed,TResult Function()?  restarted,TResult Function( bool locked,  FedBy by)?  lock,TResult Function( FedBy by)?  settingsChanged,TResult Function( FedBy by)?  wifiChanged,TResult Function( FedBy by)?  plansChanged,TResult Function( String fingerprint)?  joined,TResult Function( String fingerprint)?  updateKeyAdded,TResult Function( String fingerprint,  FedBy by)?  revoked,TResult Function( FedBy by)?  clockSet,TResult Function( int count,  int feeds)?  lost,TResult Function( Blocked? reason)?  feedingBlocked,TResult Function( int minute,  int portions)?  mealSoon,TResult Function( bool? adapter)?  supply,TResult Function( Blocked reason)?  dispenseRefused,TResult Function( FoodLevel level)?  food,TResult Function( int slot,  PlatformInt64 dueMs,  FedBy by)?  skipped,TResult Function( int slot,  PlatformInt64 dueMs,  FedBy by)?  unskipped,TResult Function( BigInt from,  BigInt to)?  gap,TResult Function()?  other,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case HistoryBody_Fed() when fed != null:
 return fed(_that.result);case HistoryBody_Missed() when missed != null:
@@ -601,7 +601,7 @@ return joined(_that.fingerprint);case HistoryBody_UpdateKeyAdded() when updateKe
 return updateKeyAdded(_that.fingerprint);case HistoryBody_Revoked() when revoked != null:
 return revoked(_that.fingerprint,_that.by);case HistoryBody_ClockSet() when clockSet != null:
 return clockSet(_that.by);case HistoryBody_Lost() when lost != null:
-return lost(_that.count);case HistoryBody_FeedingBlocked() when feedingBlocked != null:
+return lost(_that.count,_that.feeds);case HistoryBody_FeedingBlocked() when feedingBlocked != null:
 return feedingBlocked(_that.reason);case HistoryBody_MealSoon() when mealSoon != null:
 return mealSoon(_that.minute,_that.portions);case HistoryBody_Supply() when supply != null:
 return supply(_that.adapter);case HistoryBody_DispenseRefused() when dispenseRefused != null:
@@ -628,7 +628,7 @@ return other();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( FeedResult result)  fed,required TResult Function( int slot,  PlatformInt64 dueMs,  MissedReason reason)  missed,required TResult Function()  restarted,required TResult Function( bool locked,  FedBy by)  lock,required TResult Function( FedBy by)  settingsChanged,required TResult Function( FedBy by)  wifiChanged,required TResult Function( FedBy by)  plansChanged,required TResult Function( String fingerprint)  joined,required TResult Function( String fingerprint)  updateKeyAdded,required TResult Function( String fingerprint,  FedBy by)  revoked,required TResult Function( FedBy by)  clockSet,required TResult Function( int count)  lost,required TResult Function( Blocked? reason)  feedingBlocked,required TResult Function( int minute,  int portions)  mealSoon,required TResult Function( bool? adapter)  supply,required TResult Function( Blocked reason)  dispenseRefused,required TResult Function( FoodLevel level)  food,required TResult Function( int slot,  PlatformInt64 dueMs,  FedBy by)  skipped,required TResult Function( int slot,  PlatformInt64 dueMs,  FedBy by)  unskipped,required TResult Function( BigInt from,  BigInt to)  gap,required TResult Function()  other,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( FeedResult result)  fed,required TResult Function( int slot,  PlatformInt64 dueMs,  MissedReason reason)  missed,required TResult Function()  restarted,required TResult Function( bool locked,  FedBy by)  lock,required TResult Function( FedBy by)  settingsChanged,required TResult Function( FedBy by)  wifiChanged,required TResult Function( FedBy by)  plansChanged,required TResult Function( String fingerprint)  joined,required TResult Function( String fingerprint)  updateKeyAdded,required TResult Function( String fingerprint,  FedBy by)  revoked,required TResult Function( FedBy by)  clockSet,required TResult Function( int count,  int feeds)  lost,required TResult Function( Blocked? reason)  feedingBlocked,required TResult Function( int minute,  int portions)  mealSoon,required TResult Function( bool? adapter)  supply,required TResult Function( Blocked reason)  dispenseRefused,required TResult Function( FoodLevel level)  food,required TResult Function( int slot,  PlatformInt64 dueMs,  FedBy by)  skipped,required TResult Function( int slot,  PlatformInt64 dueMs,  FedBy by)  unskipped,required TResult Function( BigInt from,  BigInt to)  gap,required TResult Function()  other,}) {final _that = this;
 switch (_that) {
 case HistoryBody_Fed():
 return fed(_that.result);case HistoryBody_Missed():
@@ -642,7 +642,7 @@ return joined(_that.fingerprint);case HistoryBody_UpdateKeyAdded():
 return updateKeyAdded(_that.fingerprint);case HistoryBody_Revoked():
 return revoked(_that.fingerprint,_that.by);case HistoryBody_ClockSet():
 return clockSet(_that.by);case HistoryBody_Lost():
-return lost(_that.count);case HistoryBody_FeedingBlocked():
+return lost(_that.count,_that.feeds);case HistoryBody_FeedingBlocked():
 return feedingBlocked(_that.reason);case HistoryBody_MealSoon():
 return mealSoon(_that.minute,_that.portions);case HistoryBody_Supply():
 return supply(_that.adapter);case HistoryBody_DispenseRefused():
@@ -665,7 +665,7 @@ return other();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( FeedResult result)?  fed,TResult? Function( int slot,  PlatformInt64 dueMs,  MissedReason reason)?  missed,TResult? Function()?  restarted,TResult? Function( bool locked,  FedBy by)?  lock,TResult? Function( FedBy by)?  settingsChanged,TResult? Function( FedBy by)?  wifiChanged,TResult? Function( FedBy by)?  plansChanged,TResult? Function( String fingerprint)?  joined,TResult? Function( String fingerprint)?  updateKeyAdded,TResult? Function( String fingerprint,  FedBy by)?  revoked,TResult? Function( FedBy by)?  clockSet,TResult? Function( int count)?  lost,TResult? Function( Blocked? reason)?  feedingBlocked,TResult? Function( int minute,  int portions)?  mealSoon,TResult? Function( bool? adapter)?  supply,TResult? Function( Blocked reason)?  dispenseRefused,TResult? Function( FoodLevel level)?  food,TResult? Function( int slot,  PlatformInt64 dueMs,  FedBy by)?  skipped,TResult? Function( int slot,  PlatformInt64 dueMs,  FedBy by)?  unskipped,TResult? Function( BigInt from,  BigInt to)?  gap,TResult? Function()?  other,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( FeedResult result)?  fed,TResult? Function( int slot,  PlatformInt64 dueMs,  MissedReason reason)?  missed,TResult? Function()?  restarted,TResult? Function( bool locked,  FedBy by)?  lock,TResult? Function( FedBy by)?  settingsChanged,TResult? Function( FedBy by)?  wifiChanged,TResult? Function( FedBy by)?  plansChanged,TResult? Function( String fingerprint)?  joined,TResult? Function( String fingerprint)?  updateKeyAdded,TResult? Function( String fingerprint,  FedBy by)?  revoked,TResult? Function( FedBy by)?  clockSet,TResult? Function( int count,  int feeds)?  lost,TResult? Function( Blocked? reason)?  feedingBlocked,TResult? Function( int minute,  int portions)?  mealSoon,TResult? Function( bool? adapter)?  supply,TResult? Function( Blocked reason)?  dispenseRefused,TResult? Function( FoodLevel level)?  food,TResult? Function( int slot,  PlatformInt64 dueMs,  FedBy by)?  skipped,TResult? Function( int slot,  PlatformInt64 dueMs,  FedBy by)?  unskipped,TResult? Function( BigInt from,  BigInt to)?  gap,TResult? Function()?  other,}) {final _that = this;
 switch (_that) {
 case HistoryBody_Fed() when fed != null:
 return fed(_that.result);case HistoryBody_Missed() when missed != null:
@@ -679,7 +679,7 @@ return joined(_that.fingerprint);case HistoryBody_UpdateKeyAdded() when updateKe
 return updateKeyAdded(_that.fingerprint);case HistoryBody_Revoked() when revoked != null:
 return revoked(_that.fingerprint,_that.by);case HistoryBody_ClockSet() when clockSet != null:
 return clockSet(_that.by);case HistoryBody_Lost() when lost != null:
-return lost(_that.count);case HistoryBody_FeedingBlocked() when feedingBlocked != null:
+return lost(_that.count,_that.feeds);case HistoryBody_FeedingBlocked() when feedingBlocked != null:
 return feedingBlocked(_that.reason);case HistoryBody_MealSoon() when mealSoon != null:
 return mealSoon(_that.minute,_that.portions);case HistoryBody_Supply() when supply != null:
 return supply(_that.adapter);case HistoryBody_DispenseRefused() when dispenseRefused != null:
@@ -1483,10 +1483,11 @@ $FedByCopyWith<$Res> get by {
 
 
 class HistoryBody_Lost extends HistoryBody {
-  const HistoryBody_Lost({required this.count}): super._();
+  const HistoryBody_Lost({required this.count, required this.feeds}): super._();
   
 
  final  int count;
+ final  int feeds;
 
 /// Create a copy of HistoryBody
 /// with the given fields replaced by the non-null parameter values.
@@ -1498,18 +1499,18 @@ $HistoryBody_LostCopyWith<HistoryBody_Lost> get copyWith => _$HistoryBody_LostCo
 
 @override
 bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is HistoryBody_Lost&&(identical(other.count, count) || other.count == count));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is HistoryBody_Lost&&(identical(other.count, count) || other.count == count)&&(identical(other.feeds, feeds) || other.feeds == feeds));
 }
 
 
 @override
 int get hashCode {
-    return Object.hash(runtimeType,count);
+    return Object.hash(runtimeType,count,feeds);
 }
 
 @override
 String toString() {
-    return 'HistoryBody.lost(count: $count)';
+    return 'HistoryBody.lost(count: $count, feeds: $feeds)';
 }
 
 
@@ -1520,7 +1521,7 @@ abstract mixin class $HistoryBody_LostCopyWith<$Res> implements $HistoryBodyCopy
   factory $HistoryBody_LostCopyWith(HistoryBody_Lost value, $Res Function(HistoryBody_Lost) _then) = _$HistoryBody_LostCopyWithImpl;
 @useResult
 $Res call({
- int count
+ int count, int feeds
 });
 
 
@@ -1537,9 +1538,10 @@ class _$HistoryBody_LostCopyWithImpl<$Res>
 
 /// Create a copy of HistoryBody
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? count = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? count = null,Object? feeds = null,}) {
   return _then(HistoryBody_Lost(
 count: null == count ? _self.count : count // ignore: cast_nullable_to_non_nullable
+as int,feeds: null == feeds ? _self.feeds : feeds // ignore: cast_nullable_to_non_nullable
 as int,
   ));
 }

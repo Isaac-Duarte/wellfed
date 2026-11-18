@@ -45,7 +45,10 @@ fn lost_sensors_at_rest_are_held_with_the_outputs_stopped() {
 
     // Beating on, past the gap a lapsed beat would reset at.
     assert!(beats_over_the_gap(&mut f) > 0);
-    assert_eq!(f.owner.submit(1, 1), SubmitResult::RejectStopped);
+    assert_eq!(
+        f.owner.submit(1, 1, Requester::NONE),
+        SubmitResult::RejectStopped
+    );
     assert_eq!(f.reserve_calls, 0);
     f.stop();
 }
@@ -71,7 +74,10 @@ fn lost_sensors_during_a_feed_fail_it_as_a_sensor_fault_and_are_held() {
 #[test]
 fn a_lost_supervisor_still_lapses_the_beat() {
     let mut f = boot();
-    assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(1, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     f.step();
     f.advance(2); // The emitters on, still preparing.
 
@@ -90,7 +96,10 @@ fn an_outlet_blocked_before_the_drive_fails_the_feed_with_no_motion() {
     let mut f = boot();
     hw(|h| h.input[0] &= !bit(OUTLET));
 
-    assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(1, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     for _ in 0..=CONFIG.prepare_timeout_ms {
         f.advance(1);
         assert_eq!(motor_pins(), MOTOR_MASK, "never driven");
@@ -107,7 +116,10 @@ fn an_outlet_blocked_before_the_drive_fails_the_feed_with_no_motion() {
     hw(|h| h.input[0] |= bit(OUTLET));
     assert!(f.owner.acknowledge(1));
     f.advance(1);
-    assert_eq!(f.owner.submit(2, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(2, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     f.advance(5);
     assert_eq!(f.status().state, OwnerState::Feeding);
     f.stop();
@@ -147,7 +159,10 @@ fn a_feed_that_only_ran_out_of_time_still_expires() {
     let mut f = boot();
     f.reserve_delay_ticks = 25 * 32;
 
-    assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(1, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     f.step();
     let s = f.status();
     assert_eq!(
@@ -337,7 +352,10 @@ mod at_rest {
         f.advance(1);
         let before = conversions();
 
-        assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+        assert_eq!(
+            f.owner.submit(1, 1, Requester::NONE),
+            SubmitResult::Enqueued
+        );
         f.step();
         assert_eq!(f.status().state, OwnerState::Preparing);
         assert_eq!(conversions() - before, 2 * CHANNEL);
@@ -370,7 +388,10 @@ mod at_rest {
         f.advance(PERIOD_MS);
         assert_eq!(f.status().state, OwnerState::Idle, "not judged at rest");
 
-        assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+        assert_eq!(
+            f.owner.submit(1, 1, Requester::NONE),
+            SubmitResult::Enqueued
+        );
         f.advance(CONFIG.prepare_timeout_ms + 1);
         let s = f.status();
         assert_eq!(
@@ -557,7 +578,10 @@ mod food_reads {
 
         hw(|h| h.input[0] |= bit(ADAPTER));
         f.advance(10);
-        assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+        assert_eq!(
+            f.owner.submit(1, 1, Requester::NONE),
+            SubmitResult::Enqueued
+        );
         assert!(!f.owner.read_food(), "a feed is queued");
         f.step();
         assert!(!f.owner.read_food(), "a feed is preparing");
@@ -602,7 +626,10 @@ mod food_reads {
         assert!(f.owner.read_food());
         f.advance(50);
 
-        assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+        assert_eq!(
+            f.owner.submit(1, 1, Requester::NONE),
+            SubmitResult::Enqueued
+        );
         // The storage callback asserts the emitters are off as it reserves.
         f.step();
         assert!(f.status().intent_reserved);

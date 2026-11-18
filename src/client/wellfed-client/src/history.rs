@@ -37,8 +37,9 @@ pub struct Feed {
     /// then, and otherwise at the boot's time, often `None`.
     pub at: Option<Timestamp>,
     /// Who asked for it; `None` when that is unknown: a feed a reset
-    /// interrupted is resolved at the next boot, and the journal does not
-    /// keep who asked unless a plan had claimed it.
+    /// interrupted is resolved at the next boot under the requester its
+    /// journal reservation kept, unless the cut lost the reservation's
+    /// record too, and no plan had claimed it.
     pub by: Option<Source>,
     pub requested: u8,
     pub delivered: Delivered,
@@ -113,16 +114,19 @@ impl Delivered {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Entry {
     Feed(Feed),
-    /// Events that left the feeder's ring before they were read: any feeds
-    /// among them are gone from the feeder.
+    /// Events that left the feeder's ring before they were read. Nothing
+    /// says what they were, so they may have included feeds, which are gone
+    /// from the feeder.
     Gap(Gap),
-    /// The feeder's event queue overflowed and dropped `count` events,
-    /// which may have included feeds.
+    /// The feeder could not record `count` events (its queue overflowed, or
+    /// the ring refused them), `feeds` of them feeds' results, which are
+    /// gone from the feeder.
     Lost {
         epoch: u32,
         seq: u64,
         at: Option<Timestamp>,
         count: u16,
+        feeds: u16,
     },
 }
 
@@ -135,12 +139,13 @@ impl Entry {
                 epoch,
                 seq,
                 at,
-                body: EventBody::Core(CoreEvent::Lost { count }),
+                body: EventBody::Core(CoreEvent::Lost { count, feeds }),
             }) => Some(Self::Lost {
                 epoch: *epoch,
                 seq: *seq,
                 at: *at,
                 count: *count,
+                feeds: *feeds,
             }),
             Pushed::Event(event) => Feed::from_event(event).map(Self::Feed),
             Pushed::Gap(gap) => Some(Self::Gap(*gap)),
@@ -197,8 +202,10 @@ impl Feed {
         };
 
         let delivered = Delivered::of(outcome, completed, requested);
-        // The feeder names itself for an interrupted feed only because the
-        // journal lost who asked; a plan that claimed it is named instead.
+        // The feeder names itself for an interrupted feed only when the
+        // journal lost who asked (a cut that took the reservation's record
+        // too); otherwise the requester it kept, or the plan that claimed
+        // it, is named.
         let by = match (reason, by) {
             (FeedReason::Interrupted, Source::Feeder) => None,
             (_, by) => Some(by),
@@ -346,7 +353,7 @@ mod tests {
             }),
         };
         let lost = Event {
-            body: EventBody::Core(CoreEvent::Lost { count: 2 }),
+            body: EventBody::Core(CoreEvent::Lost { count: 2, feeds: 1 }),
             ..boot
         };
 
@@ -358,7 +365,8 @@ mod tests {
                 epoch: 3,
                 seq: 42,
                 at: None,
-                count: 2
+                count: 2,
+                feeds: 1,
             })
         );
         assert!(matches!(

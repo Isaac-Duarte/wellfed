@@ -4,7 +4,7 @@
 
 use std::sync::MutexGuard;
 
-use wellfed_device::store::events::Read;
+use wellfed_device::store::events::{Dropped, Read};
 use wellfed_device_api::KeyChange as ApiChange;
 use wellfed_device_api::clients::{Label, Role};
 use wellfed_device_api::mailbox::{SettingsFields, SettingsResult, Stamp};
@@ -247,7 +247,11 @@ fn a_cut_between_the_change_and_its_event_loses_only_the_event() {
     };
     assert_eq!((result, event), (KeyResult::Done, WriteEvent::Lost));
     assert_eq!(events::take_written(), None);
-    assert_eq!(events::take_lost(), 1, "a Lost follows into the ring");
+    assert_eq!(
+        events::take_lost(),
+        Dropped::EVENT,
+        "a Lost follows into the ring"
+    );
     EVENTS_PROGRAMS_FAIL.with(|f| f.set(false));
 
     let mut table = [None; wellfed_device_api::clients::CLIENTS];

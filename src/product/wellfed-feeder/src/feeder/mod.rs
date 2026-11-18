@@ -52,7 +52,7 @@ use core::fmt;
 
 use wellfed_core::ota::install::Phase as InstallPhase;
 use wellfed_proto::api::{
-    Blocked, EventBody, Phase, Readiness, Refusal, Source, Supply, TraceSummary,
+    Blocked, EventBody, FeedReason, Phase, Readiness, Refusal, Source, Supply, TraceSummary,
 };
 use wellfed_session::noise::Keypair;
 
@@ -700,7 +700,10 @@ impl<P: Platform> Feeder<P> {
     /// than when the boot found it.
     pub fn record_outcome(&mut self, now_ms: u32, mut body: EventBody) {
         let mut ran_s = None;
-        if let EventBody::Fed { feed, by, .. } = &mut body
+        if let EventBody::Fed {
+            feed, by, reason, ..
+        } = &mut body
+            && *reason == FeedReason::Interrupted.into()
             && let Some(claim) = Schedule::claim_behind(&mut self.platform, *feed, *by)
         {
             *by = Source::Schedule(claim.plan);

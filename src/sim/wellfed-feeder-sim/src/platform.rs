@@ -36,7 +36,7 @@ use wellfed_core::ota::install::{Answer, CandidateState, Progress, Refused};
 use wellfed_core::supply::{self, Reading, Sample};
 use wellfed_core::tone::Tune;
 use wellfed_device::io::{Accepted, BleDrop, Datagram, Received};
-use wellfed_device::store::events::{BODY_BYTES, EventsFill, Read};
+use wellfed_device::store::events::{BODY_BYTES, Dropped, EventsFill, Read};
 use wellfed_device::store::net::BuildWifi;
 use wellfed_device::store::traces::{self, TraceRead, TraceRing, TracesFill};
 use wellfed_device_api::Reader;
@@ -881,8 +881,8 @@ impl Platform for SimPlatform {
         self.device.queue_event(at, &body)
     }
 
-    fn take_lost(&mut self) -> u32 {
-        0
+    fn take_lost(&mut self) -> Dropped {
+        Dropped::NONE
     }
 
     fn take_written(&mut self) -> Option<(Option<u32>, [u8; BODY_BYTES])> {
