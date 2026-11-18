@@ -41,8 +41,8 @@ impl SerialEvent {
 /// capture's `serial-events.jsonl` (one timed record per received chunk).
 pub fn arrival(events: &str, offset: u64) -> Option<f64> {
     let event = SerialEvent::parse_lines(events).find(|event| event.received(offset))?;
-    let utc = chrono::DateTime::parse_from_rfc3339(&event.utc).ok()?;
-    Some(utc.timestamp_micros() as f64 / 1e6)
+    let utc: jiff::Timestamp = event.utc.parse().ok()?;
+    Some(utc.as_microsecond() as f64 / 1e6)
 }
 
 #[cfg(test)]

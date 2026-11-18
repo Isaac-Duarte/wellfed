@@ -2114,7 +2114,7 @@ mod waits {
             username: "stock".into(),
             password: "its-password".into(),
             address: "192.168.4.30".parse().unwrap(),
-            enrolled_at: chrono::DateTime::UNIX_EPOCH,
+            enrolled_at: jiff::Timestamp::UNIX_EPOCH,
         };
         let config = dir.path().join("installer.json");
         wellfed_stock::enroll::create(&record, &wellfed_formats::stock::Enrollment::path(&config))

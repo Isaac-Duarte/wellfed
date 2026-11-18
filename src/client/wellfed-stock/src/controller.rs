@@ -15,7 +15,7 @@ use std::{
 };
 
 use crate::{Error, Result};
-use chrono::{DateTime, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
@@ -280,7 +280,7 @@ pub fn close_answered(
         return Ok(false);
     }
 
-    let now = Utc::now();
+    let now = Timestamp::now();
     record.phase = TrialPhase::ReplacementHealthy;
     record.resolution_note = Some(note);
     record.answered_at = Some(now);
@@ -307,7 +307,7 @@ pub fn stock_restored(config_path: &Path, device: &str, sequence: usize) -> Resu
         return Ok(false);
     }
 
-    let now = Utc::now();
+    let now = Timestamp::now();
     record.restored_at = Some(now);
     record.updated_at = now;
     storage::write_json(&path, &ledger)?;
@@ -321,12 +321,12 @@ pub struct Controller {
     ledger: Ledger,
     storage_failed: bool,
     /// Start of the current interval with fresh feeder telemetry and no OTA report.
-    ota_quiet_since: DateTime<Utc>,
+    ota_quiet_since: Timestamp,
     /// Start of the current session's unbroken telemetry. A version report since
     /// then still speaks for the stock now connected: one still in that session
     /// cannot have installed, and stock reports its version only around a
     /// connect, so no fresher report will come.
-    telemetry_since: DateTime<Utc>,
+    telemetry_since: Timestamp,
     _lease: fs::File,
 }
 
@@ -351,7 +351,7 @@ impl Controller {
         for record in ledger.ota_trials.values_mut() {
             if record.phase == TrialPhase::Submitted {
                 record.phase = TrialPhase::Uncertain;
-                record.updated_at = Utc::now();
+                record.updated_at = Timestamp::now();
             }
         }
 
@@ -366,12 +366,12 @@ impl Controller {
                 ..Status::default()
             },
             storage_failed: false,
-            ota_quiet_since: Utc::now(),
-            telemetry_since: Utc::now(),
+            ota_quiet_since: Timestamp::now(),
+            telemetry_since: Timestamp::now(),
             _lease: lease,
         };
 
-        value.refresh(Utc::now());
+        value.refresh(Timestamp::now());
         Ok(value)
     }
 
@@ -391,21 +391,22 @@ impl Controller {
         }
     }
 
-    fn telemetry_current(&self, now: DateTime<Utc>) -> bool {
+    fn telemetry_current(&self, now: Timestamp) -> bool {
         self.status.broker_connected
             && self.status.last_seen.is_some_and(|seen| {
-                seen <= now && now - seen < chrono::Duration::seconds(TELEMETRY_SECONDS)
+                seen <= now
+                    && now.duration_since(seen) < SignedDuration::from_secs(TELEMETRY_SECONDS)
             })
     }
 
-    fn check_observation_interval(&mut self, now: DateTime<Utc>) {
+    fn check_observation_interval(&mut self, now: Timestamp) {
         if !self.telemetry_current(now) || self.ota_quiet_since > now {
             self.ota_quiet_since = now;
             self.telemetry_since = now;
         }
     }
 
-    pub fn refresh(&mut self, now: DateTime<Utc>) {
+    pub fn refresh(&mut self, now: Timestamp) {
         self.status.ota_trials = self.ledger.ota_trials.values().cloned().collect();
         self.status
             .ota_trials
@@ -416,13 +417,13 @@ impl Controller {
     }
 
     /// Reports sent while disconnected are unseen, so quiet time restarts here.
-    pub fn connected(&mut self, now: DateTime<Utc>) {
+    pub fn connected(&mut self, now: Timestamp) {
         self.status.broker_connected = true;
         self.ota_quiet_since = now;
         self.telemetry_since = now;
     }
 
-    pub fn disconnected(&mut self, now: DateTime<Utc>) {
+    pub fn disconnected(&mut self, now: Timestamp) {
         self.status.broker_connected = false;
         self.status.last_seen = None;
         self.status.version_reported_at = None;
@@ -444,10 +445,11 @@ impl Controller {
         self.refresh(now);
     }
 
-    pub fn expire(&mut self, now: DateTime<Utc>) {
+    pub fn expire(&mut self, now: Timestamp) {
         let mut changed = false;
         for trial in self.ledger.ota_trials.values_mut() {
-            if trial.phase == TrialPhase::Submitted && (now - trial.created_at).num_seconds() >= 600
+            if trial.phase == TrialPhase::Submitted
+                && now.duration_since(trial.created_at).as_secs() >= 600
             {
                 trial.phase = TrialPhase::Uncertain;
                 trial.updated_at = now;
@@ -466,12 +468,12 @@ impl Controller {
     }
 
     /// Whether stock reported its version recently enough for an OTA decision.
-    pub fn version_fresh(&self, now: DateTime<Utc>) -> bool {
+    pub fn version_fresh(&self, now: Timestamp) -> bool {
         Self::fresh(self.status.version_reported_at, now)
     }
 
-    fn fresh(seen: Option<DateTime<Utc>>, now: DateTime<Utc>) -> bool {
-        seen.is_some_and(|seen| (0..EVIDENCE_SECONDS).contains(&(now - seen).num_seconds()))
+    fn fresh(seen: Option<Timestamp>, now: Timestamp) -> bool {
+        seen.is_some_and(|seen| (0..EVIDENCE_SECONDS).contains(&now.duration_since(seen).as_secs()))
     }
 
     /// `lease` is the image server's private lease, already checked to have a
@@ -480,7 +482,7 @@ impl Controller {
         &mut self,
         input: ota::trial::Input,
         lease: Option<&ota::image::Lease>,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> std::result::Result<(ota::trial::Record, Option<Reply>), Rejection> {
         if self.storage_failed {
             return Err(Rejection::Storage);
@@ -526,7 +528,7 @@ impl Controller {
         // The digest is the one the image server bound to the build's review.
         let Some(lease) = lease.filter(|lease| {
             lease.token == input.server_token
-                && (lease.expires_at - now).num_seconds() >= MIN_LEASE_SECONDS
+                && lease.expires_at.duration_since(now).as_secs() >= MIN_LEASE_SECONDS
         }) else {
             return Err(Rejection::ImageServer);
         };
@@ -577,7 +579,7 @@ impl Controller {
     pub fn replacement_answered(
         &mut self,
         answer: ota::trial::AnsweredInput,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> std::result::Result<ota::trial::Record, Rejection> {
         if self.storage_failed {
             return Err(Rejection::Storage);
@@ -643,7 +645,7 @@ impl Controller {
         &mut self,
         request: ota::trial::ResolveInput,
         image: ImageServer,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> std::result::Result<ota::trial::Record, Rejection> {
         if self.storage_failed {
             return Err(Rejection::Storage);
@@ -676,11 +678,13 @@ impl Controller {
 
         let waited = match image {
             ImageServer::Listening => {
-                (now - record.created_at).num_seconds() >= RESOLVE_AFTER_SECONDS
-                    && (now - quiet_since).num_seconds() >= QUIET_SECONDS
+                now.duration_since(record.created_at).as_secs() >= RESOLVE_AFTER_SECONDS
+                    && now.duration_since(quiet_since).as_secs() >= QUIET_SECONDS
             }
             ImageServer::Gone => {
-                (now - quiet_since.max(record.created_at)).num_seconds() >= UNSERVED_QUIET_SECONDS
+                now.duration_since(quiet_since.max(record.created_at))
+                    .as_secs()
+                    >= UNSERVED_QUIET_SECONDS
             }
         };
         let evidence = latest == Some(request.request_id)
@@ -711,7 +715,7 @@ impl Controller {
         Ok(result)
     }
 
-    pub fn observe(&mut self, message: &Message, now: DateTime<Utc>) {
+    pub fn observe(&mut self, message: &Message, now: Timestamp) {
         self.observe_telemetry(message, now);
 
         if self.observe_trial(message, now) {
@@ -720,7 +724,7 @@ impl Controller {
         self.refresh(now);
     }
 
-    fn observe_telemetry(&mut self, message: &Message, now: DateTime<Utc>) {
+    fn observe_telemetry(&mut self, message: &Message, now: Timestamp) {
         // Check the gap before overwriting last_seen, including when the MQTT
         // actor did not get a chance to run its expiry tick during the gap.
         self.check_observation_interval(now);
@@ -743,7 +747,7 @@ impl Controller {
         // `ts` is whatever the device sent: one out of range leaves no offset.
         if let Some(ts) = message.ts {
             self.status.clock_offset_seconds =
-                now.timestamp_millis().checked_sub(ts).map(|ms| ms / 1000);
+                now.as_millisecond().checked_sub(ts).map(|ms| ms / 1000);
         }
 
         // Only expose documented telemetry. Never reflect credentials, SSIDs,
@@ -774,7 +778,7 @@ impl Controller {
     }
 
     /// The latest trial's download, precheck-error and startup reports.
-    fn observe_trial(&mut self, message: &Message, now: DateTime<Utc>) -> bool {
+    fn observe_trial(&mut self, message: &Message, now: Timestamp) -> bool {
         let Some(trial) = self
             .ledger
             .ota_trials

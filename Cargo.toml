@@ -81,6 +81,7 @@ futures-util = "0.3.34"
 getrandom = "0.4.3"
 http-body-util = "0.1.5"
 jiff = "1.0.1"
+jiff-tzdb = "1.0.0"
 # Bluetooth setup on the desktops (wellfed-ble).
 btleplug = "0.13.5"
 # Feeder discovery (wellfed-connect).

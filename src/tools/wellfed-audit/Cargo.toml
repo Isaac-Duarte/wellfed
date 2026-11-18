@@ -9,7 +9,7 @@ publish.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
+jiff.workspace = true
 clap.workspace = true
 wellfed-bench-formats = { path = "../wellfed-bench-formats" }
 wellfed-image.workspace = true

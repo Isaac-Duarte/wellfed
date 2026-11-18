@@ -6,7 +6,7 @@
 
 mod common;
 
-use chrono::Utc;
+use jiff::Timestamp;
 use rumqttc::{AsyncClient, Event, Packet, QoS};
 use serde_json::{Value, json};
 use std::net::Ipv4Addr;
@@ -51,7 +51,7 @@ async fn publishes_once() {
         &ota::image::Lease {
             token,
             peer: Ipv4Addr::new(10, 0, 0, 2),
-            expires_at: Utc::now() + chrono::Duration::minutes(15),
+            expires_at: Timestamp::now() + jiff::SignedDuration::from_mins(15),
             sha256: digest.clone(),
             build: "cd".repeat(32),
         },
@@ -82,7 +82,7 @@ async fn publishes_once() {
 
                 Event::Incoming(Packet::SubAck(_)) => {
                     client.publish(device.topic("event/post"),QoS::AtMostOnce,false,
-                        json!({"cmd":"DEVICE_START_EVENT","ts":Utc::now().timestamp_millis(),"softwareVersion":"1.1.15","powerType":1}).to_string()).await.unwrap();
+                        json!({"cmd":"DEVICE_START_EVENT","ts":Timestamp::now().as_millisecond(),"softwareVersion":"1.1.15","powerType":1}).to_string()).await.unwrap();
                 }
 
                 Event::Incoming(Packet::Publish(publish)) => {

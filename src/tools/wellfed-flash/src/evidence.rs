@@ -25,12 +25,7 @@ use wellfed_formats::canonical::sha256;
 
 /// ISO-8601 UTC as Python's `datetime.now(timezone.utc).isoformat()` gives.
 pub fn utc() -> String {
-    let now = chrono::Utc::now();
-    if now.timestamp_subsec_micros() == 0 {
-        now.format("%Y-%m-%dT%H:%M:%S+00:00").to_string()
-    } else {
-        now.format("%Y-%m-%dT%H:%M:%S%.6f+00:00").to_string()
-    }
+    wellfed_formats::utc::isoformat(jiff::Timestamp::now())
 }
 
 /// Rewrite a session report in place (its last state is what matters).

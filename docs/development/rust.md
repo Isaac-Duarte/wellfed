@@ -63,7 +63,7 @@ Code under `cfg(target_os = "none")`, the C and MMIO edge and the RAM park among
 `make check-deps` runs [cargo-deny](https://embarkstudios.github.io/cargo-deny/) against [deny.toml](../../deny.toml):
 
 - **Licenses:** permissive only (MIT, Apache-2.0, BSD, ISC, Zlib, Unicode, MPL-2.0 and a few more), so every binary built from this MIT repository can ship. The one exception, the Unicorn emulator (GPL-2.0), is linked only by the host tool `wellfed-emu` and never reaches firmware.
-- **Advisories:** vulnerable, unmaintained and yanked crates fail. An ignored advisory carries its reason; today only `bare-metal`, archived but still a dependency of cortex-m 0.7.
+- **Advisories:** vulnerable, unmaintained and yanked crates fail. An ignored advisory carries its reason, and each names a crate only a dependency with no newer release still pulls in: `bare-metal` (cortex-m 0.7), `atomic-polyfill` (postcard-rpc), `chrono` (rmcp, the bench's MCP server) and `humantime` (mqtt5's broker). First-party code keeps time with jiff.
 - **Duplicates** warn, not refuse. Several come from crates partway through an upgrade (digest 0.10 and 0.11, rand_core, syn 2 and 3); a change that adds one says why.
 - **Sources:** crates.io only.
 

@@ -1428,6 +1428,14 @@ fn signed_by_bench(rig: &Rig, file: &str) -> wellfed_signed::Manifest {
         .manifest
 }
 
+/// A rig whose relay 1 reads on, as a running feeder's does: `ota` talks to
+/// the feeder and refuses an unpowered one.
+fn powered_rig() -> Rig {
+    let rig = rig();
+    rig.board.lock().on[usize::from(POWER)] = true;
+    rig
+}
+
 /// `ota` arguments naming nothing to offer yet, with the command line's defaults.
 fn ota_args() -> OtaArgs {
     OtaArgs {
@@ -1494,7 +1502,7 @@ fn captured(rig: &Rig) -> Vec<String> {
 
 #[test]
 fn ota_signs_one_above_the_highest_signed_version_then_offers() {
-    let mut rig = rig();
+    let mut rig = powered_rig();
     let args = plain_review(&rig);
     signed_manifest(&rig, "old-v3.manifest", 3);
     signed_manifest(&rig, "old-v12.manifest", 12);
@@ -1587,7 +1595,7 @@ fn ota_installs_the_pinned_stock_review_by_its_payload_hash_without_health() {
 
 #[test]
 fn ota_cancel_sends_one_cancel_and_nothing_else() {
-    let mut rig = rig();
+    let mut rig = powered_rig();
     let args = OtaArgs {
         review: None,
         cancel: true,
@@ -1625,7 +1633,7 @@ fn ota_cancel_sends_one_cancel_and_nothing_else() {
 /// build would skip the motion gate and the health check.
 #[test]
 fn ota_refuses_a_stock_review_of_another_image() {
-    let mut rig = rig();
+    let mut rig = powered_rig();
     let args = ota_review(
         &rig,
         json!({"startup_identity": BUILD, "startup_motion_policy": "fw16-pulse-v1"}),
@@ -1660,9 +1668,52 @@ fn signing(error: &Error) -> &wellfed_signing::Error {
     }
 }
 
+/// With relay 1 off nothing answers: `ota` refuses before signing or
+/// offering anything, and switches no relay, rather than waiting out its
+/// minutes. A cancel is refused the same way.
+#[test]
+fn ota_refuses_at_once_while_the_feeder_is_unpowered() {
+    let mut rig = rig();
+    let args = plain_review(&rig);
+
+    let error = rig.bench.ota(&args).unwrap_err();
+    assert_matches!(error, Error::Ota(OtaError::FeederOff));
+
+    let cancel = OtaArgs {
+        review: None,
+        cancel: true,
+        ..args.clone()
+    };
+    let error = rig.bench.ota(&cancel).unwrap_err();
+    assert_matches!(error, Error::Ota(OtaError::FeederOff));
+
+    let calls = rig.tools.0.borrow();
+    assert!(calls.installs.is_empty() && calls.ran.is_empty());
+    drop(calls);
+    assert!(
+        !rig.bench
+            .root
+            .join(VERIFICATION)
+            .join("unit-v1.manifest")
+            .exists()
+    );
+    assert!(captured(&rig).is_empty());
+    assert!(rig.board.log().is_empty(), "no relay change");
+
+    // A bad argument is still named first.
+    let error = rig
+        .bench
+        .ota(&OtaArgs {
+            minutes: 0.0,
+            ..args
+        })
+        .unwrap_err();
+    assert_matches!(error, Error::Ota(OtaError::MinutesNotPositive));
+}
+
 #[test]
 fn ota_takes_a_given_version() {
-    let mut rig = rig();
+    let mut rig = powered_rig();
     let mut args = plain_review(&rig);
     args.version = Some(40);
     rig.tools.0.borrow_mut().install_refused = true;
@@ -1674,7 +1725,7 @@ fn ota_takes_a_given_version() {
 
 #[test]
 fn ota_refuses_a_motion_review_without_the_attended_flag() {
-    let mut rig = rig();
+    let mut rig = powered_rig();
     let mut args = ota_review(
         &rig,
         json!({"startup_identity": BUILD, "startup_motion_policy": "fw16-pulse-v1"}),
@@ -1696,7 +1747,7 @@ fn ota_refuses_a_motion_review_without_the_attended_flag() {
 /// once the feeder lists the bench key as an update signer.
 #[test]
 fn a_consumer_review_needs_the_bench_key_enrolled() {
-    let mut rig = rig();
+    let mut rig = powered_rig();
     let args = ota_review(
         &rig,
         json!({"startup_identity": BUILD, "startup_motion_policy": null, "provisioning": "consumer"}),
@@ -1723,7 +1774,7 @@ fn a_consumer_review_needs_the_bench_key_enrolled() {
 /// A bench image never asks for the signers.
 #[test]
 fn a_bench_review_does_not_ask_for_update_signers() {
-    let mut rig = rig();
+    let mut rig = powered_rig();
     let args = plain_review(&rig);
     rig.tools.0.borrow_mut().rx.push_back(
         format!("PLFW1 start build={BUILD} bank=1\r\nPLCNF1 confirmed=1 healthy_ms=30000\r\n")
@@ -1736,7 +1787,7 @@ fn a_bench_review_does_not_ask_for_update_signers() {
 
 #[test]
 fn ota_refuses_a_review_without_a_build_id() {
-    let mut rig = rig();
+    let mut rig = powered_rig();
     let args = ota_review(&rig, json!({"startup_identity": "abc"}));
 
     let error = rig.bench.ota(&args).unwrap_err();
@@ -1752,7 +1803,7 @@ fn ota_refuses_a_review_without_a_build_id() {
 
 #[test]
 fn ota_refuses_a_directory_that_is_not_a_frozen_review() {
-    let mut rig = rig();
+    let mut rig = powered_rig();
     let args = plain_review(&rig);
     let review = rig.bench.root.join(VERIFICATION).join("review");
     let described = fs::read(review.join("review.json")).unwrap();
@@ -1807,7 +1858,7 @@ fn ota_refuses_used_capture_names_before_signing() {
 
 #[test]
 fn a_failed_offer_stops_without_capturing() {
-    let mut rig = rig();
+    let mut rig = powered_rig();
     let args = plain_review(&rig);
     rig.tools.0.borrow_mut().install_refused = true;
 
@@ -1818,7 +1869,7 @@ fn a_failed_offer_stops_without_capturing() {
 
 #[test]
 fn a_refused_offer_ends_the_run_before_any_activation() {
-    let mut rig = rig();
+    let mut rig = powered_rig();
     let args = plain_review(&rig);
     {
         let mut calls = rig.tools.0.borrow_mut();
@@ -1869,7 +1920,7 @@ fn a_refused_offer_ends_the_run_before_any_activation() {
 /// watch: the trial's confirmation decides, and is what the ledger keeps.
 #[test]
 fn a_push_error_after_the_activation_leaves_the_trial_to_decide() {
-    let mut rig = rig();
+    let mut rig = powered_rig();
     let args = plain_review(&rig);
     {
         let mut calls = rig.tools.0.borrow_mut();
@@ -1903,7 +1954,7 @@ fn a_push_error_after_the_activation_leaves_the_trial_to_decide() {
 
 #[test]
 fn ota_passes_across_segments_and_records_steps() {
-    let mut rig = rig();
+    let mut rig = powered_rig();
     rig.bench.status = Status::new(&rig.bench.root, rig.bench.root.join("status"));
     rig.bench
         .status
@@ -1954,7 +2005,7 @@ fn ota_passes_across_segments_and_records_steps() {
 
 #[test]
 fn ota_reports_a_fallback_with_its_boot_count() {
-    let mut rig = rig();
+    let mut rig = powered_rig();
     let args = plain_review(&rig);
     rig.tools.0.borrow_mut().rx.push_back(
         format!("PLOTA1 activated version=1\nPLTRL1 confirmed=0 boot=3 limit=3\nPLFW1 start build={BUILD} bank=1\nPLTRL1 give_way=1 marker=00 reset=1\n").into_bytes(),
@@ -1988,7 +2039,7 @@ fn ota_reports_a_fallback_with_its_boot_count() {
 
 #[test]
 fn ota_reports_an_update_error_stage() {
-    let mut rig = rig();
+    let mut rig = powered_rig();
     let args = plain_review(&rig);
     rig.tools
         .0
@@ -2008,7 +2059,7 @@ fn ota_reports_an_update_error_stage() {
 
 #[test]
 fn ota_stops_when_time_runs_out() {
-    let mut rig = rig();
+    let mut rig = powered_rig();
     let mut args = plain_review(&rig);
     args.minutes = 2.5;
 
@@ -2040,7 +2091,7 @@ fn ota_stops_when_time_runs_out() {
 /// claims the feeder untouched: what bank 1 runs is unknown.
 #[test]
 fn a_timeout_after_the_activation_says_the_outcome_is_unknown() {
-    let mut rig = rig();
+    let mut rig = powered_rig();
     let mut args = plain_review(&rig);
     args.minutes = 1.0;
     rig.tools.0.borrow_mut().rx.push_back(
@@ -2124,7 +2175,7 @@ fn timed_pass(rig: &Rig) {
 
 #[test]
 fn ota_build_builds_reviews_offers_and_checks_health_in_order() {
-    let mut rig = rig();
+    let mut rig = powered_rig();
     with_status(&mut rig, Source::Build);
     let args = build_args();
     timed_pass(&rig);
@@ -2183,7 +2234,7 @@ fn old_review(rig: &Rig, name: &str, identity: &str, complete: bool) {
 
 #[test]
 fn ota_build_reuses_a_review_of_the_same_sources() {
-    let mut rig = rig();
+    let mut rig = powered_rig();
     with_status(&mut rig, Source::Build);
     let args = build_args();
     old_review(&rig, "earlier-review", BUILD, true);
@@ -2237,7 +2288,7 @@ fn ota_build_builds_when_no_complete_review_matches_or_asked_to() {
         (BUILD.to_string(), false, false),
         (BUILD.to_string(), true, true),
     ] {
-        let mut rig = rig();
+        let mut rig = powered_rig();
         with_status(&mut rig, Source::Build);
         let mut args = build_args();
         args.rebuild = rebuild;
@@ -2260,7 +2311,7 @@ fn ota_build_builds_when_no_complete_review_matches_or_asked_to() {
 #[test]
 fn a_failed_build_or_review_stops_before_offering() {
     for codes in [&[1][..], &[0, 2]] {
-        let mut rig = rig();
+        let mut rig = powered_rig();
         with_status(&mut rig, Source::Build);
         let args = build_args();
         rig.tools.0.borrow_mut().codes.extend(codes);
@@ -2440,7 +2491,7 @@ fn a_variant_needs_the_firmware_that_declares_it() {
 
 #[test]
 fn a_status_that_never_shows_the_build_fails_after_confirmation() {
-    let mut rig = rig();
+    let mut rig = powered_rig();
     with_status(&mut rig, Source::Review);
     let args = plain_review(&rig);
     timed_pass(&rig);
@@ -2479,7 +2530,7 @@ fn a_status_that_never_shows_the_build_fails_after_confirmation() {
 /// is the whole check, and no status is asked for.
 #[test]
 fn a_firmware_without_the_device_api_passes_on_its_confirmation() {
-    let mut rig = rig();
+    let mut rig = powered_rig();
     with_status(&mut rig, Source::Review);
     let args = ota_review(
         &rig,
@@ -2499,7 +2550,7 @@ fn a_firmware_without_the_device_api_passes_on_its_confirmation() {
 
 #[test]
 fn a_missing_or_wrong_status_is_waited_out_until_it_matches() {
-    let mut rig = rig();
+    let mut rig = powered_rig();
     with_status(&mut rig, Source::Review);
     let args = plain_review(&rig);
     timed_pass(&rig);

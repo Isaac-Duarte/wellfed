@@ -9,7 +9,7 @@ use std::fmt;
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use uuid::Uuid;
@@ -21,14 +21,14 @@ pub struct StockStatus {
     pub broker_connected: bool,
     /// Stock telemetry is current.
     pub device_online: bool,
-    pub last_seen: Option<DateTime<Utc>>,
+    pub last_seen: Option<Timestamp>,
     pub clock_offset_seconds: Option<i64>,
     /// Stock's reported attributes (`softwareVersion`, `powerType`, …), as
     /// stock sent them.
     pub attributes: Map<String, Value>,
     /// When stock last reported its version.
-    pub version_reported_at: Option<DateTime<Utc>>,
-    pub power_reported_at: Option<DateTime<Utc>>,
+    pub version_reported_at: Option<Timestamp>,
+    pub power_reported_at: Option<Timestamp>,
     pub build_commit: String,
     pub build_clean: bool,
     /// Stock's own OTA reports, oldest first.
@@ -70,7 +70,7 @@ pub struct Enrollment {
     pub username: String,
     pub password: String,
     pub address: std::net::IpAddr,
-    pub enrolled_at: DateTime<Utc>,
+    pub enrolled_at: Timestamp,
 }
 
 impl Enrollment {
@@ -159,7 +159,7 @@ impl OtaCommand {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OtaReport {
     /// Tells repeated reports apart.
-    pub received_at: DateTime<Utc>,
+    pub received_at: Timestamp,
     pub command: OtaCommand,
     pub message_id: Option<String>,
     pub phase: Option<String>,
@@ -191,8 +191,8 @@ impl fmt::Display for OtaReport {
 pub struct TrialRecord {
     pub sequence: usize,
     pub input: TrialInput,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
     pub phase: TrialPhase,
     pub download_reported: bool,
     pub resolution_note: Option<String>,
@@ -209,9 +209,9 @@ pub struct TrialRecord {
     pub stock_reported: bool,
     /// When a proven session's answer closed it. Stock reporting after that
     /// reopens it, unless a restore put stock back ([`Self::restored_at`]).
-    pub answered_at: Option<DateTime<Utc>>,
+    pub answered_at: Option<Timestamp>,
     /// When a restore activated stock on the feeder that answered.
-    pub restored_at: Option<DateTime<Utc>>,
+    pub restored_at: Option<Timestamp>,
 }
 
 /// What a trial was asked with.
@@ -258,7 +258,7 @@ pub const IMAGE_LEASE_FILE: &str = "ota-image-server.json";
 pub struct ImageLease {
     pub token: Uuid,
     pub peer: Ipv4Addr,
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
     /// The served build's SHA-256, which the install command announces.
     pub sha256: String,
     /// The served build's identity: its frozen manifest's startup identity,

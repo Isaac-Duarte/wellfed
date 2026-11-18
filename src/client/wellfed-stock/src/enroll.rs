@@ -19,7 +19,7 @@
 use std::{net::IpAddr, path::Path};
 
 use crate::Result;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 pub use wellfed_formats::stock::Enrollment;
 
@@ -51,7 +51,7 @@ pub fn create(record: &Enrollment, path: &Path) -> Result<()> {
 pub struct Contest {
     pub client_id: String,
     pub address: Option<IpAddr>,
-    pub at: DateTime<Utc>,
+    pub at: Timestamp,
 }
 
 impl Contest {
@@ -77,7 +77,7 @@ mod tests {
             username: "stock".into(),
             password: "its-own".into(),
             address: "192.168.4.20".parse().unwrap(),
-            enrolled_at: Utc::now(),
+            enrolled_at: Timestamp::now(),
         }
     }
 

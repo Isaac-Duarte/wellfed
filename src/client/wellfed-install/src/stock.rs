@@ -50,7 +50,7 @@ pub fn installer_config(path: &Path, listen: SocketAddr, zone: Option<&str>) -> 
     if !path.exists() {
         let zone = zone
             .and_then(|zone| zone.parse().ok())
-            .unwrap_or(chrono_tz::UTC);
+            .unwrap_or_else(wellfed_stock::zone::Zone::utc);
         return wellfed_stock::config::init_installer(path, listen, zone)
             .map_err(Error::StockServer);
     }
@@ -506,7 +506,7 @@ mod tests {
         installer_config(&path, one, Some("Not/AZone")).unwrap();
         let first = read();
         assert_eq!(first.mqtt_listen, one);
-        assert_eq!(first.timezone, chrono_tz::UTC);
+        assert_eq!(first.timezone, wellfed_stock::zone::Zone::utc());
 
         let other: SocketAddr = "192.168.1.10:1883".parse().unwrap();
         installer_config(&path, other, None).unwrap();
@@ -536,7 +536,7 @@ mod tests {
                 username: "stock".into(),
                 password: "its-password".into(),
                 address: "127.41.6.2".parse().unwrap(),
-                enrolled_at: chrono::DateTime::UNIX_EPOCH,
+                enrolled_at: jiff::Timestamp::UNIX_EPOCH,
             };
             wellfed_stock::enroll::create(&record, &Enrollment::path(&path)).unwrap();
         };
@@ -566,7 +566,7 @@ mod tests {
         // The first feeder's request went unanswered.
         enroll("AF_FIRST");
         let id = uuid::Uuid::new_v4();
-        let at = chrono::DateTime::UNIX_EPOCH;
+        let at = jiff::Timestamp::UNIX_EPOCH;
         let ledger = json!({
             "device_id": "AF_FIRST",
             "ota_trials": {
@@ -675,12 +675,12 @@ mod tests {
                 username: "stock".into(),
                 password: "its-password".into(),
                 address: "127.41.6.2".parse().unwrap(),
-                enrolled_at: chrono::DateTime::UNIX_EPOCH,
+                enrolled_at: jiff::Timestamp::UNIX_EPOCH,
             };
             wellfed_stock::enroll::create(&record, &Enrollment::path(&path)).unwrap();
         };
         let ask = |controller: &mut Controller| {
-            let now = chrono::Utc::now();
+            let now = jiff::Timestamp::now();
             controller.status.broker_connected = true;
             let report = json!({"cmd": "ATTR_PUSH_EVENT", "softwareVersion": "1.1.15",
                                 "powerType": 1});
@@ -690,7 +690,7 @@ mod tests {
             let lease = Lease {
                 token,
                 peer: "10.0.0.2".parse().unwrap(),
-                expires_at: now + chrono::TimeDelta::minutes(15),
+                expires_at: now + jiff::SignedDuration::from_mins(15),
                 sha256: "ab".repeat(32),
                 build: "cd".repeat(32),
             };
@@ -751,7 +751,7 @@ mod tests {
         assert_eq!(stale.version, None);
         assert_eq!(stale.power, Some(StockPower::Adapter));
 
-        status.version_reported_at = Some(chrono::DateTime::UNIX_EPOCH);
+        status.version_reported_at = Some(jiff::Timestamp::UNIX_EPOCH);
         let fresh = view(&status);
         assert_eq!(fresh.version.as_deref(), Some("1.1.15"));
         assert!(fresh.online);
@@ -778,7 +778,7 @@ mod tests {
     #[test]
     fn progress_is_read_only_from_this_request_s_reports() {
         let id = uuid::Uuid::from_u128(7);
-        let at = |seconds| chrono::DateTime::from_timestamp(seconds, 0).unwrap();
+        let at = |seconds| jiff::Timestamp::from_second(seconds).unwrap();
         let report = |seconds, message: Option<&str>, progress| OtaReport {
             received_at: at(seconds),
             command: OtaCommand::Progress,

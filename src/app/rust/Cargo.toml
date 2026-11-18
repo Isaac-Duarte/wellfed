@@ -34,9 +34,8 @@ wellfed-model.workspace = true
 wellfed-session.workspace = true
 
 [dev-dependencies]
-# Stock's own times and its MQTT broker, in the install and restore tests.
-chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
 proptest.workspace = true
+# Stock's MQTT broker, in the install and restore tests.
 rumqttc = { version = "0.25.1", default-features = false }
 tempfile.workspace = true
 uuid.workspace = true

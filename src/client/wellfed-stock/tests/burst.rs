@@ -4,7 +4,7 @@
 
 mod common;
 
-use chrono::Utc;
+use jiff::Timestamp;
 use rumqttc::{AsyncClient, QoS};
 use serde_json::json;
 use std::time::Duration;
@@ -39,7 +39,7 @@ async fn burst() {
 
     // Each start event earns a reply and an attribute query: two server
     // publishes for one device publish.
-    let start = json!({"cmd":"DEVICE_START_EVENT","ts":Utc::now().timestamp_millis(),
+    let start = json!({"cmd":"DEVICE_START_EVENT","ts":Timestamp::now().as_millisecond(),
         "softwareVersion":"1.1.15","powerType":1})
     .to_string();
     for _ in 0..3000 {

@@ -209,14 +209,13 @@ async fn resolve(handle: &Handle, status: &StockStatus) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use chrono::DateTime;
     use serde_json::json;
     use wellfed_formats::stock::{Enrollment, TrialInput, TrialPhase, TrialRecord};
 
     use super::*;
 
     fn trial(at: i64) -> TrialRecord {
-        let at = DateTime::from_timestamp(at, 0).unwrap();
+        let at = jiff::Timestamp::from_second(at).unwrap();
         let id = uuid::Uuid::from_u128(7);
         TrialRecord {
             sequence: 1,
@@ -250,9 +249,9 @@ mod tests {
         status
             .attributes
             .insert("softwareVersion".into(), json!(ORIGINAL_VERSION));
-        status.version_reported_at = DateTime::from_timestamp(50, 0);
+        status.version_reported_at = jiff::Timestamp::from_second(50).ok();
         assert!(!stock_stayed(&status));
-        status.version_reported_at = DateTime::from_timestamp(150, 0);
+        status.version_reported_at = jiff::Timestamp::from_second(150).ok();
         assert!(stock_stayed(&status));
 
         status
@@ -265,7 +264,8 @@ mod tests {
         let path = dir.join("installer.json");
         // Below the ephemeral range, on a loopback address of its own.
         let listen = SocketAddr::from((host, 21_883));
-        wellfed_stock::config::init_installer(&path, listen, chrono_tz::UTC).unwrap();
+        wellfed_stock::config::init_installer(&path, listen, wellfed_stock::zone::Zone::utc())
+            .unwrap();
         path
     }
 
@@ -286,7 +286,7 @@ mod tests {
             username: "stock".into(),
             password: "its-password".into(),
             address: address.parse().unwrap(),
-            enrolled_at: DateTime::from_timestamp(1, 0).unwrap(),
+            enrolled_at: jiff::Timestamp::from_second(1).unwrap(),
         };
         wellfed_stock::enroll::create(&record, &Enrollment::path(config)).unwrap();
     }
@@ -294,7 +294,7 @@ mod tests {
     /// A request for `device` that went out 30 minutes ago, unsettled.
     fn open_trial(config: &Path, device: &str) {
         let id = uuid::Uuid::new_v4();
-        let sent = chrono::Utc::now() - chrono::Duration::minutes(30);
+        let sent = jiff::Timestamp::now() - jiff::SignedDuration::from_mins(30);
         let ledger = json!({
             "device_id": device,
             "ota_trials": {
@@ -349,7 +349,7 @@ mod tests {
                     _ = beat.tick() => {
                         let body = json!({
                             "cmd": "DEVICE_START_EVENT",
-                            "ts": chrono::Utc::now().timestamp_millis(),
+                            "ts": jiff::Timestamp::now().as_millisecond(),
                             "softwareVersion": ORIGINAL_VERSION,
                             "powerType": 1,
                         });

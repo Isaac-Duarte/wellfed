@@ -8,7 +8,6 @@ description = "The install from stock 1.1.15 to Wellfed, driven over tokio: stoc
 publish.workspace = true
 
 [dependencies]
-chrono-tz = "0.10.4"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -31,7 +30,7 @@ wellfed-stock.workspace = true
 fixtures = ["wellfed-signing/fixtures"]
 
 [dev-dependencies]
-chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
+jiff.workspace = true
 rumqttc = { version = "0.25.1", default-features = false }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "test-util"] }

@@ -33,6 +33,7 @@ pub mod protocol;
 pub mod server;
 pub mod setup;
 pub mod storage;
+pub mod zone;
 
 pub use error::{ConnectError, Error, Listener, Result, Task};
 

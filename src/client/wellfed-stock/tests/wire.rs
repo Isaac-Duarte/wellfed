@@ -5,7 +5,7 @@
 
 mod common;
 
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 use serde_json::{Value, json};
 use uuid::Uuid;
 use wellfed_stock::clock::StockPlans;
@@ -42,7 +42,7 @@ fn answer_with(
         &serde_json::to_vec(&message).unwrap(),
     )
     .unwrap();
-    let now = Utc.with_ymd_and_hms(2026, 10, 17, 21, 17, 41).unwrap();
+    let now = Timestamp::from_second(1_792_271_861).unwrap();
     bytes(&plaf103::reply(config, channel, &message, now, plans).unwrap())
 }
 
@@ -89,7 +89,7 @@ fn clock() {
         r#"{"calibrationTag":true,"cmd":"NTP","code":0,"linkId":"LINK","nextDSTOffsetSeconds":-25200,"nextDSTTransitionTs":1793520000000,"secondNextDSTOffsetSeconds":-21600,"secondNextDSTTransitionTs":1805014800000,"timezone":-6.0,"timezoneOffsetSeconds":-21600,"ts":1792271861000}"#
     );
 
-    config.timezone = chrono_tz::UTC;
+    config.timezone = wellfed_stock::zone::Zone::utc();
     assert_eq!(
         answer_with(&config, "ntp", json!({"cmd":"NTP"}), StockPlans::Unknown),
         r#"{"calibrationTag":false,"cmd":"NTP","code":0,"linkId":"LINK","nextDSTOffsetSeconds":0,"nextDSTTransitionTs":0,"secondNextDSTOffsetSeconds":0,"secondNextDSTTransitionTs":0,"timezone":0.0,"timezoneOffsetSeconds":0,"ts":1792271861000}"#
@@ -132,7 +132,7 @@ fn binding_with_no_captured_reply_is_answered_as_bound() {
 fn commands() {
     let config = common::config();
     let id = Uuid::parse_str(ID).unwrap();
-    let now = Utc.with_ymd_and_hms(2026, 10, 17, 21, 17, 41).unwrap();
+    let now = Timestamp::from_second(1_792_271_861).unwrap();
 
     let query = plaf103::service(&config, plaf103::Sent::Attributes, id, now);
     assert_eq!(query.topic, config.topic("service/sub"));

@@ -786,6 +786,46 @@ async fn a_panicking_job_ends_and_the_next_one_runs() {
     server.quit().await;
 }
 
+/// Jobs that talk to the running feeder but never switch a relay read
+/// relay 1 through the server's board and, with it off, end at once naming
+/// it, rather than wait out their minutes for a feeder that cannot answer.
+/// Nothing is switched; with relay 1 on, the same `ota` gets past the check.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn feeder_jobs_refuse_at_once_while_relay_1_is_off() {
+    let Some(_turn) = turn().await else { return };
+    let checkout = Checkout::new(0.1);
+    let server = Running::start(checkout.open());
+    let started = Instant::now();
+
+    for words in [
+        &["ota", "o1", "--review", "private/verification/r"][..],
+        &["ota", "o2", "--cancel"],
+        &["itest", "i1", "--review", "private/verification/r"],
+        &["restore-stock"],
+    ] {
+        let id = server.submit(words).await.unwrap();
+        let (end, _) = follow(&server.client, id).await;
+        assert_eq!(end.code, 1, "{words:?}");
+        let error = end.error.unwrap_or_default();
+        assert!(
+            error.starts_with("Relay 1, the feeder's supply, is off"),
+            "{words:?}: {error}"
+        );
+    }
+    assert!(started.elapsed() < Duration::from_secs(10));
+    assert!(checkout.board.log().is_empty(), "no relay switched");
+
+    checkout.board.lock().on[usize::from(POWER)] = true;
+    let id = server
+        .submit(&["ota", "o3", "--review", "private/verification/r"])
+        .await
+        .unwrap();
+    let error = follow(&server.client, id).await.0.error.unwrap_or_default();
+    assert!(!error.contains("Relay 1"), "{error}");
+    assert!(checkout.board.log().is_empty(), "no relay switched");
+    server.quit().await;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_relay_poll_skips_while_a_job_runs() {
     let Some(_turn) = turn().await else { return };

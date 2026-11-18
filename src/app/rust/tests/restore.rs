@@ -345,20 +345,20 @@ fn answered_trial(rig: &Rig) -> (std::path::PathBuf, uuid::Uuid) {
         username: "stock".into(),
         password: "its-password".into(),
         address: "127.41.8.61".parse().unwrap(),
-        enrolled_at: chrono::DateTime::from_timestamp(1, 0).unwrap(),
+        enrolled_at: jiff::Timestamp::from_second(1).unwrap(),
     };
     std::fs::write(
         wellfed_formats::stock::Enrollment::path(&config),
         serde_json::to_vec(&record).unwrap(),
     )
     .unwrap();
-    let (id, at) = (uuid::Uuid::from_u128(7), chrono::Utc::now());
+    let (id, at) = (uuid::Uuid::from_u128(7), jiff::Timestamp::now());
     let ledger = serde_json::json!({
         "device_id": "AF_A",
         "ota_trials": { id.to_string(): {
             "sequence": 1,
             "input": {"request_id": id, "server_token": id},
-            "created_at": at - chrono::TimeDelta::hours(1),
+            "created_at": at - jiff::SignedDuration::from_hours(1),
             "updated_at": at,
             "phase": "uncertain", "download_reported": true,
             "resolution_note": null, "image_sha256": "ab".repeat(32),

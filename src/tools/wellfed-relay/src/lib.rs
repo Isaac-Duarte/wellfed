@@ -61,9 +61,10 @@ pub enum Error {
     /// The link to the board is gone (unplugged, or the worker ended).
     #[error("The bench board link is closed")]
     Closed,
-    /// [`Relay::detached`]: this command does not open the board.
-    #[error("This command does not open the bench board")]
-    Detached,
+    /// [`Relay::read_only`]: this command reads the board but never
+    /// switches a relay.
+    #[error("This command never switches a bench relay")]
+    ReadOnly,
     #[error("Listing USB devices: {0}")]
     Usb(#[source] std::io::Error),
 }
@@ -130,10 +131,11 @@ impl Relay {
         Ok(Self::of(Box::new(RpcBoard::open(serial)?)))
     }
 
-    /// No board: every command fails. For a command that never switches a
-    /// relay, so it does not hold the board while it runs.
-    pub fn detached() -> Self {
-        Self::of(Box::new(Detached))
+    /// `board` for a command that never switches a relay: its readings
+    /// pass through, so the command can see whether the feeder is powered,
+    /// and every switch is refused.
+    pub fn read_only(board: Box<dyn Board>) -> Self {
+        Self::of(Box::new(ReadOnly(board)))
     }
 
     pub fn set(&mut self, channel: u8, switch: Switch) -> Result<()> {
@@ -153,15 +155,15 @@ impl Relay {
     }
 }
 
-struct Detached;
+struct ReadOnly(Box<dyn Board>);
 
-impl Board for Detached {
+impl Board for ReadOnly {
     fn set(&mut self, _: u8, _: Switch) -> Result<()> {
-        Err(Error::Detached)
+        Err(Error::ReadOnly)
     }
 
     fn status(&mut self) -> Result<Status> {
-        Err(Error::Detached)
+        self.0.status()
     }
 }
 
@@ -612,10 +614,18 @@ mod tests {
     }
 
     #[test]
-    fn a_detached_relay_switches_nothing() {
+    fn a_read_only_relay_reads_the_board_and_switches_nothing() {
+        let board = FakeBoard::default();
+        board.lock().on[usize::from(POWER)] = true;
+        let mut relay = Relay::read_only(Box::new(board.clone()));
+
+        assert!(relay.get(POWER).unwrap());
+        assert!(!relay.get(STRAP).unwrap());
         assert!(matches!(
-            Relay::detached().set(1, Switch::Off),
-            Err(Error::Detached)
+            relay.set(POWER, Switch::Off),
+            Err(Error::ReadOnly)
         ));
+        assert!(board.log().is_empty());
+        assert!(board.state()[0], "relay 1 still on");
     }
 }

@@ -500,9 +500,7 @@ pub fn audit(inputs: &Inputs) -> Result<BackupReport> {
 
     Ok(BackupReport {
         schema_version: 1,
-        created_at: chrono::Utc::now()
-            .format("%Y-%m-%dT%H:%M:%S%.6f+00:00")
-            .to_string(),
+        created_at: wellfed_formats::utc::micros(jiff::Timestamp::now()),
         unit_label: label.into(),
         operator_supplied_capacity_bytes: capacity,
         capacity_evidence: evidence,

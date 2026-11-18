@@ -8,7 +8,7 @@ description = "The relay bench's protocol between wellfed-bench and its clients:
 publish.workspace = true
 
 [dependencies]
-chrono = { version = "0.4.45", default-features = false, features = ["std", "serde"] }
+jiff = { workspace = true, features = ["serde"] }
 clap = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
