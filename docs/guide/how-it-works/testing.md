@@ -14,7 +14,7 @@ Each row links to its entry, which has the numbers and what the fix did and didn
 | [The app during a power cut](#cut-the-power-mid-feed-with-the-app-watching) | The app showed Feeding and a live Stop button about 2 minutes after the cut. | **Fixed** |
 | [Motor leads at boot](#watched-the-motor-leads-at-every-boot) | 49 of 49 boots commanded a 105 µs forward pulse. | **Fixed** |
 | [First feeds](#first-feeds-through-the-feeding-owner) | A start-up surge tripped a feed 17 ms in. | **Fixed** |
-| [Repeated installs](#installed-over-and-over-through-bank-0) | Crashes during downloads: 5 of 26 installs passed. | **Partly fixed** |
+| [Repeated installs](#installed-over-and-over-through-bank-0) | Crashes during downloads: 5 of 26 installs passed. | **Fixed** |
 | [A test build's trial](#installed-a-test-build-which-rolled-itself-back) | A Wi-Fi retry starved the supervising task, and the build rolled itself back. | **Fixed** |
 | [Installing from stock](#installed-from-stock-on-a-route-weve-since-removed) | Stock refused the install, then our backup check refused a correct copy. | **Fixed** |
 | [The clock across an install](#compared-the-clock-with-the-bench-computer) | The clock read 12.2 s behind while claiming 5.5 s of error. | **Fixed** |
@@ -22,6 +22,9 @@ Each row links to its entry, which has the numbers and what the fix did and didn
 | [Two history readers](#two-clients-reading-history-at-once) | With one client following live, a second client got one backlog event in 25 s and no live ones. | **Fixed** |
 | [Power cuts with no cells](#cut-the-power-with-no-cells-fitted) | The record read a 3,861 mV battery with no batteries fitted. | **Partly fixed** |
 | [72 hours on schedules alone](#72-hours-on-schedules-alone) | Offline during a feed, the device log lost that meal's result lines, 3 times in 3. | **Passed with gaps** |
+| [A feed cut from the command line](#cut-the-power-just-after-a-feed-request) | A feed the power cut recorded as uncertain no longer said who had asked for it. | **Fixed** |
+| [A client that stops reading](#a-client-that-stops-reading) | The feeder ended the session but never closed the connection, so it held one of its ten connections. | **Fixed** |
+| [Installing from stock with the app](#installed-from-stock-with-the-app) | With a VPN on the phone, the setup message left by the wrong network. | **Passed with gaps** |
 
 These entries are **Open**:
 
@@ -31,7 +34,7 @@ These entries are **Open**:
 
 ## How far this goes
 
-- **One feeder.** Every entry ran on one research PLAF103. That feeder had already run Wellfed when its installs ran, so the install hasn't been proven on a feeder that has never run it.
+- **Two feeders.** Entries up to November 6 ran on one research PLAF103. Entries from November 16 ran on a second PLAF103, bought for the bench, which arrived on stock firmware. Both had already run Wellfed when their installs from stock ran, so the install hasn't been proven on a feeder that has never run it.
 - **Mostly an empty hopper.** Most motion runs had no food in them. An entry says so when food was in.
 - **That unit, that build.** A pass says something about this feeder and the build on it that day, not about every feeder. Many of these ran once. The dates matter too, because the firmware changed under them, and not every result has been repeated on the current build.
 - **A bench, not a home.** Power cuts are a relay cutting the adapter, with no batteries fitted unless the entry says so. Most network tests used a hotspot on the bench computer, not a home router.
@@ -134,6 +137,25 @@ After a cut, the access point still held the old connection and rejected the fir
 - **The first time:** the app still showed Feeding with a live Stop button about 2 minutes on, and said the feeder would finish by itself, which was untrue.
 - **After the fix:** the app asked whether the feeder had fed at about 20 s. Once power returned, History read "Fed between 0 and 3", not re-run.
 
+### Cut the power just after a feed request
+
+*Nov 17 and 18 · The second feeder · Hopper empty*
+
+A feed asked from the command line, then a power cut 100 to 1,500 ms later.
+
+**Fixed.**
+
+- **Nov 17, three cuts:** two feeds were recorded as uncertain, 0 to 1 of 1, and the third cut came before the feeder took the request, so nothing was recorded. None ran twice, none was reported done, and the command line said the outcome was unknown and didn't send it again. But each uncertain feed said it was asked "by unknown", because the boot that recorded it had lost who asked.
+- **Nov 18, after the fix:** the feed record keeps who asked from the start. A 2-portion feed cut 1.5 s in came back as uncertain, 0 to 2 of 2, asked by that client.
+
+### Cut the power while the feeder wrote its flash
+
+*Nov 17 · The second feeder · Hopper empty*
+
+We timed cuts with a test build into two kinds of write: 201 cuts around the creation of a fresh feed record store, and 125 cuts around the erase of a sector holding 128 records.
+
+**Passed.** Every next boot opened a valid store, and no sector was ever left half erased: each survey found all 128 records or none. Once the feeder started a write or an erase, it finished on the power left in the supply after the cut, so no cut landed inside one. That holds on this feeder, with an empty hopper and no motor running. The half-written cases are **Modeled**.
+
 ### Watched the motor leads at every boot
 
 *Oct 24 to 27 · With a logic analyzer*
@@ -221,6 +243,28 @@ On Oct 29 we covered the beam mid-feed. On Oct 29, and again on Nov 1, we taped 
 - **Taped:** the feed ended `outlet_blocked` with no drive and no fault.
 - **The gap:** on Nov 1 readiness read ready beforehand, because the outlet beam isn't read at idle. So a blocked outlet shows only when a feed tries, and that meal fails.
 
+### Caused every alert we could
+
+*Nov 17 · The second feeder · Hopper empty*
+
+We made each condition happen, with test builds where a fault had to be faked.
+
+**Passed.** Each raised its alert:
+
+| Alert | How we caused it |
+| --- | --- |
+| A meal uncertain | A power cut 3 s into a planned meal |
+| A meal missed | The feeder off across a meal's time, and back 16 minutes late |
+| A meal failed | Lost marks on a test build: the meal failed at 11 s |
+| Can't feed | A held sensor fault, alerted after 32 minutes with no restart |
+| Repeated restarts, and rolled back | A build that stalled about 60 s into every boot: the watchdog reset it each time, and the feeder went back to the other bank |
+| A member removed | Joined a member, then removed them |
+| Food likely out | A 6-portion feed past a low reading |
+| An update failed | A give-way with no install after it, alerted at 12 minutes |
+| No clock | The clock unset from boot, alerted after an hour |
+
+A power-outage alert needs batteries to run on, and hasn't run.
+
 ### Fed from food and weighed it
 
 *Oct 29 and Nov 1 · Food in the hopper*
@@ -292,7 +336,7 @@ A build whose feeding check fails, and a build that confirms and then resets abo
 
 This followed crashes during downloads.
 
-**Partly fixed.** The crashes stopped in the runs since, but earlier faults stay open.
+**Fixed.** With the flash clock lowered, 8 of 8 installs passed on the first feeder, and 26 of 26 on the second.
 
 | Runs | Installs that passed |
 | --- | --- |
@@ -300,10 +344,11 @@ This followed crashes during downloads.
 | After a full power-off | 2 of 8 |
 | With the bench idle | 1 of 8 |
 | With the flash clock at 50 MHz | 8 of 8 |
+| Nov 17, the second feeder, two builds alternating | 26 of 26 |
 
-The crashes landed somewhere new each time. One install failed on a single-bit read error, where the flash held the right word and one read returned a bit wrong. Lowering the flash clock from 80 to 50 MHz widened the boot's read window from 11–17 to 29–31. That's one evening's runs, and thin read margin is a working explanation.
+The crashes landed somewhere new each time. One install failed on a single-bit read error, where the flash held the right word and one read returned a bit wrong. Lowering the flash clock from 80 to 50 MHz widened the boot's read window from 11–17 to 29–31, and thin read margin is the working explanation.
 
-The earlier faults are 3 crashes and a hang in 157 bank-0 boots (Oct 24, none in 199 bank-1 boots), and 2 failures in about 9 installs (Oct 25). We haven't shown the clock change fixed those.
+The earlier faults were 3 crashes and a hang in 157 bank-0 boots (Oct 24, none in 199 bank-1 boots), and 2 failures in about 9 installs (Oct 25). Every install runs its download on bank 0, so the 26 installs of November 17 are 26 more bank-0 downloads, with no crash or hang. Across 51 activations from November 11 to 17, on both feeders, the activation marker read back right every time.
 
 ### Installed a test build, which rolled itself back
 
@@ -312,6 +357,30 @@ The earlier faults are 3 crashes and a hang in 157 bank-0 boots (Oct 24, none in
 Nobody asked it to.
 
 **Fixed.** Each of its three trial boots stopped at about 10.4 s, when a Wi-Fi retry starved the supervising task past its 1 s limit. The feeder gave way, as designed. The failing boots reached 1,088–1,093 ms. Moving the watchdog's task above the Wi-Fi driver gave a 250 ms trial gap on the one build we ran then, against 797–819 ms at the old priority, and it confirmed.
+
+### Broke a trial build's watchdog and its activation
+
+*Nov 16 · The second feeder*
+
+One test build refuses to start its watchdog, and another faults the moment it activates.
+
+**Passed.** The first was reset by force at each of its three trial boots, then refused, and bank 0 ran on. With the second, the feeder took the same offer again at each boot and faulted again, with no refusal and no stuck state, until bank 0 was rewritten.
+
+### Dropped the hotspot during installs
+
+*Nov 17 · The second feeder*
+
+Once for 15 s mid-download, and once at the moment the running build gave way to bank 0, so its answer was lost.
+
+**Passed.** The first download resumed and the build confirmed. In the second, the client reconnected, made its offer again, this time to bank 0, and the install finished and confirmed. Nothing failed or stuck.
+
+### Cut the power during installs
+
+*Nov 18 · The second feeder · The release candidate*
+
+The bench suite's power-cut scenario: one cut mid-download, and one early in the new build's trial.
+
+**Passed.** After the cut mid-download, bank 0 took the offer again from the start and the install finished. After the cut in the trial, the trial's count started over and the build confirmed. The candidate also passed the suite's other eight scenarios that day, among them the install, the rollback and the Wi-Fi fallback.
 
 ## Resetting and going back to stock
 
@@ -361,6 +430,31 @@ With a person at the terminal.
 
 **Passed with gaps.** In both runs the first setup code timed out. The first run had to be resumed, and the second took a second code. In the second, the code step also sat for some minutes, and we don't know why it moved on. The CLI's own hop onto the feeder's setup network didn't run, and the app's search for its feeder changed after its last run from stock. That installer has since been removed, and the app is the only one.
 
+### Back to stock, by update and over UART
+
+*Nov 16 and 17 · The second feeder*
+
+**Passed.** Twice, stock went on as a signed downgrade through our updater, and cold boots ran stock 1.1.15. A stock recovery over UART rewrote 276 sectors, three full reads of the flash matched, and stock booted.
+
+### A factory reset on the second feeder
+
+*Nov 17 · Hold of 6 s on an unlocked panel*
+
+**Passed.** The feeder reset its keys, restarted as planned, erased 38 sectors and made a new identity. It ran 120 s after that with no fault or restart, and was paired again.
+
+### Installed from stock with the app
+
+*Nov 17 · The second feeder · Twice · A person at the bench*
+
+From stock 1.1.15 with a factory reset, by a test copy of the Android app wiped before each run. In the second run we cut the power while stock wrote the update to its own other bank.
+
+**Passed with gaps.** Both runs ended installed and confirmed. The first took about 10 minutes from stock. The power cut at 47 % of stock's write left stock booting from its own bank with its setup kept, and the next try installed. The gaps, all found on the phone:
+
+- **A VPN on the phone.** With Tailscale on, Android refused to tie the app to the feeder's setup network, and the app sent the setup message anyway, out the phone's usual network. Stock never got it. The fixed app refuses to send unless it's on the feeder's network, and asks you to leave the app out of the VPN. That fix hasn't been tried on the phone yet.
+- **Background checks never ran.** The app's background task couldn't start at all, so nothing checked the feeder while the app was closed. With the fix, a background round ran on the phone.
+- **A request that never settled.** After the cut, the app kept waiting on its uncertain request although stock was reporting its unchanged version every 5 s. The only way on was to forget it.
+- **A Reset hold that didn't reset.** While stock stayed connected to the app, holding Reset only restarted it, so no setup network opened until the app was stopped.
+
 ## Clock and schedules
 
 ### Compared the clock with the bench computer
@@ -396,6 +490,14 @@ Daylight saving changes, overlapping plans and retries after a refused feed are 
 We also carried it across restarts.
 
 **Passed.** Three update restarts each carried the clock over gaps of 1 to 3 s, and two power cuts lost it, as designed. With no time source and about 15 hours up, the clock expired about 6.6 hours after its last sync. A 09:30 meal held, a manual feed still ran, and a sync at 09:32:50 ran the meal late, once. Expiry with a working time server hasn't run.
+
+### Pointed the time server a day ahead
+
+*Nov 16 and 17 · The second feeder · 75 minutes*
+
+With the clock set by a client first.
+
+**Passed.** All 11 answers were held back as too far off, and the clock never jumped. Once the answers had stayed apart for long enough, the clock marked itself invalid and waited for a client to set it again.
 
 ## Network and Wi-Fi
 
@@ -456,6 +558,57 @@ Current draw wasn't measured, and a Bluetooth install on this setting hasn't run
 - **Nov 6, one drop:** the feeder now starts the waits over when the network comes back. The rejected join was retried after 1 s, and the feeder had its address 34.6 s after the hotspot returned. Most of what's left is the wait the outage grew: the try before it just missed the hotspot's return, and the next came 20 s later.
 - **Nov 6, twenty more drops on that build:** each rejoin took 36 to 40 s, with no fault or restart.
 - **Nov 6, three drops on the next build:** while the network is gone the wait between tries now stops growing at 10 s. The feeder had its address 29, 34 and 33 s after the hotspot returned, with no fault. What's left is the scans themselves (4 s each), the rejected join and the join that succeeds (5 s each).
+
+### A client that stops reading
+
+*Nov 18 · The second feeder*
+
+A client following the history was paused, so it read nothing, while changes made events for it.
+
+**Fixed.**
+
+- **Before the fix:** when the client's receive window hadn't filled, the feeder ended the session after about 90 s and freed its slot, with the heap unchanged. When the window had filled, the feeder ended the session but never closed the connection, so the connection held one of the feeder's ten for good. Three stuck clients a round, over four rounds, left up to 13 connections stuck on the bench computer.
+- **After the fix:** the stalled connection was reset 30 s after it stopped moving, and a sweep reset the others 56 and 71 s after their writes stopped. A connection whose window wasn't full still closed cleanly. Over the same four rounds, no more than 5 were stuck at once and a new session opened every round. A slow reader, taking 512 B every 2 s for 200 s, was never reset.
+
+A host that keeps opening its window one byte at a time can still hold a connection the feeder has closed.
+
+### Filled every session slot
+
+*Nov 16 · The second feeder*
+
+Four owner sessions open, three of them following history, then a fifth.
+
+**Passed.** The feeder closed the oldest idle session and gave its slot to the fifth, and the others kept answering. With a 3-portion feed running in the oldest session, it closed an idle one instead, and the feed finished 3 of 3.
+
+### Bad handshakes and removed keys
+
+*Nov 16 · The second feeder*
+
+100 handshakes of junk, then 70 opens by a removed key in 8 s.
+
+**Passed.** Each was refused, an owner's session stayed fine, and the feeder never restarted.
+
+### 6,875 settings changes in 30 minutes
+
+*Nov 17 · The second feeder*
+
+**Passed.** Every change was saved once and answered done, with no fault and no restart.
+
+### Filled the event history during a feed
+
+*Nov 17 · The second feeder · Hopper empty*
+
+The history keeps a fixed number of events and drops the oldest. We filled it to the point of wrapping, then made 10 changes during a 2-portion feed, across the point where it drops a block.
+
+**Passed.** All 10 changes and the feed were recorded in order, and the oldest block was dropped after the feed. A request never waited on a history write: answers took 17 ms on the median, and 130 ms at most, over 1,600 changes.
+
+### Bluetooth setup at the smallest packet size
+
+*Nov 17 · The second feeder*
+
+Setup over Bluetooth with a phone's 23-byte packets, the smallest allowed.
+
+**Passed with gaps.** The feeder's reply arrived whole in five packets. The gap: a phone that refuses the feeder's own request to raise the size leaves setup waiting, with nothing sent and nothing logged.
 
 ## Batteries
 
@@ -534,9 +687,8 @@ These need a person, more equipment or a change to the test network. None of the
 - **A real brownout, and the battery floor.** Both are **Modeled** only. Neither has run on a bench supply, so whether a real brownout sets the flag the firmware reads is unknown.
 - **A flat pack.**
 - **A DHCP server lost, or a lease expired.** A lease renewal has been seen, once.
-- **A client that stops reading.** We have no way yet to stall one on purpose, so what happens to its unsent data is open.
 - **An install on a feeder that has never run Wellfed.**
 
 ## Evidence
 
-- **Observed, October 22 to November 1, 2026, on one research feeder, unless an entry says otherwise.** Much of the detail is on the pages for [motor and feeds](../../firmware/motor-and-feeds.md#evidence), [jams and sensor faults](../../firmware/jams-and-sensor-faults.md#evidence), [calibration](../../firmware/calibration.md#evidence), [power](../../firmware/power.md#evidence), [the clock](../../firmware/clock.md#evidence), [the OTA design](../../firmware/ota-design.md#evidence), [consumer installation](../../firmware/consumer-installation.md#evidence), [the device API](../../firmware/device-api.md#evidence) and [the resource budget](../../firmware/resource-budget.md#evidence).
+- **Observed, October 22 to November 6, 2026, on one research feeder, and November 16 to 18 on a second feeder, as each entry says.** Much of the detail is on the pages for [motor and feeds](../../firmware/motor-and-feeds.md#evidence), [jams and sensor faults](../../firmware/jams-and-sensor-faults.md#evidence), [calibration](../../firmware/calibration.md#evidence), [power](../../firmware/power.md#evidence), [the clock](../../firmware/clock.md#evidence), [the OTA design](../../firmware/ota-design.md#evidence), [consumer installation](../../firmware/consumer-installation.md#evidence), [the device API](../../firmware/device-api.md#evidence) and [the resource budget](../../firmware/resource-budget.md#evidence).
