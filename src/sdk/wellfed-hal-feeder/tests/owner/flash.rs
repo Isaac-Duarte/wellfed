@@ -14,7 +14,10 @@ fn flash_hold_waits_before_outputs_and_release_allows_new_work() {
     let refreshes = beats();
     f.hold();
 
-    assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(1, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     f.step();
     f.advance(3);
     assert!(f.status().state == OwnerState::Preparing && f.reserve_calls == 1);
@@ -46,7 +49,10 @@ fn a_request_behind_a_lease_after_a_rest_hold_off_still_feeds() {
     f.hold();
     f.step(); // The loop's pass, which the lease keeps from beating.
     assert_eq!(f.status().fault, OwnerFault::Ok);
-    assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(1, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     f.step();
     assert_eq!(f.status().fault, OwnerFault::Ok);
     assert_eq!(f.status().state, OwnerState::Preparing);
@@ -68,7 +74,10 @@ fn flash_interruption_latches_failure_even_after_release() {
             f.start_feed();
         } else {
             f.advance(2);
-            assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+            assert_eq!(
+                f.owner.submit(1, 1, Requester::NONE),
+                SubmitResult::Enqueued
+            );
             f.step();
             assert!(f.task().optics_started && f.status().state == OwnerState::Preparing);
         }
@@ -107,7 +116,10 @@ fn flash_interruption_latches_failure_even_after_release() {
         }
 
         f.advance(1);
-        assert_eq!(f.owner.submit(2, 1), SubmitResult::RejectStopped);
+        assert_eq!(
+            f.owner.submit(2, 1, Requester::NONE),
+            SubmitResult::RejectStopped
+        );
         assert!(!f.owner.acknowledge(1));
         assert_eq!(beats(), refreshes);
         f.stop();
@@ -118,7 +130,10 @@ fn flash_interruption_latches_failure_even_after_release() {
 fn flash_hold_expires_requests_and_protocol_fault_stops_owner() {
     let mut f = boot();
     f.hold();
-    assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(1, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     f.step();
     f.advance(20);
 
@@ -179,7 +194,10 @@ fn flash_lease_budget_must_fit_watchdog_supervision() {
     f.release_hold();
     f.advance(2);
     assert!(f.status().fault == OwnerFault::Ok && beats() > refreshes);
-    assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(1, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     f.stop();
 
     // An authority whose budget can outlast the progress gap is refused.

@@ -5,15 +5,19 @@
 //! The on-flash record is 128 bytes, major 1: magic `PLFJNL01`, major,
 //! minor, record size, type, mode, direction, flags, sequence, binding,
 //! high-water ID, result counts, outcome, reason, max portions (bytes
-//! 12..48), spare room (48..120, zero), CRC-32/ISO-HDLC of bytes 0..120 at
-//! 120 and the `CMIT` commit marker at 124.
+//! 12..48), the feed's requester (48..53, the product's encoding, zero for
+//! nobody known, then 53..56 zero), spare room (56..120, zero),
+//! CRC-32/ISO-HDLC of bytes 0..120 at 120 and the `CMIT` commit marker at
+//! 124. A reservation writes its requester and its result keeps it, so a
+//! feed a reset interrupted resolves under the requester it would have
+//! been recorded with had it finished.
 //!
 //! Bank 0 runs this journal for the life of the feeder, so its record only
 //! changes by additive minors in the spare room: the journal reads its
 //! units whole, so its length never changes within a major (a cut erase
 //! over a longer record would read as corrupt and stop feeding). A newer
 //! minor decodes for the fields this build knows and keeps the rest when
-//! the journal writes its next record. Bytes 48..80 are kept for the minor
+//! the journal writes its next record. Bytes 56..88 are kept for the minor
 //! that makes a feed's write id durable: the 16-byte request id, the 8-byte
 //! key id of the client that sent it and the 8-byte id of the feed it named,
 //! so a resend after a restart finds its feed. An older build carries those
@@ -60,7 +64,7 @@ use core::ffi::c_uint;
 
 use crate::feed::controller::{FeedReason, FeedRequest};
 use crate::feed::progress::{BowlMode, Direction};
-use crate::feed::storage::{OwnerOutcome, OwnerRecovery, OwnerResult, OwnerStorage};
+use crate::feed::storage::{OwnerOutcome, OwnerRecovery, OwnerResult, OwnerStorage, Requester};
 use wellfed_core::store::slot::{
     CRC_AT, DualSlot, Extent, Found, Layout, Prepare, RECORD_BYTES, SlotIo, Version, get_u16,
     get_u64, put_u16, put_u64, seal,
@@ -70,8 +74,11 @@ const GENESIS: u8 = 0;
 const INTENT: u8 = 1;
 const RESULT: u8 = 2;
 
+/// The feed's requester, then zero to the end of the fields.
+const REQUESTER_AT: usize = 48;
+const REQUESTER_END: usize = REQUESTER_AT + Requester::BYTES;
 /// Where the fields this build knows end, and the spare room starts.
-const FIELDS_END: usize = 48;
+const FIELDS_END: usize = 56;
 /// The room kept for a durable write id: the request id, the requesting
 /// client's key id, then the id of the feed it named, which an older
 /// build's records carry forward unread onto later feeds.
@@ -79,7 +86,7 @@ pub const REQUEST_ID_AT: usize = FIELDS_END;
 const REQUEST_FEED_AT: usize = REQUEST_ID_AT + 16 + 8;
 pub const REQUEST_ID_END: usize = REQUEST_FEED_AT + 8;
 
-const _: () = assert!(REQUEST_ID_END <= CRC_AT);
+const _: () = assert!(REQUESTER_END <= FIELDS_END && REQUEST_ID_END <= CRC_AT);
 
 /// The journal reads its whole units, so unrelated bytes are never taken
 /// for an empty journal.
@@ -235,6 +242,7 @@ fn transition(c: &JournalConfig, old: &JournalView, next: &JournalView) -> bool 
         || !next.has_result
         || next.recovery.high_water_id != old.recovery.high_water_id
         || next.result.requested != old.result.requested
+        || next.result.requester != old.result.requester
         || !result_valid(c, next)
     {
         return false;
@@ -278,6 +286,7 @@ impl<I: SlotIo> FeedJournal<I> {
         p[44] = v.result.outcome.byte();
         p[45] = v.result.reason.journaled().byte();
         put_u16::<46, _>(&mut p, self.config.max_portions);
+        p[REQUESTER_AT..REQUESTER_END].copy_from_slice(&v.result.requester.0);
 
         seal(&mut p);
         p
@@ -290,10 +299,12 @@ impl<I: SlotIo> FeedJournal<I> {
             || p[15] > 7
             || get_u64::<24, _>(p) != self.config.binding
             || get_u16::<46, _>(p) != self.config.max_portions
-            || !all(&p[FIELDS_END..CRC_AT], 0)
+            || !all(&p[REQUESTER_END..CRC_AT], 0)
         {
             return None;
         }
+        let mut requester = Requester::NONE;
+        requester.0.copy_from_slice(&p[REQUESTER_AT..REQUESTER_END]);
 
         let v = JournalView {
             sequence: get_u64::<16, _>(p),
@@ -313,6 +324,7 @@ impl<I: SlotIo> FeedJournal<I> {
                 // A reason the journal never stores is no record of its.
                 reason: FeedReason::from_byte(p[45]).filter(|r| r.journaled() == *r)?,
                 motion_possible: p[15] & 4 != 0,
+                requester,
             },
         };
 
@@ -328,6 +340,7 @@ impl<I: SlotIo> FeedJournal<I> {
                 && v.result.outcome == OwnerOutcome::Pending
                 && v.result.reason == FeedReason::None
                 && !v.result.motion_possible
+                && v.result.requester == Requester::NONE
         } else if v.sequence == 1
             || v.recovery.high_water_id == 0
             || v.result.requested == 0
@@ -467,8 +480,9 @@ impl<I: SlotIo> FeedJournal<I> {
     /// have moved. Either way it resolves as uncertain, under the ID after
     /// the high water, which is the one the loop always reserves next, and
     /// the feed is never retried: a conservative result, usually a false
-    /// positive. The request's size is lost with the record; it stands as
-    /// the most a feed may ask.
+    /// positive. The request's size and requester are lost with the record;
+    /// the size stands as the most a feed may ask, and nobody is known to
+    /// have asked.
     ///
     /// `None` where no reservation can follow `rest` (a double bowl whose
     /// phase is unknown, a worn or exhausted journal): the cut write is
@@ -666,6 +680,7 @@ impl<I: SlotIo> FeedJournal<I> {
             result: OwnerResult {
                 id: request.id,
                 requested: request.portions,
+                requester: request.requester,
                 ..OwnerResult::default()
             },
             has_result: false,
@@ -731,6 +746,7 @@ impl<I: SlotIo> FeedJournal<I> {
                 outcome: OwnerOutcome::Uncertain,
                 reason: FeedReason::None,
                 motion_possible: true,
+                requester: self.view.result.requester,
             },
             ..self.view
         };

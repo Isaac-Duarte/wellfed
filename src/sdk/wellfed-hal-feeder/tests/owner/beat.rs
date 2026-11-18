@@ -30,7 +30,10 @@ fn the_beat_requires_owner_progress_and_is_checked_before_motion() {
 
     let mut f = boot();
     f.reserve_delay_ticks = 51 * 32;
-    assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(1, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     f.step();
 
     assert!(f.status().state == OwnerState::Fault && f.status().fault == OwnerFault::Progress);
@@ -68,7 +71,10 @@ fn a_feed_beats_supervised_and_a_late_result_never_beats_again() {
     assert_eq!(f.status().result.outcome, OwnerOutcome::Done); // Durable physical result remains valid.
     assert_eq!(beats(), f.finish_refreshes);
     assert!(f.task().beat_lost);
-    assert_ne!(f.owner.submit(2, 1), SubmitResult::Enqueued);
+    assert_ne!(
+        f.owner.submit(2, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     f.stop();
 }
 
@@ -101,9 +107,15 @@ fn submit_waits_for_the_first_step() {
     let mut f = Box::new(Fixture::new(PHASE_KNOWN));
     f.create();
     // Opened but never stepped: no supervisor clock has been published.
-    assert_eq!(f.owner.submit(1, 1), SubmitResult::RejectBusy);
+    assert_eq!(
+        f.owner.submit(1, 1, Requester::NONE),
+        SubmitResult::RejectBusy
+    );
     f.step();
-    assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(1, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     f.step();
     assert!(f.status().intent_reserved);
     f.owner.cancel(1);
@@ -145,7 +157,10 @@ fn determined_initialization_failure_holds_stopped_without_reset_loop() {
         assert!(beats() > 0 && !f.task().beat_lost);
 
         // Latched: no request is taken and the pending feed is never retried.
-        assert_eq!(f.owner.submit(8, 1), SubmitResult::RejectStopped);
+        assert_eq!(
+            f.owner.submit(8, 1, Requester::NONE),
+            SubmitResult::RejectStopped
+        );
         assert!(f.reserve_calls == 0 && f.finish_calls == 0);
         assert_eq!(f.recover_calls, u32::from(case == 0));
 

@@ -132,7 +132,10 @@ fn a_blocked_outlet_fails_the_feed_before_any_motion() {
     let mut f = boot();
 
     feed_faults::arm(Injected::OutletBlocked);
-    assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(1, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     for _ in 0..=CONFIG.prepare_timeout_ms {
         f.advance(1);
         assert_eq!(motor_pins(), MOTOR_MASK);
@@ -169,7 +172,10 @@ fn a_lost_adc_fails_the_feed_and_the_owner_holds_it() {
     f.advance(3 * CONFIG.idle_gap_ms);
     assert!(beats() > before);
     assert_eq!(f.status().fault, OwnerFault::Sensor);
-    assert_eq!(f.owner.submit(2, 1), SubmitResult::RejectStopped);
+    assert_eq!(
+        f.owner.submit(2, 1, Requester::NONE),
+        SubmitResult::RejectStopped
+    );
     f.stop();
 }
 

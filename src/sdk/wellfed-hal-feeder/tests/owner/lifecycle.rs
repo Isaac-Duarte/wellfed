@@ -13,13 +13,25 @@ use wellfed_hal_feeder::owner::{Owner, OwnerConfig, OwnerFault, OwnerState, Subm
 #[test]
 fn serialized_lifecycle_and_durable_success() {
     let mut f = boot();
-    assert_eq!(f.owner.submit(0, 1), SubmitResult::RejectId);
-    assert_eq!(f.owner.submit(1, 0), SubmitResult::RejectRequest);
+    assert_eq!(
+        f.owner.submit(0, 1, Requester::NONE),
+        SubmitResult::RejectId
+    );
+    assert_eq!(
+        f.owner.submit(1, 0, Requester::NONE),
+        SubmitResult::RejectRequest
+    );
     let over = CONFIG.feed.max_portions + 1;
-    assert_eq!(f.owner.submit(1, over), SubmitResult::RejectRequest);
+    assert_eq!(
+        f.owner.submit(1, over, Requester::NONE),
+        SubmitResult::RejectRequest
+    );
 
     f.start_feed();
-    assert_eq!(f.owner.submit(2, 1), SubmitResult::RejectBusy);
+    assert_eq!(
+        f.owner.submit(2, 1, Requester::NONE),
+        SubmitResult::RejectBusy
+    );
     assert!(!f.owner.cancel(99));
 
     f.complete();
@@ -37,8 +49,14 @@ fn serialized_lifecycle_and_durable_success() {
     assert!(f.owner.acknowledge(1));
     f.advance(1);
 
-    assert_eq!(f.owner.submit(1, 1), SubmitResult::RejectId);
-    assert_eq!(f.owner.submit(2, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(1, 1, Requester::NONE),
+        SubmitResult::RejectId
+    );
+    assert_eq!(
+        f.owner.submit(2, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     assert!(f.owner.cancel(2));
     f.step();
 
@@ -59,7 +77,10 @@ fn reservation_failure_cannot_move_outputs_or_retry() {
     let mut f = boot();
     f.reserve_fail = true;
 
-    assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(1, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     f.step();
     assert!(f.status().state == OwnerState::Fault && f.status().fault == OwnerFault::Storage);
     assert!(f.owner.faulted());
@@ -77,7 +98,10 @@ fn slow_reservation_expires_and_cancellation_during_callback_wins() {
     let mut f = boot();
     f.reserve_delay_ticks = 25 * 32;
 
-    assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(1, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     f.step();
     assert!(f.status().state == OwnerState::Terminal && f.status().result_durable);
     assert!(
@@ -88,7 +112,10 @@ fn slow_reservation_expires_and_cancellation_during_callback_wins() {
     let mut f = boot();
     f.cancel_in_reserve = true;
 
-    assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(1, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     f.step();
     assert!(f.status().result.outcome == OwnerOutcome::Cancelled && f.status().result_durable);
     assert!(!f.status().result.motion_possible);
@@ -122,12 +149,21 @@ fn an_interrupted_reservation_resolves_as_uncertain_and_is_never_retried() {
     assert!(!f.disk.pending_request && f.disk.high_water_id == 7);
 
     // Held until the result is reported, then open for new IDs only.
-    assert_eq!(f.owner.submit(8, 1), SubmitResult::RejectBusy);
+    assert_eq!(
+        f.owner.submit(8, 1, Requester::NONE),
+        SubmitResult::RejectBusy
+    );
     assert!(f.owner.acknowledge(7));
     f.step();
     assert_eq!(f.status().state, OwnerState::Idle);
-    assert_eq!(f.owner.submit(7, 1), SubmitResult::RejectId);
-    assert_eq!(f.owner.submit(8, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(7, 1, Requester::NONE),
+        SubmitResult::RejectId
+    );
+    assert_eq!(
+        f.owner.submit(8, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     f.step();
     assert!(f.reserve_calls == 1 && f.resolve_calls == 1);
     f.stop();
@@ -139,7 +175,10 @@ fn an_unrecorded_resolution_blocks_every_new_request() {
 
     assert!(f.status().state == OwnerState::Fault && f.status().fault == OwnerFault::Recovery);
     assert!(f.resolve_calls == 1 && f.disk.pending_request);
-    assert_eq!(f.owner.submit(8, 1), SubmitResult::RejectStopped);
+    assert_eq!(
+        f.owner.submit(8, 1, Requester::NONE),
+        SubmitResult::RejectStopped
+    );
     assert!(
         f.reserve_calls == 0 && f.finish_calls == 0 && f.status().stopped && f.status().optics_off
     );
@@ -210,7 +249,10 @@ fn slow_adc_and_stalled_owner_stop_through_the_supervisor() {
     f.stop();
 
     let mut f = boot();
-    assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(1, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     f.step();
     f.advance(2); // IR on, still preparing.
 
@@ -255,7 +297,10 @@ fn ambiguous_double_phase_is_never_assumed_after_cancel() {
 
     assert!(f.owner.acknowledge(1));
     f.advance(1);
-    assert_eq!(f.owner.submit(2, 1), SubmitResult::RejectPhase);
+    assert_eq!(
+        f.owner.submit(2, 1, Requester::NONE),
+        SubmitResult::RejectPhase
+    );
     f.stop();
 }
 
@@ -399,7 +444,10 @@ fn a_feed_traces_its_drive_edges_and_current() {
     f.advance(1);
 
     // A request that never drives reports no drive and none of the old edges.
-    assert_eq!(f.owner.submit(2, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(2, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     assert!(f.owner.cancel(2));
     f.step();
     let s = f.status();
@@ -419,7 +467,10 @@ fn no_feed_starts_while_an_install_holds_the_lease() {
     mailbox::request(offer).unwrap();
     assert!(mailbox::installing());
 
-    assert_eq!(f.owner.submit(1, 1), SubmitResult::RejectBusy);
+    assert_eq!(
+        f.owner.submit(1, 1, Requester::NONE),
+        SubmitResult::RejectBusy
+    );
     f.advance(50);
     assert_eq!(
         motor_pins(),
@@ -431,7 +482,10 @@ fn no_feed_starts_while_an_install_holds_the_lease() {
     // The stage refuses the offer and lets go: feeding is back.
     mailbox::finish(Err(wellfed_core::ota::install::Refused::Busy));
     assert!(!mailbox::installing());
-    assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(1, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     mailbox::reset();
 }
 
@@ -446,7 +500,10 @@ fn a_feed_leaves_one_observation_a_poll_for_its_trace() {
     f.advance(2);
     assert_eq!(f.owner.take_observation(), None);
 
-    assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+    assert_eq!(
+        f.owner.submit(1, 1, Requester::NONE),
+        SubmitResult::Enqueued
+    );
     f.step();
     let preparing = f.owner.take_observation().expect("a preparing poll");
     assert!(preparing.drive_at_ms.is_none() && preparing.motor == MotorCommand::Stop);

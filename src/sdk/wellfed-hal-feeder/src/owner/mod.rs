@@ -34,7 +34,9 @@ use wellfed_core_feeder::feed::food_read::{
 use wellfed_core_feeder::feed::observe::Observation;
 use wellfed_core_feeder::feed::progress::BowlMode;
 use wellfed_core_feeder::feed::sensor_inputs::SensorInputs;
-use wellfed_core_feeder::feed::storage::{OwnerRecovery, OwnerResult, OwnerStorage, RotorPhase};
+use wellfed_core_feeder::feed::storage::{
+    OwnerRecovery, OwnerResult, OwnerStorage, Requester, RotorPhase,
+};
 
 use crate::board::{self, Board};
 use crate::events::{EDGE_LOG, Events, EventsFault, PinWatch};
@@ -160,6 +162,7 @@ pub struct OwnerStatus {
 pub struct OwnerMailbox {
     pub id: u64,
     pub portions: u16,
+    pub requester: Requester,
     pub queued_at: u32,
     pub has_request: bool,
     pub cancel: bool,
@@ -432,7 +435,9 @@ impl<S> Owner<S> {
     }
 
     /// ENQUEUED is transport acceptance, not durable acceptance or dispensing.
-    pub fn submit(&self, id: u64, portions: u16) -> SubmitResult {
+    /// `requester` is the product's, which the journal reserves with the
+    /// feed so a feed a reset interrupts resolves under it.
+    pub fn submit(&self, id: u64, portions: u16, requester: Requester) -> SubmitResult {
         let _guard = IrqGuard::lock();
         let running = self.running();
         // SAFETY: inside the guard, the only borrow of the shared half.
@@ -463,6 +468,7 @@ impl<S> Owner<S> {
 
         shared.mailbox.id = id;
         shared.mailbox.portions = portions;
+        shared.mailbox.requester = requester;
         shared.mailbox.queued_at = value;
         shared.mailbox.has_request = true;
         shared.mailbox.cancel = false;

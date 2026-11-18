@@ -11,6 +11,7 @@ use wellfed_core_feeder::feed::controller::{
     MotorCommand, OVERCURRENT_POLLS,
 };
 use wellfed_core_feeder::feed::progress::{BowlMode, Direction};
+use wellfed_core_feeder::feed::storage::Requester;
 
 /// Compressed test intervals; these are not deployable hardware settings.
 const LIMITS: FeedLimits = FeedLimits {
@@ -56,6 +57,7 @@ fn request(id: u64, portions: u16, mode: BowlMode, direction: Direction) -> Feed
         credit_next_event: true,
         phase_known: true,
         homing: false,
+        requester: Requester::NONE,
     }
 }
 

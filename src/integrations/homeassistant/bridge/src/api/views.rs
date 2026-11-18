@@ -138,8 +138,8 @@ pub struct Feed {
     pub reason: FeedReason,
     /// What the food beam read during the feed.
     pub hopper: FoodLevel,
-    /// Who asked; `None` for a feed a reset interrupted, whose requester
-    /// the feeder's journal does not keep.
+    /// Who asked; `None` for a feed a reset interrupted whose journal
+    /// record the cut lost too, so the feeder could not say who asked.
     pub by: Option<By>,
     /// The fingerprint of the client that asked, for [`By::Client`].
     pub client: Option<String>,

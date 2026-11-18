@@ -37,8 +37,9 @@ pub struct Feed {
     /// then, and otherwise at the boot's time, often `None`.
     pub at: Option<Timestamp>,
     /// Who asked for it; `None` when that is unknown: a feed a reset
-    /// interrupted is resolved at the next boot, and the journal does not
-    /// keep who asked unless a plan had claimed it.
+    /// interrupted is resolved at the next boot under the requester its
+    /// journal reservation kept, unless the cut lost the reservation's
+    /// record too, and no plan had claimed it.
     pub by: Option<Source>,
     pub requested: u8,
     pub delivered: Delivered,
@@ -197,8 +198,10 @@ impl Feed {
         };
 
         let delivered = Delivered::of(outcome, completed, requested);
-        // The feeder names itself for an interrupted feed only because the
-        // journal lost who asked; a plan that claimed it is named instead.
+        // The feeder names itself for an interrupted feed only when the
+        // journal lost who asked (a cut that took the reservation's record
+        // too); otherwise the requester it kept, or the plan that claimed
+        // it, is named.
         let by = match (reason, by) {
             (FeedReason::Interrupted, Source::Feeder) => None,
             (_, by) => Some(by),

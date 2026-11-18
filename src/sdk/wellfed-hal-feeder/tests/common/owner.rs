@@ -8,6 +8,7 @@ use wellfed_core::flash_coord::{FlashCoord, FlashParty, FlashReply};
 use wellfed_core_feeder::feed::controller::{FeedLimits, FeedRequest};
 use wellfed_core_feeder::feed::progress::{BowlMode, Direction};
 use wellfed_core_feeder::feed::sensor_inputs::SensorLimits;
+pub use wellfed_core_feeder::feed::storage::Requester;
 use wellfed_core_feeder::feed::storage::{OwnerOutcome, OwnerRecovery, OwnerResult, OwnerStorage};
 use wellfed_core_feeder::feed_journal::{FeedJournal, JournalConfig, JournalError};
 use wellfed_core_feeder::floor::FloorLimits;
@@ -213,7 +214,10 @@ impl Fixture {
     }
 
     pub fn start_feed(&mut self) {
-        assert_eq!(self.owner.submit(1, 1), SubmitResult::Enqueued);
+        assert_eq!(
+            self.owner.submit(1, 1, Requester::NONE),
+            SubmitResult::Enqueued
+        );
         assert!(self.status().state == OwnerState::Queued && !self.status().intent_reserved);
         self.step();
         self.advance(5);

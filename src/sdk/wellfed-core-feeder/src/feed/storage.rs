@@ -59,6 +59,23 @@ impl OwnerOutcome {
     }
 }
 
+/// Who asked for a feed, in the product's own encoding. The SDK never reads
+/// it: the journal keeps it with the feed's reservation and its result, so
+/// a feed a reset interrupted resolves at the next boot under the requester
+/// it would have been recorded with had it finished. All zero is nobody
+/// known: a reservation cut before it committed, or a feed submitted
+/// without one.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Requester(pub [u8; Requester::BYTES]);
+
+impl Requester {
+    /// What the product needs: a kind and a client's 4-byte key fingerprint.
+    pub const BYTES: usize = 5;
+    /// Nobody known.
+    pub const NONE: Self = Self([0; Self::BYTES]);
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct OwnerResult {
@@ -68,6 +85,8 @@ pub struct OwnerResult {
     pub outcome: OwnerOutcome,
     pub reason: FeedReason,
     pub motion_possible: bool,
+    /// The reservation's requester, which its result keeps.
+    pub requester: Requester,
 }
 
 /// Where a single bowl's rotor rests between feeds. A drive that ends on a

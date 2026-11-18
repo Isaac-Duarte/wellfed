@@ -10,13 +10,72 @@
 //! feed a reset interrupted is resolved at the next boot, durably, as
 //! uncertain too, with a reason of its own ([`interrupted`]).
 //!
-//! The journal keeps no reason for a resolved feed (its record is pinned,
-//! and bank 0 and the flash tools read it), so the reason is the wire's
-//! alone: the boot that resolves the feed names it.
+//! The journal keeps no reason for a resolved feed, so the reason is the
+//! wire's alone: the boot that resolves the feed names it. It does keep who
+//! asked, in this module's encoding ([`requester`]), so the resolved feed
+//! names the requester its event would have named had it finished.
 
 use wellfed_core_feeder::feed::controller::FeedReason as CoreReason;
-use wellfed_core_feeder::feed::storage::{OwnerOutcome, OwnerResult};
-use wellfed_proto::api::{EventBody, FeedOutcome, FeedReason, FoodLevel, Source};
+use wellfed_core_feeder::feed::storage::{OwnerOutcome, OwnerResult, Requester};
+use wellfed_proto::api::{EventBody, FeedOutcome, FeedReason, Fingerprint, FoodLevel, Source};
+
+/// The kind of requester the journal keeps, in its first byte. Zero is
+/// nobody known.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+enum Kind {
+    Panel = 1,
+    Client = 2,
+    Feeder = 3,
+    Schedule = 4,
+}
+
+impl Kind {
+    const fn from_byte(byte: u8) -> Option<Self> {
+        match byte {
+            1 => Some(Self::Panel),
+            2 => Some(Self::Client),
+            3 => Some(Self::Feeder),
+            4 => Some(Self::Schedule),
+            _ => None,
+        }
+    }
+}
+
+/// `by` as the journal keeps it: its kind, then a client's key fingerprint
+/// or a plan's slot, the rest zero.
+pub fn requester(by: Source) -> Requester {
+    let mut bytes = [0; Requester::BYTES];
+    let kind = match by {
+        Source::Panel => Kind::Panel,
+        Source::Client(client) => {
+            bytes[1..].copy_from_slice(&client);
+            Kind::Client
+        }
+        Source::Feeder => Kind::Feeder,
+        Source::Schedule(plan) => {
+            bytes[1] = plan;
+            Kind::Schedule
+        }
+    };
+    bytes[0] = kind as u8;
+    Requester(bytes)
+}
+
+/// Who a journaled `requester` names; `None` for nobody known (a
+/// reservation whose record a cut lost) or bytes this encoding never
+/// writes.
+pub fn source(requester: Requester) -> Option<Source> {
+    let [kind, rest @ ..] = requester.0;
+    let client: Fingerprint = rest;
+    match Kind::from_byte(kind)? {
+        Kind::Panel if client == [0; 4] => Some(Source::Panel),
+        Kind::Client => Some(Source::Client(client)),
+        Kind::Feeder if client == [0; 4] => Some(Source::Feeder),
+        Kind::Schedule if rest[1..] == [0; 3] => Some(Source::Schedule(rest[0])),
+        Kind::Panel | Kind::Feeder | Kind::Schedule => None,
+    }
+}
 
 /// Whether the journal holds the result.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -72,8 +131,11 @@ fn portions(count: u16) -> u8 {
 
 /// The `Fed` event for the feed `feed` a reset interrupted, which the
 /// owner resolved at this boot as `result`: uncertain, for the reason
-/// `Interrupted`.
-pub fn interrupted(feed: u32, result: &OwnerResult, by: Source) -> EventBody {
+/// `Interrupted`, by the requester its reservation kept. A reservation
+/// that names nobody is the feeder's, which clients show as unknown and a
+/// plan's claim may still attribute (`Schedule::claim_behind`).
+pub fn interrupted(feed: u32, result: &OwnerResult) -> EventBody {
+    let by = source(result.requester).unwrap_or(Source::Feeder);
     EventBody::Fed {
         feed,
         requested: portions(result.requested),
@@ -120,6 +182,7 @@ mod tests {
             outcome,
             reason,
             motion_possible: true,
+            requester: Requester::NONE,
         }
     }
 
@@ -188,7 +251,7 @@ mod tests {
             ..result(OwnerOutcome::Uncertain, CoreReason::None)
         };
         assert_eq!(
-            interrupted(9, &resolved, Source::Feeder),
+            interrupted(9, &resolved),
             EventBody::Fed {
                 feed: 9,
                 requested: 2,
@@ -199,5 +262,52 @@ mod tests {
                 by: Source::Feeder,
             }
         );
+    }
+
+    /// Every requester a feed can have reads back as itself, so a feed a
+    /// reset interrupted names who asked; nobody known reads as the
+    /// feeder, as before the journal kept it.
+    #[test]
+    fn a_resolved_feed_names_the_requester_its_reservation_kept() {
+        for by in [
+            Source::Panel,
+            Source::Client([0xab, 0xcd, 0x01, 0x02]),
+            Source::Client([0; 4]),
+            Source::Feeder,
+            Source::Schedule(0),
+            Source::Schedule(7),
+        ] {
+            assert_eq!(source(requester(by)), Some(by), "{by:?}");
+            let resolved = OwnerResult {
+                completed: 0,
+                requester: requester(by),
+                ..result(OwnerOutcome::Uncertain, CoreReason::None)
+            };
+            let EventBody::Fed { by: named, .. } = interrupted(9, &resolved) else {
+                panic!("not a feed");
+            };
+            assert_eq!(named, by);
+        }
+
+        let nobody = result(OwnerOutcome::Uncertain, CoreReason::None);
+        let EventBody::Fed { by, .. } = interrupted(9, &nobody) else {
+            panic!("not a feed");
+        };
+        assert_eq!(by, Source::Feeder);
+    }
+
+    /// Bytes this encoding never writes name nobody.
+    #[test]
+    fn a_requester_this_build_never_writes_names_nobody() {
+        for bytes in [
+            [0, 0, 0, 0, 0],
+            [5, 0, 0, 0, 0],
+            [0xff, 0xff, 0xff, 0xff, 0xff],
+            [1, 0, 0, 0, 1],
+            [3, 1, 0, 0, 0],
+            [4, 2, 0, 1, 0],
+        ] {
+            assert_eq!(source(Requester(bytes)), None, "{bytes:02x?}");
+        }
     }
 }

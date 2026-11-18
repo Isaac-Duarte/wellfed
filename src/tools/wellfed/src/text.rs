@@ -33,8 +33,8 @@ pub(crate) fn time(at: Option<Timestamp>, zone: &TimeZone) -> String {
     )
 }
 
-/// Who asked; nobody known for a feed a reset interrupted that no plan
-/// had claimed.
+/// Who asked; nobody known for a feed a reset interrupted whose journal
+/// record the cut lost too, and that no plan had claimed.
 fn source(by: Option<Source>) -> String {
     match by {
         Some(Source::Panel) => "panel".to_owned(),

@@ -360,6 +360,11 @@ fn a_restart_mid_feed_resolves_it_as_uncertain_under_its_own_number() {
         let mut owner = open(&sim).await;
         owner.subscribe(None, Samples::Off).await.unwrap();
         let fed = next_fed(&mut owner).await;
+        let EventBody::Feeder(FeederEvent::Fed { by, .. }) = fed else {
+            unreachable!("next_fed returns a feed")
+        };
+        // The journal kept who asked: the client, not the feeder.
+        assert_matches!(by, Source::Client { .. });
         assert_eq!(
             fed,
             EventBody::Feeder(FeederEvent::Fed {
@@ -369,7 +374,7 @@ fn a_restart_mid_feed_resolves_it_as_uncertain_under_its_own_number() {
                 outcome: FeedOutcome::Uncertain,
                 reason: FeedReason::Interrupted,
                 hopper: FoodLevel::Unread,
-                by: Source::Feeder,
+                by,
             })
         );
 
@@ -378,6 +383,57 @@ fn a_restart_mid_feed_resolves_it_as_uncertain_under_its_own_number() {
         let resent = owner.ask([1; 16], &Op::Feed { portions: 2 }).await.unwrap();
         assert_eq!(resent, Answer::Feeding { feed: 2 });
         assert_eq!(feeding::reserved(&flash), Ok(2));
+        sim.stop().await;
+    });
+}
+
+/// A Dispense press a restart interrupts resolves as the panel's
+/// uncertain feed: the journal keeps who asked.
+#[test]
+fn a_restart_mid_dispense_resolves_it_as_the_panels_uncertain_feed() {
+    local(async {
+        let flash = Flash::memory();
+        let sim = start(&flash).await;
+        let mut owner = open(&sim).await;
+        owner.subscribe(None, Samples::Off).await.unwrap();
+        sim.type_line("hold lock").unwrap();
+        loop {
+            let pushed = owner.next(Duration::from_secs(10)).await.unwrap();
+            if let Pushed::Event(event) = pushed
+                && matches!(
+                    event.body,
+                    EventBody::Feeder(FeederEvent::Lock { locked: false, .. })
+                )
+            {
+                break;
+            }
+        }
+        sim.control(Control::StallFeeds(true));
+        sim.type_line("press dispense").unwrap();
+        loop {
+            if readiness(&mut owner, 2).await == Readiness::Blocked(Blocked::Feeding) {
+                break;
+            }
+            sleep(Duration::from_millis(20)).await;
+        }
+
+        sim.control(Control::Reboot);
+        drop(owner);
+        sleep(Duration::from_millis(200)).await;
+        let mut owner = open(&sim).await;
+        owner.subscribe(None, Samples::Off).await.unwrap();
+        assert_eq!(
+            next_fed(&mut owner).await,
+            EventBody::Feeder(FeederEvent::Fed {
+                feed: 1,
+                requested: 1,
+                completed: 0,
+                outcome: FeedOutcome::Uncertain,
+                reason: FeedReason::Interrupted,
+                hopper: FoodLevel::Unread,
+                by: Source::Panel,
+            })
+        );
         sim.stop().await;
     });
 }
@@ -578,10 +634,11 @@ fn the_feeding_history_reads_every_feed_after_a_restart() {
             ]
         );
         assert!(matches!(feeds[0].by, Some(Source::Client { .. })));
-        // The journal does not keep who asked: unknown, and interrupted.
+        // The journal keeps who asked: the same client as the finished
+        // feed's, and interrupted.
         assert_eq!(
             (feeds[1].by, feeds[1].reason),
-            (None, FeedReason::Interrupted)
+            (feeds[0].by, FeedReason::Interrupted)
         );
         assert!(feeds[0].seq < feeds[1].seq, "oldest first");
         sim.stop().await;

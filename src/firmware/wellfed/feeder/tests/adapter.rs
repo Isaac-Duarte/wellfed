@@ -7,7 +7,8 @@
 //!   uncertain, and nothing is acknowledged.
 //! - A feed a reset interrupted holds readiness at `Resolving` until the
 //!   owner holds its resolution, then is recorded once and acknowledged
-//!   once.
+//!   once, by the requester its reservation kept.
+//! - A feed reaches the owner with who asked, for the journal to keep.
 //! - The owner may still refuse a feed once its claim is taken, at once or
 //!   after the claim waited: the refusal reaches the asker, and the number
 //!   goes to the next feed.
@@ -18,7 +19,7 @@ use std::cell::{Cell, RefCell};
 
 use wellfed_core_feeder::feed::food_read::FoodReads;
 use wellfed_core_feeder::feed::observe::Observation;
-use wellfed_core_feeder::feed::storage::OwnerResult;
+use wellfed_core_feeder::feed::storage::{OwnerResult, Requester};
 use wellfed_feeder::feed::{self, Durability};
 use wellfed_feeder::feeder::{Feeds, RefusedClaim};
 use wellfed_feeder::trace::DriveFigures;
@@ -54,7 +55,7 @@ impl FeedOwner for Scripted {
         *self.status.borrow()
     }
 
-    fn submit(&self, id: u64, portions: u16) -> SubmitResult {
+    fn submit(&self, id: u64, portions: u16, requester: Requester) -> SubmitResult {
         let answer = self.answer.get().unwrap_or(SubmitResult::Enqueued);
         if answer == SubmitResult::Enqueued {
             self.set(|status| {
@@ -62,6 +63,7 @@ impl FeedOwner for Scripted {
                 status.result = OwnerResult {
                     id,
                     requested: portions,
+                    requester,
                     ..OwnerResult::default()
                 };
             });
@@ -263,9 +265,11 @@ fn an_interrupted_feed_is_recorded_once_and_acknowledged_once() {
     assert_eq!(step(&mut feeding), Vec::new(), "not resolved yet");
     assert_eq!(feeding.blocked(), Some(Blocked::Resolving));
 
+    let client = Source::Client([0xab, 0xcd, 0x01, 0x02]);
     let resolved = OwnerResult {
         id: 7,
         requested: 2,
+        requester: feed::requester(client),
         ..OwnerResult::default()
     };
     owner(&feeding).set(|status| {
@@ -273,15 +277,34 @@ fn an_interrupted_feed_is_recorded_once_and_acknowledged_once() {
         status.result = resolved;
         status.result_durable = true;
     });
-    assert_eq!(
-        step(&mut feeding),
-        vec![feed::interrupted(7, &resolved, Source::Feeder)]
-    );
+    let events = step(&mut feeding);
+    assert_eq!(events, vec![feed::interrupted(7, &resolved)]);
+    let [EventBody::Fed { by, .. }] = events[..] else {
+        panic!("not one feed: {events:?}");
+    };
+    assert_eq!(by, client, "who asked, as the journal kept it");
     assert_eq!(owner(&feeding).acknowledged.get(), 1);
     assert_eq!(feeding.blocked(), None);
 
     assert_eq!(step(&mut feeding), Vec::new());
     assert_eq!(owner(&feeding).acknowledged.get(), 1, "once");
+}
+
+#[test]
+fn a_feed_reaches_the_owner_with_who_asked() {
+    for by in [
+        Source::Panel,
+        Source::Client([0xab, 0xcd, 0x01, 0x02]),
+        Source::Schedule(3),
+    ] {
+        let mut feeding = opened(Rig::default());
+        assert_eq!(feeding.submit(2, by), Ok(1));
+        assert_eq!(
+            owner(&feeding).status().result.requester,
+            feed::requester(by),
+            "{by:?}"
+        );
+    }
 }
 
 #[test]

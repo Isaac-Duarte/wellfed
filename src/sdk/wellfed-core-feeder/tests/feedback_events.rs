@@ -17,6 +17,7 @@ use wellfed_core_feeder::feed::feedback::{
 };
 use wellfed_core_feeder::feed::motor_gate::{MotorGate, MotorGateFault, MotorPins};
 use wellfed_core_feeder::feed::progress::{BowlMode, Direction};
+use wellfed_core_feeder::feed::storage::Requester;
 
 /// Compressed intervals; none is a deployment default.
 const LIMITS: FeedLimits = FeedLimits {
@@ -75,6 +76,7 @@ fn begin_mode(mode: BowlMode, now: u32) -> Fixture {
         credit_next_event: true,
         phase_known: true,
         homing: false,
+        requester: Requester::NONE,
     };
     assert_eq!(
         f.controller.start(&request, now, &f.sample),
