@@ -390,6 +390,10 @@ pub trait Platform {
     /// Bytes sent, `None` once the socket failed.
     fn send(&mut self, socket: Self::Socket, bytes: &[u8]) -> Option<usize>;
     fn close(&mut self, socket: Self::Socket);
+    /// Reset a device API connection that stopped moving bytes: the stack
+    /// frees it and whatever it still queued at once, where a close would
+    /// leave both waiting on the client's closed window.
+    fn abort(&mut self, socket: Self::Socket);
     fn mdns_open(&mut self) -> Option<Self::Socket>;
     fn mdns_send(&mut self, socket: Self::Socket, bytes: &[u8], ip: u32, port: u16) -> bool;
     fn mdns_receive(&mut self, socket: Self::Socket, into: &mut [u8]) -> Datagram;

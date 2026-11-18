@@ -26,6 +26,9 @@
 #include "lwip/dhcp.h"
 #include "lwip/prot/dhcp.h"
 #include "lwip/sockets.h"
+#include "lwip/tcp.h"
+#include "lwip/priv/tcp_priv.h"
+#include "lwip/priv/tcpip_priv.h"
 #include <platform/platform_stdlib.h>
 #include "wellfed_wifi_credentials.h"
 #include "rl6548.h"
@@ -703,6 +706,71 @@ static int wellfed_ready(int s, int write)
 
 void wellfed_tcp_close(int s)
 {
+    lwip_close(s);
+}
+
+/* Resetting a device API connection that stopped moving bytes (its client
+ * stopped reading and closed its window).
+ *
+ * A graceful lwip_close cannot end such a connection: lwIP 2.0.2 (built
+ * from the SDK's source with its lwipopts.h) keeps the pcb, its unsent
+ * queue and the FIN behind it, and its persist timer probes a zero window
+ * for as long as the client answers, never giving up. Each one holds one of
+ * the SDK's ten TCP pcbs until the client reads, closes or leaves.
+ * SO_LINGER {1, 0} would make lwip_close abort, but LWIP_SO_LINGER is off
+ * in the SDK's lwipopts.h, and turning it on changes struct netconn for
+ * every object built against it.
+ *
+ * So this finds the socket's pcb by its address pair and calls tcp_abort
+ * on it, in the tcpip thread as lwIP requires (LWIP_TCPIP_CORE_LOCKING is
+ * off), through tcpip_api_call, which waits for it. tcp_abort sends an
+ * RST, frees the pcb with its queues, and calls the netconn's error
+ * callback (err_tcp), which clears the netconn's pcb: lwIP does the same
+ * to a netconn's pcb under memory pressure (tcp_kill_prio). The caller's
+ * nonblocking socket is used by no other task, so no write or close is in
+ * progress on it. lwip_close then frees the netconn and the socket with no
+ * pcb left to close. When the pcb is already gone (the client reset it
+ * first) nothing matches and the close alone suffices.
+ */
+struct wellfed_abort_call {
+    /* First, so the tcpip thread's pointer to it is a pointer to this. */
+    struct tcpip_api_call_data call;
+    struct sockaddr_in local;
+    struct sockaddr_in remote;
+};
+
+static int wellfed_ip_is(const ip_addr_t *ip, const struct sockaddr_in *at)
+{
+    return IP_IS_V4_VAL(*ip) && ip4_addr_get_u32(ip_2_ip4(ip)) == at->sin_addr.s_addr;
+}
+
+static err_t wellfed_abort_in_tcpip(struct tcpip_api_call_data *call)
+{
+    struct wellfed_abort_call *target = (struct wellfed_abort_call *)call;
+    for (struct tcp_pcb *pcb = tcp_active_pcbs; pcb != NULL; pcb = pcb->next) {
+        if (pcb->local_port == lwip_ntohs(target->local.sin_port)
+            && pcb->remote_port == lwip_ntohs(target->remote.sin_port)
+            && wellfed_ip_is(&pcb->local_ip, &target->local)
+            && wellfed_ip_is(&pcb->remote_ip, &target->remote)) {
+            /* Frees pcb: the walk stops here. */
+            tcp_abort(pcb);
+            return ERR_OK;
+        }
+    }
+    return ERR_VAL;
+}
+
+void wellfed_tcp_abort(int s)
+{
+    struct wellfed_abort_call target;
+    memset(&target, 0, sizeof(target));
+    socklen_t size = sizeof(target.local);
+    socklen_t remote_size = sizeof(target.remote);
+    if (lwip_getsockname(s, (struct sockaddr *)&target.local, &size) == 0
+        && lwip_getpeername(s, (struct sockaddr *)&target.remote, &remote_size) == 0
+        && target.local.sin_family == AF_INET && target.remote.sin_family == AF_INET) {
+        tcpip_api_call(wellfed_abort_in_tcpip, &target.call);
+    }
     lwip_close(s);
 }
 

@@ -33,6 +33,20 @@ use wellfed_proto::api::{
 
 use wellfed_session::noise::{Handshake, Keypair, Transport};
 
+/// How the driver closes an ended slot's connection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Close {
+    /// Close it gracefully, so its last bytes (an error answer, a refusal)
+    /// still reach the client before the FIN.
+    Graceful,
+    /// Reset it: the connection stopped moving bytes, so a graceful close
+    /// would leave the stack holding it, its unsent bytes and a FIN that
+    /// waits behind the client's closed window for as long as the client
+    /// stays connected. Each such client keeps one of the stack's few TCP
+    /// connections; enough of them refuse every new client.
+    Abort,
+}
+
 /// One pass's inputs from the loop.
 pub struct Pass<'a, D> {
     pub now_ms: u32,
@@ -143,8 +157,8 @@ enum Phase {
     /// The recovery window's session: the setup exchange over this
     /// stream, so the owner keys the client's code in before it is enrolled.
     Recovery(Rescue),
-    /// Send what is left, then close.
-    Closing,
+    /// Send what is left, then close as named.
+    Closing(Close),
 }
 
 struct Slot {
@@ -373,18 +387,22 @@ impl Server {
         }
     }
 
-    /// The driver should close `slot` now: it ended and its last bytes are
-    /// out. Call [`Self::closed`] once it has.
-    pub fn closing(&self, slot: usize) -> bool {
+    /// The driver should close `slot` now, and how: it ended and its last
+    /// bytes are out (or were given up on). Call [`Self::closed`] once it
+    /// has.
+    pub fn closing(&self, slot: usize) -> Option<Close> {
         let slot = &self.slots[slot];
-        matches!(slot.phase, Phase::Closing) && slot.wire.tx_idle()
+        match slot.phase {
+            Phase::Closing(close) if slot.wire.tx_idle() => Some(close),
+            _ => None,
+        }
     }
 
     /// The connection is gone (the client hung up, or the driver closed it).
     pub fn closed(&mut self, slot: usize, mut record: impl FnMut(Record)) {
         match self.slots[slot].phase {
             Phase::Free => {}
-            Phase::Closing => self.slots[slot] = Slot::FREE,
+            Phase::Closing(_) => self.slots[slot] = Slot::FREE,
             _ => {
                 self.end(slot, Reason::Closed, &mut record);
                 self.slots[slot] = Slot::FREE;
@@ -549,7 +567,9 @@ impl Server {
     }
 
     /// Drop a slot whose client stopped reading: what is queued goes with it,
-    /// and the driver closes it. True if it did.
+    /// and the driver resets the connection ([`Close::Abort`]). True if it
+    /// did. A slot already ending whose last bytes stopped moving is reset
+    /// the same way, recorded under the reason it ended with.
     ///
     /// No answer is lost that a lost connection would have kept. A session
     /// sends only while it waits for nothing (`Self::session`'s pending write
@@ -564,6 +584,7 @@ impl Server {
         slot.wire.discard();
 
         self.end(index, Reason::Stalled, record);
+        self.slots[index].phase = Phase::Closing(Close::Abort);
         true
     }
 
@@ -574,7 +595,7 @@ impl Server {
     fn end(&mut self, index: usize, reason: Reason, record: &mut impl FnMut(Record)) {
         self.forget_waiting(index);
         let slot = &mut self.slots[index];
-        if matches!(slot.phase, Phase::Free | Phase::Closing) {
+        if matches!(slot.phase, Phase::Free | Phase::Closing(_)) {
             return;
         }
         if matches!(slot.phase, Phase::Recovery(_)) {
@@ -588,7 +609,7 @@ impl Server {
         {
             *left = true;
         }
-        slot.phase = Phase::Closing;
+        slot.phase = Phase::Closing(Close::Graceful);
         record(Record::Ended {
             slot: slot_id(index),
             reason,

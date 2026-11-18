@@ -4,7 +4,7 @@
 //! holds one, and one recovery session runs at a time.
 
 use super::handshake::find;
-use super::{Phase, Server, slot_id};
+use super::{Close, Phase, Server, slot_id};
 use crate::clients::Role;
 use crate::pairing::{self, Pairing};
 use crate::setup::{self as rescue, Offer, Received};
@@ -66,7 +66,7 @@ impl Server {
                                 seconds: u16::try_from(seconds).unwrap_or(u16::MAX),
                             }
                         } else {
-                            slot.phase = Phase::Closing;
+                            slot.phase = Phase::Closing(Close::Graceful);
                             SetupReply::Refused(SetupRefusal::Busy)
                         };
                         let n = self
@@ -250,7 +250,7 @@ impl Server {
         self.rescue.stop();
         let slot = &mut self.slots[index];
         slot.wire.send(&self.out[..n])?;
-        slot.phase = Phase::Closing;
+        slot.phase = Phase::Closing(Close::Graceful);
         let reason = match reply {
             SetupReply::Done { .. } => Reason::Joined,
             _ => Reason::Recovery,

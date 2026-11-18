@@ -937,6 +937,10 @@ pub fn tcp_close(socket: i32) {
     with(|h| h.tcp_closed.push(socket));
 }
 
+pub fn tcp_abort(socket: i32) {
+    with(|h| h.tcp_aborted.push(socket));
+}
+
 pub fn uptime_ms() -> u32 {
     with(|h| h.uptime_ms)
 }

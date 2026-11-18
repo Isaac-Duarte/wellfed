@@ -548,6 +548,10 @@ impl Platform for Plaf103 {
         sdk::tcp_close(socket);
     }
 
+    fn abort(&mut self, socket: i32) {
+        sdk::tcp_abort(socket);
+    }
+
     fn mdns_open(&mut self) -> Option<i32> {
         sdk::mdns_open()
     }

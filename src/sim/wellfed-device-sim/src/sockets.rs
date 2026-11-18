@@ -174,6 +174,18 @@ impl Sockets {
         }
     }
 
+    /// Reset a connection, as the firmware's driver does one that stopped
+    /// moving bytes: a zero linger makes dropping it send an RST, so the
+    /// client sees what it would see from the feeder.
+    pub fn abort(&mut self, socket: Socket) {
+        if let Socket::Stream(id) = socket
+            && let Some(stream) = self.stream(id)
+        {
+            let _ = stream.set_zero_linger();
+        }
+        self.close(socket);
+    }
+
     /// A failed send is only a lost answer: the asker asks again.
     pub fn mdns_send(&mut self, bytes: &[u8], ip: u32, port: u16) -> bool {
         if let Some(mdns) = self.mdns.as_ref().filter(|_| self.radio) {

@@ -1437,6 +1437,7 @@ pub fn task_stacks(out: &mut [TaskStack]) -> TaskCount {
 
 unsafe extern "C" {
     fn wellfed_tcp_close(socket: i32);
+    fn wellfed_tcp_abort(socket: i32);
 }
 
 unsafe extern "C" {
@@ -1502,6 +1503,13 @@ pub(crate) fn audio_close() {
 pub fn tcp_close(socket: i32) {
     // SAFETY: the C shim in `example_entry.c`; any buffer is live for the call.
     unsafe { wellfed_tcp_close(socket) }
+}
+
+/// Reset a device API connection and close its socket: lwIP sends an RST and
+/// frees the connection with whatever it still queued, at once.
+pub fn tcp_abort(socket: i32) {
+    // SAFETY: the C shim in `example_entry.c`; it takes only the descriptor.
+    unsafe { wellfed_tcp_abort(socket) }
 }
 
 unsafe extern "C" {

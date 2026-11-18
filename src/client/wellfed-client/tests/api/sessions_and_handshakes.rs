@@ -8,7 +8,7 @@ use std::time::Duration;
 use wellfed_client::api::{Error, Incoming, Invite, Join, Session};
 use wellfed_client::connection::{Event, KEEPALIVE_ID, Timing};
 use wellfed_device_api::clients::Role;
-use wellfed_device_api::{Reason, Record, SESSIONS};
+use wellfed_device_api::{Close, Reason, Record, SESSIONS};
 use wellfed_model as model;
 use wellfed_model::{Answer, Generation, Op, OpenRefusal};
 use wellfed_session::frame;
@@ -70,7 +70,7 @@ fn an_unknown_key_and_the_wrong_feeder_are_refused() {
         rig.pass();
     }
     assert!(rig.ended(Reason::Noise));
-    assert!(rig.server.closing(slot));
+    assert_eq!(rig.server.closing(slot), Some(Close::Graceful));
 }
 
 /// During a feed a stranger's handshake is refused without its reply, and
@@ -97,7 +97,11 @@ fn during_a_feed_a_client_cancels_and_a_stranger_costs_one_handshake() {
         rig.pass();
     }
     assert!(rig.ended(Reason::Unknown));
-    assert!(rig.server.closing(stranger), "closed, ...");
+    assert_eq!(
+        rig.server.closing(stranger),
+        Some(Close::Graceful),
+        "closed, ..."
+    );
     assert!(rig.server.tx(stranger).is_empty(), "... without the reply");
     let records = &mut rig.records;
     rig.server.closed(stranger, |r| records.push(r));
@@ -235,10 +239,10 @@ fn an_idle_session_and_a_stalled_handshake_time_out() {
 
     rig.now += wellfed_device_api::HANDSHAKE_MS;
     rig.pass();
-    assert!(rig.server.closing(stalled));
+    assert_eq!(rig.server.closing(stalled), Some(Close::Graceful));
     rig.now += wellfed_device_api::IDLE_MS;
     rig.pass();
-    assert!(rig.server.closing(owner.slot));
+    assert_eq!(rig.server.closing(owner.slot), Some(Close::Graceful));
 }
 
 #[test]

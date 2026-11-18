@@ -58,6 +58,8 @@ Subscribe { after, samples }          Events [{ seq, at, body }, …]   // as ma
 
 A connection whose queued bytes haven't moved for 30 s (`STALL_MS`) is dropped and its slot freed, recorded as `stalled`. A client that reads at all keeps its slot, however slowly. So does one with nothing queued, which is the 90 s idle limit's business. A slot already ending gets the same 30 s to send its last bytes, then closes with them unsent.
 
+Both stalls reset the connection: the client sees an RST, and lwIP frees the connection and its queued bytes at once. A graceful close can't end a connection whose client has stopped reading. lwIP would keep it, with its unsent bytes and a FIN that waits behind the client's closed window, for as long as the client stays connected, and lwIP has only ten TCP connections. Every other end closes gracefully, so a last answer or refusal still reaches a client that reads it. The server names the close (`Close::Abort` or `Close::Graceful`), and the firmware's driver resets through `wellfed_tcp_abort` in `example_entry.c`.
+
 To the client this is a lost connection, and it loses nothing more. A session sends nothing while a write is pending, so a feed waiting for its reservation, a settings write or a minute's wait for a Dispense press never closes it. An answered write is remembered under its id, so a retry on a new session gets the first answer. A client that can't tell whether its feed ran doesn't resend it.
 
 ### Handshakes, and handshakes during a feed
@@ -330,6 +332,8 @@ From the `feeder` builds' manifest audits and `PLAPI1` records:
 
 ## Evidence
 
+- **Observed** (November 18, 2026), a stalled subscriber before the reset: a paused client holding `events --follow` was dropped as `stalled` after 30 s, but its connection never closed. For 240 s the client saw no FIN and no RST, with 54 KB unread.
+- **Static analysis** (November 18, 2026), why it never closed: the image builds lwIP 2.0.2 from the SDK's source with the SDK's `lwipopts.h` (`MEMP_NUM_TCP_PCB` 10, `LWIP_SO_LINGER` off, `LWIP_TCPIP_CORE_LOCKING` off). Its persist timer probes a zero window with no limit, so a graceful close behind one never finishes. The reset (`tcp_abort` in the tcpip thread) is covered by host tests of which ends reset (`wellfed-device-api/tests/pacing.rs`). Not yet run on the feeder.
 - **Static analysis** (November 13, 2026), the history's depth: the ring's size from `wellfed_device::store::events` (12 sectors of 4 KiB, 32-byte records), and which events a normal day writes from where the feeder records them. A full ring of 1,408 records was read on the feeder, but how many days one holds has not been measured.
 - **Modeled** (November 3, 2026), subscribers at once. The simulator reads its event ring through the firmware's own turns (`wellfed_device::store::reads`, which the runtime's shared state holds too), answering one read after each loop pass as the settings writer does.
   - Three sessions (the owner, a member and a second owner session) subscribed together and each got every event of one feed, the same `Fed` among them (`wellfed-feeder-sim/tests/subscribers.rs`).

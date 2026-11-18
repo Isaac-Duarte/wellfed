@@ -1613,8 +1613,8 @@ fn logged(sim: &mut Running) -> (Vec<u32>, bool) {
 }
 
 /// The whole path, driver included: an answer a client will not take leaves the
-/// loop at its poll, its socket is closed at the limit, and the slot serves the
-/// next connection.
+/// loop at its poll, its connection is reset at the limit, and the slot serves
+/// the next connection.
 #[test]
 fn a_client_that_stops_reading_rests_the_loop_and_loses_its_slot() {
     paused(async {
@@ -1644,9 +1644,14 @@ fn a_client_that_stops_reading_rests_the_loop_and_loses_its_slot() {
         let (delays, _) = logged(&mut sim);
         assert_eq!(delays.last().unwrap_or(&owner::POLL_MS), &owner::POLL_MS);
 
+        // Reset, not closed: a graceful close behind a closed window would
+        // leave the feeder's stack holding the connection.
         sim.control(Control::BlockSends(false));
-        let closed = stuck.next(WAIT).await;
-        assert_matches!(closed, Err(ConnectError::Closed));
+        let reset = stuck.next(WAIT).await;
+        assert_matches!(
+            reset,
+            Err(ConnectError::Io(ref error)) if error.kind() == std::io::ErrorKind::ConnectionReset
+        );
 
         // Every other slot taken, so the last connection can only have the
         // one the stuck client gave up.

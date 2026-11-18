@@ -119,6 +119,8 @@ pub struct Hardware {
 
     /// Every socket closed, in order.
     pub tcp_closed: Vec<i32>,
+    /// Every connection reset, in order.
+    pub tcp_aborted: Vec<i32>,
     /// Every send fails.
     pub tcp_send_fails: bool,
     /// Every listener fails to open.
@@ -372,6 +374,7 @@ impl Default for Hardware {
             supply_adc: 3000,
 
             tcp_closed: Vec::new(),
+            tcp_aborted: Vec::new(),
             tcp_send_fails: false,
             tcp_listen_fails: false,
             api_waiting: VecDeque::new(),

@@ -1059,6 +1059,10 @@ impl Platform for SimPlatform {
         self.sockets.close(socket);
     }
 
+    fn abort(&mut self, socket: Socket) {
+        self.sockets.abort(socket);
+    }
+
     fn mdns_open(&mut self) -> Option<Socket> {
         Some(Socket::Mdns)
     }
