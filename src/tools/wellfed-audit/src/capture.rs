@@ -73,8 +73,56 @@ pub(crate) fn timestamp(text: &str) -> Result<Time> {
     Err(CaptureError::Timestamp { text: text.into() }.into())
 }
 
-/// `text` as strict RFC 3339, if it is.
+/// `text` as strict RFC 3339, if it is. The shape is checked first, since
+/// `strtime` takes unpadded fields, a signed year, seconds in the offset and
+/// leading space; a leap second (`:60`) is refused, which the bench never
+/// writes.
 fn rfc3339(text: &str) -> Option<Time> {
+    let bytes = text.as_bytes();
+    let digits = |range: std::ops::Range<usize>| {
+        bytes
+            .get(range)
+            .is_some_and(|field| field.iter().all(u8::is_ascii_digit))
+    };
+    let at = |index: usize, byte: u8| bytes.get(index) == Some(&byte);
+    let date_time = digits(0..4)
+        && at(4, b'-')
+        && digits(5..7)
+        && at(7, b'-')
+        && digits(8..10)
+        && at(10, b'T')
+        && digits(11..13)
+        && at(13, b':')
+        && digits(14..16)
+        && at(16, b':')
+        && digits(17..19)
+        && !at(17, b'6');
+    if !date_time {
+        return None;
+    }
+
+    let mut rest = &bytes[19..];
+    if let Some(fraction) = rest.strip_prefix(b".") {
+        let len = fraction
+            .iter()
+            .take_while(|byte| byte.is_ascii_digit())
+            .count();
+        if len == 0 {
+            return None;
+        }
+        rest = &fraction[len..];
+    }
+    let offset = match rest {
+        b"Z" => true,
+        [sign, h1, h2, b':', m1, m2] => {
+            matches!(sign, b'+' | b'-') && [h1, h2, m1, m2].iter().all(|byte| byte.is_ascii_digit())
+        }
+        _ => false,
+    };
+    if !offset {
+        return None;
+    }
+
     let zulu;
     let text = match text.strip_suffix('Z') {
         Some(body) => {
@@ -315,6 +363,8 @@ pub(crate) mod tests {
     #[test]
     fn timestamps_are_instants_and_must_carry_an_offset() {
         let utc = timestamp("2026-10-22T10:00:00.000250Z").unwrap();
+        let bench = timestamp("2026-11-18T16:02:17.931671+00:00").unwrap();
+        assert_eq!(bench.as_microsecond(), 1_795_017_737_931_671);
         let lisbon = timestamp("2026-10-22T11:00:00.5+01:00").unwrap();
         assert_eq!(seconds(lisbon, utc), 0.49975);
         assert_eq!(
@@ -332,6 +382,12 @@ pub(crate) mod tests {
             "2026-10-22T10:00:00+00",
             "2026-10-22T10:00:00+00:00[Europe/Lisbon]",
             "2026-10-22 10:00:00Z",
+            "2026-1-2T1:0:0+00:00",
+            "+2026-11-18T16:02:17+00:00",
+            "2026-11-18T16:02:17+00:00:00",
+            " 2026-11-18T16:02:17+00:00",
+            "2026-11-18T16:02:60+00:00",
+            "2026-11-18T16:02:17.+00:00",
         ] {
             let Err(crate::Error::Capture(CaptureError::Timestamp { .. })) = timestamp(text) else {
                 panic!("{text} is not RFC 3339");
