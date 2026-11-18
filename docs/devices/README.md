@@ -8,7 +8,7 @@ A model counts as supported only once a unit of it has been through our bench. S
 | --- | --- | --- | --- | --- | --- | --- |
 | [PLAF103](plaf103/README.md) | Feeder | Granary 5 L | 2A3DEPLAF103S | [RTL8721DM](../chips/rtl8721dm/README.md) | **Partial** | Our research device. Feeding, updates and the device API work; see [the roadmap](../roadmap.md). Earlier and later builds differ ([how to identify it](plaf103/README.md#how-to-identify-it)). |
 | [PLWF106](plwf106/README.md) | Fountain | Dockstream 2 Smart Fountain | 2A3DE-PLWF106 | [RTL8721DM](../chips/rtl8721dm/README.md) | **Experimental** | Stock firmware and board reference recovered. A [boot-test image](plwf106/boot-test.md) builds and passes its audits, but has not run on a fountain. |
-| PLWF116 | Fountain | Dockstream 2 Cordless | 2A3DE-PLWF116 | RTL8721DM (External) | Not supported | Its FCC filing names the same main board as the PLWF106. An ESPHome port on LibreTiny runs on it. |
+| [PLWF116](plwf116/README.md) | Fountain | Dockstream 2 Cordless | 2A3DE-PLWF116 | [RTL8721DM](../chips/rtl8721dm/README.md) (Recovered) | Not supported | Stock 0.3.62 OTA analyzed: [power](plwf116/power.md), board signals, sensing, communications and updates. No unit backup or custom boot. |
 | PLAF301 | Feeder | One RFID | 2A3DE-PLAF301S | RTL8721DM (External) | Not supported | Also called AF301, mainboard PLNF301. FCC photos show the PLAF103's 34-pad module. A peer project maps its pins, a lead for our [pin table](../chips/rtl8721dm/pins.md). |
 | PLAF107 | Feeder | Space | 2A3DE-PLAF107 | AmebaD (External) | Not supported | The FCC report names Realtek's AmebaD test tool. The part number is unreadable in the photos. |
 | PLAF105 | Feeder | Granary 2 | 2A3DE-PLAF105 | Unknown | Not supported | Launched June 2026. Dual-band Wi-Fi and BLE; the public filing names no chip. |
@@ -21,7 +21,7 @@ A model counts as supported only once a unit of it has been through our bench. S
 | PLLB001 | Litter box | Luma Smart Litter Box | 2A3DE-PLLB001 | Unknown | Not supported | Dual-band Wi-Fi with classic Bluetooth, which suggests a Linux SoC. No teardown found. |
 | PLAF101 | Feeder | Automatic feeder (Tuya) | — | ESP8266 (External) | Not supported | Runs on the Tuya cloud and the PETLIBRO Lite app, not PETLIBRO's own. A replacement is in progress outside this project. |
 
-**Not supported** means we have done no work on that model, and anything listed for it comes from FCC filings or other projects. The FCC ID shown is the latest filing; earlier ones may show other boards.
+**Not supported** means Wellfed has no verified implementation on that model. A row may link to static firmware analysis; other identification comes from FCC filings or peer projects. The FCC ID shown is the latest filing; earlier ones may show other boards.
 
 The best sellers appear to be the Granary (PLAF103 and the camera PLAF203), the One RFID and the Polar, judged by PETLIBRO's store labels and retail review counts. Every model on the PETLIBRO app talks to the same PETLIBRO MQTT broker, whatever its chip. The fountains PLWF005 and PLWF115 have no radio: their FCC filings cover only the inductive link to the pump.
 
@@ -41,7 +41,9 @@ A model of an existing kind shares that kind's crates and adds a board crate and
 
 ## Evidence
 
-All of it **External**, read on November 9, 2026 and not checked on a unit.
+- **Recovered, November 16, 2026:** PLWF116's supplied OTA contains AmebaD KM0/KM4 segments and identifies the application as PLWF116 0.3.62. Its [reference pages](plwf116/README.md) record the static findings; no PLWF116 physical observation is claimed.
+
+The external identification below was read on November 9, 2026 and not checked on a unit.
 
 - FCC filings under grantee code 2A3DE (Shenzhen Libro Technology Co., Ltd.), listed on [fccid.io](https://fccid.io/2A3DE). None is a modular approval, so the chip comes from internal photos and test reports. The [PLAF103S1](https://fccid.io/2A3DE-PLAF103S1/Internal-Photos/Internal-Photos-7891572) and [PLAF301S](https://fccid.io/2A3DE-PLAF301S/Internal-Photos/Internal-photos-8536085) photos show a legible RTL8721DM and GigaDevice 25Q64 flash on one 34-pad shielded module. The [PLAF203U](https://fccid.io/2A3DE-PLAF203U/Internal-Photos/Internal-photos-8527729) photos show the Goke SoC and RTL8733BU. The PLAF107, PLAF108, PLAF109, PLWF105 and PLWF305 test reports name the vendor's RF test tool, which identifies the chip family only.
 - [Peer projects](../references.md#peer-projects) for the ESP32-C3 modules, the PLWF116 and PLAF301 boards, the camera feeders and the PLAF101.

@@ -88,6 +88,15 @@ Facts about a **chip** hold for every board built on it; facts about a **device*
 | [PLWF106 boot test](devices/plwf106/boot-test.md) | The smallest image that shows the fountain's loader runs our firmware |
 | [PLWF106 stock firmware](devices/plwf106/stock/README.md) | What the fountain's stock 0.0.17 does |
 | [PLWF106 stock OTA](devices/plwf106/stock/ota-requirements.md) | Stock 0.0.17's update request, transfer and activation |
+| [PLWF116](devices/plwf116/README.md) | Dockstream 2 Cordless stock 0.3.62, analyzed from its OTA package |
+| [PLWF116 board signals](devices/plwf116/board.md) | Pump boost, radar, scale, source sensing and indicators |
+| [PLWF116 power](devices/plwf116/power.md) | Battery conversion, charging, source changes, sleep and wake policy |
+| [PLWF116 UART](devices/plwf116/uart.md) | Console evidence and physical-access questions |
+| [PLWF116 flash](devices/plwf116/flash-layout.md) | OTA segments, cross-core startup and persistent-address inventory |
+| [PLWF116 recovery](devices/plwf116/recovery.md) | Evidence needed before a writer or restore procedure |
+| [PLWF116 stock firmware](devices/plwf116/stock/README.md) | Water control, sensing, calibration, settings and reset |
+| [PLWF116 communications](devices/plwf116/stock/communications.md) | Setup, MQTT and battery reconnect behavior |
+| [PLWF116 stock OTA](devices/plwf116/stock/ota-requirements.md) | HTTP transfer, staging checksum and activation |
 | [RTL8721DM (AmebaD)](chips/rtl8721dm/README.md) | The SoC and its SDK |
 | [RTL8721DM pins](chips/rtl8721dm/pins.md) | Each pin's job on each device |
 | [Device template](devices/_template/README.md) | The starting point for a new device folder |

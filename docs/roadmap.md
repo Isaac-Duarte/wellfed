@@ -77,6 +77,7 @@ What works today and what comes next, for the replacement firmware, the Android 
 | --- | --- | --- |
 | Code shared across device kinds | Experimental | Shared device crates with each kind's beside them, the device API's core with a module per kind, and a shared simulator. Tested on the host and in the feeder's simulator; the feeder has not run a build of the new layout. See [device kinds and models](firmware/device-kinds.md). |
 | Water fountain (PLWF106) | Experimental | Board and stock firmware recovered ([PLWF106](devices/plwf106/README.md)). A [boot-test image](devices/plwf106/boot-test.md) builds and passes its audits but has not run on a fountain. UART writes of it into bank 1, and their recovery, are tested on the host only ([recovery](devices/plwf106/recovery.md)). |
+| Cordless water fountain (PLWF116) | Not started | Stock 0.3.62 [firmware reference](devices/plwf116/README.md) recovered, including power, radar, scale, storage and OTA. No Wellfed implementation, unit backup or hardware acceptance. |
 
 ## Development hardware
 

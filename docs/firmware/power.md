@@ -145,6 +145,8 @@ The floor makes a motor-driven brownout unlikely, but can't prevent an idle one 
 
 ## Sleep
 
+Wi-Fi radio power saving and CPU sleep are separate mechanisms. The SDK supports connected radio power saving, but Wellfed leaves it off: the wakelocks below keep the chip awake, so holding frames until a beacon wake saves nothing. Inactive radio power saving also stays off: it raced failed-join teardown and caused bus hangs ([startup diagnostics](startup-diagnostics.md)). The cordless fountain's [power policy](../devices/plwf116/power.md) does not establish safe sleep or battery-life gains on the feeder.
+
 The chip doesn't sleep (recovered):
 
 - **Wakelocks.** Both cores hold `PMU_OS` from `main` (`firstboot_km0.c`, `firstboot_km4.c`), and the owner takes its own PMU wakelock. KM4's tickless idle only stops the tick while every task sleeps; with the wakelock held it never enters a low-power mode.
