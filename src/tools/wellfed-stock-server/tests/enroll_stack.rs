@@ -9,7 +9,7 @@ mod common;
 
 use std::{path::Path, time::Duration};
 
-use chrono::Utc;
+use jiff::Timestamp;
 use rumqttc::{AsyncClient, Event, EventLoop, MqttOptions, Packet, QoS};
 use serde_json::json;
 use wellfed_stock::{config, enroll::Enrollment};
@@ -113,7 +113,7 @@ async fn the_first_stock_feeder_enrolls_and_is_then_the_only_one() {
                     format!("dl/PLAF103/{DEVICE}/device/event/post"),
                     QoS::AtMostOnce,
                     false,
-                    json!({"cmd":"DEVICE_START_EVENT","ts":Utc::now().timestamp_millis(),
+                    json!({"cmd":"DEVICE_START_EVENT","ts":Timestamp::now().as_millisecond(),
                            "softwareVersion":"1.1.15","powerType":1})
                     .to_string(),
                 )
@@ -220,7 +220,7 @@ async fn a_feeder_s_first_report_reaches_an_in_process_server() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("server.json");
     let [listen] = common::addresses().unwrap();
-    config::init_installer(&path, listen, chrono_tz::UTC).unwrap();
+    config::init_installer(&path, listen, wellfed_stock::zone::Zone::utc()).unwrap();
     let server = Server::start(
         &path.canonicalize().unwrap(),
         Options {
@@ -250,7 +250,7 @@ async fn a_feeder_s_first_report_reaches_an_in_process_server() {
             format!("dl/PLAF103/{DEVICE}/device/event/post"),
             QoS::AtLeastOnce,
             false,
-            json!({"cmd":"DEVICE_START_EVENT","ts":Utc::now().timestamp_millis(),
+            json!({"cmd":"DEVICE_START_EVENT","ts":Timestamp::now().as_millisecond(),
                    "softwareVersion":"1.1.15","powerType":1})
             .to_string(),
         )
@@ -304,7 +304,7 @@ async fn an_in_process_server_refuses_the_trial_on_an_unreviewable_build() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("server.json");
     let [listen] = common::addresses().unwrap();
-    config::init_installer(&path, listen, chrono_tz::UTC).unwrap();
+    config::init_installer(&path, listen, wellfed_stock::zone::Zone::utc()).unwrap();
     let options = Options {
         trial: OtaTrial::Enabled,
         enroll: Some(Duration::from_secs(60)),
@@ -335,7 +335,7 @@ async fn a_broker_bound_to_any_address_answers_beyond_the_configured_one() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("server.json");
     let [listen] = common::addresses().unwrap();
-    config::init_installer(&path, listen, chrono_tz::UTC).unwrap();
+    config::init_installer(&path, listen, wellfed_stock::zone::Zone::utc()).unwrap();
     let server = Server::start(
         &path.canonicalize().unwrap(),
         Options {

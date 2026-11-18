@@ -4,7 +4,7 @@
 
 mod common;
 
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::json;
 use wellfed_stock::protocol::Channel;
 use wellfed_stock::protocol::{self, plaf103};
@@ -39,7 +39,7 @@ fn acknowledgements_preserve_event_id_and_step_without_sending_a_feed() {
         &config,
         channel,
         &msg,
-        Utc::now(),
+        Timestamp::now(),
         wellfed_stock::clock::StockPlans::Unknown,
     )
     .unwrap();
@@ -64,7 +64,7 @@ fn stock_ota_report_topic_is_parsed_without_sending_an_acknowledgement_or_comman
                 &config,
                 channel,
                 &msg,
-                Utc::now(),
+                Timestamp::now(),
                 wellfed_stock::clock::StockPlans::Unknown
             )
             .is_none()
@@ -89,7 +89,7 @@ fn configuration_reply_uses_its_own_channel_without_an_automatic_response() {
             &config,
             channel,
             &msg,
-            Utc::now(),
+            Timestamp::now(),
             wellfed_stock::clock::StockPlans::Unknown
         )
         .is_none()
@@ -122,7 +122,7 @@ fn plans_are_never_sent() {
             config,
             channel,
             &msg,
-            Utc::now(),
+            Timestamp::now(),
             wellfed_stock::clock::StockPlans::Unknown,
         )
     };
@@ -161,7 +161,7 @@ fn an_installer_sets_the_clock_only_after_the_frame() {
     )
     .unwrap();
     let tag = |plans| {
-        plaf103::reply(&config, Channel::Ntp, &msg, Utc::now(), plans)
+        plaf103::reply(&config, Channel::Ntp, &msg, Timestamp::now(), plans)
             .unwrap()
             .payload["calibrationTag"]
             .clone()

@@ -541,7 +541,7 @@ fn a_resumed_run_finds_its_feeder_over_the_platforms_discovery() {
             username: "stock".into(),
             password: "its-password".into(),
             address: "127.41.8.7".parse().unwrap(),
-            enrolled_at: chrono::DateTime::from_timestamp(1, 0).unwrap(),
+            enrolled_at: jiff::Timestamp::from_second(1).unwrap(),
         };
         std::fs::write(
             Enrollment::path(&data.join("installer.json")),
@@ -628,7 +628,7 @@ fn a_resumed_run_tries_where_home_last_reached_its_feeder_first() {
             username: "stock".into(),
             password: "its-password".into(),
             address: "127.41.8.7".parse().unwrap(),
-            enrolled_at: chrono::DateTime::from_timestamp(1, 0).unwrap(),
+            enrolled_at: jiff::Timestamp::from_second(1).unwrap(),
         };
         std::fs::write(
             Enrollment::path(&data.join("installer.json")),
@@ -769,7 +769,7 @@ fn what_an_earlier_run_left_is_read_from_its_records() {
     assert_eq!(pending(dir.path()), PendingInstall::Nothing);
 
     // Enrolled, with a request that never settled and no pairing.
-    let (id, at) = (uuid::Uuid::from_u128(7), chrono::DateTime::UNIX_EPOCH);
+    let (id, at) = (uuid::Uuid::from_u128(7), jiff::Timestamp::UNIX_EPOCH);
     wellfed_install::stock::installer_config(
         &dir.path().join("installer.json"),
         "127.41.8.20:1883".parse().unwrap(),
@@ -817,7 +817,7 @@ fn enroll(data: &Path, device: &str, address: &str) {
         username: "stock".into(),
         password: "its-password".into(),
         address: address.parse().unwrap(),
-        enrolled_at: chrono::DateTime::from_timestamp(1, 0).unwrap(),
+        enrolled_at: jiff::Timestamp::from_second(1).unwrap(),
     };
     std::fs::write(
         Enrollment::path(&data.join("installer.json")),
@@ -968,7 +968,7 @@ fn stock_feeder(broker: &str, device: &str) -> tokio::task::JoinHandle<()> {
                 _ = beat.tick() => {
                     let body = serde_json::json!({
                         "cmd": "DEVICE_START_EVENT",
-                        "ts": chrono::Utc::now().timestamp_millis(),
+                        "ts": jiff::Timestamp::now().as_millisecond(),
                         "softwareVersion": "1.1.15",
                         "powerType": 1,
                     });
@@ -1693,7 +1693,7 @@ fn a_damaged_ledger_stops_the_run_until_the_owner_sets_it_aside() {
 fn open_trial(data: &Path, device: &str, build: &str) {
     let (id, at) = (
         uuid::Uuid::from_u128(7),
-        chrono::Utc::now() - chrono::TimeDelta::hours(1),
+        jiff::Timestamp::now() - jiff::SignedDuration::from_hours(1),
     );
     let record = serde_json::json!({
         "device_id": device,

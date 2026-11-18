@@ -6,7 +6,7 @@
 
 mod common;
 
-use chrono::{Duration as Age, Utc};
+use jiff::Timestamp;
 use rumqttc::{AsyncClient, Event, Packet, QoS};
 use serde_json::{Value, json};
 use std::{
@@ -24,7 +24,7 @@ async fn a_refused_resolution_asks_stock_for_its_attributes_and_nothing_else() {
 
     // An earlier request that stock reported failing, long enough ago.
     let request_id = Uuid::new_v4();
-    let sent = Utc::now() - Age::minutes(30);
+    let sent = Timestamp::now() - jiff::SignedDuration::from_mins(30);
     let ledger = json!({
         "device_id": config.device_id,
         "ota_trials": {

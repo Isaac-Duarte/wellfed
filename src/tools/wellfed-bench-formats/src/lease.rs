@@ -33,7 +33,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
 use wellfed_formats::private::{random, write_json};
@@ -73,7 +73,7 @@ pub struct Holder {
     pub host: String,
     /// The holder's command line, as the operator would recognise it.
     pub command: Vec<String>,
-    pub started: DateTime<Utc>,
+    pub started: Timestamp,
     /// Ties a release to the lease it took: a tool removes the lease only
     /// while it still carries its own token.
     pub token: String,
@@ -86,7 +86,7 @@ impl fmt::Display for Holder {
             "pid {} (`{}`, since {} on {})",
             self.pid,
             self.command.join(" "),
-            self.started.format("%Y-%m-%d %H:%M:%S UTC"),
+            self.started.strftime("%Y-%m-%d %H:%M:%S UTC"),
             self.host
         )
     }
@@ -283,7 +283,7 @@ impl Holder {
             boot: boot_id()?,
             host: host()?,
             command,
-            started: DateTime::<Utc>::from(std::time::SystemTime::now()),
+            started: Timestamp::now(),
             token,
         })
     }
@@ -473,13 +473,21 @@ impl Stat {
         let state = fields.next()?.chars().next()?;
 
         let started = fields.collect::<Vec<_>>().join(" ");
-        let started = chrono::NaiveDateTime::parse_from_str(&started, "%a %b %e %H:%M:%S %Y");
         Some(Self {
             state,
             ppid,
-            start_ticks: u64::try_from(started.ok()?.and_utc().timestamp()).ok()?,
+            start_ticks: lstart_seconds(&started)?,
         })
     }
+}
+
+/// `ps -o lstart` in UTC (`Sun Nov 1 11:00:56 2026`), as seconds since the
+/// epoch. Built on every host for its test, though only macOS reads `ps`.
+#[cfg(any(target_os = "macos", test))]
+fn lstart_seconds(text: &str) -> Option<u64> {
+    let started = jiff::civil::DateTime::strptime("%a %b %e %H:%M:%S %Y", text).ok()?;
+    let started = jiff::tz::TimeZone::UTC.to_timestamp(started).ok()?;
+    u64::try_from(started.as_second()).ok()
 }
 
 #[cfg(target_os = "macos")]

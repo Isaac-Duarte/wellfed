@@ -38,7 +38,7 @@ pub fn config() -> Config {
         api_token: "test-api-token-at-least-32-characters".to_owned(),
         mqtt_listen: "127.0.0.1:18883".parse().unwrap(),
         http_listen: "127.0.0.1:18765".parse().unwrap(),
-        timezone: chrono_tz::America::Denver,
+        timezone: "America/Denver".parse().unwrap(),
         binding_response: None,
         hotspot_interface: Some("wlan1".to_owned()),
         target_mac: Some("02:00:00:00:00:42".to_owned()),

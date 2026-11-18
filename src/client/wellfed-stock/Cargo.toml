@@ -9,13 +9,14 @@ publish.workspace = true
 
 [dependencies]
 axum.workspace = true
-chrono = { version = "0.4.45", features = ["serde"] }
-chrono-tz = { version = "0.10.4", features = ["serde"] }
 rumqttc = { version = "0.25.1", default-features = false }
 mqtt5 = { version = "0.50.0", default-features = false, features = ["broker"] }
 serde.workspace = true
 serde_json.workspace = true
 hyper = { version = "1.12.0", features = ["http1", "server"] }
+jiff = { workspace = true, features = ["serde"] }
+# Zones from this build's own tzdb, never the host's (src/zone.rs).
+jiff-tzdb.workspace = true
 hyper-util = { version = "0.1.21", features = ["tokio"] }
 subtle.workspace = true
 thiserror.workspace = true

@@ -9,7 +9,7 @@
 use std::fs;
 use std::path::Path;
 
-use chrono::{DateTime, FixedOffset};
+use jiff::Timestamp;
 use serde::Deserialize;
 use serde_json::Value;
 use wellfed_bench_formats::capture::{Direction, SerialEvent};
@@ -19,7 +19,7 @@ use wellfed_formats::require;
 
 use crate::{Result, digest};
 
-pub(crate) type Time = DateTime<FixedOffset>;
+pub(crate) type Time = Timestamp;
 
 /// A capture refused before anything is read from it: its files disagree
 /// with the finalized report, or its event log does not cover both streams
@@ -60,12 +60,12 @@ pub enum CaptureError {
 /// An ISO 8601 timestamp that carries its offset. One without an offset is
 /// refused apart, since the bench always records one.
 pub(crate) fn timestamp(text: &str) -> Result<Time> {
-    if let Ok(time) = DateTime::parse_from_rfc3339(text) {
+    if let Ok(time) = text.parse::<Timestamp>() {
         return Ok(time);
     }
 
     require(
-        chrono::NaiveDateTime::parse_from_str(text, "%Y-%m-%dT%H:%M:%S%.f").is_err(),
+        jiff::civil::DateTime::strptime("%Y-%m-%dT%H:%M:%S%.f", text).is_err(),
         || CaptureError::NoTimezone { text: text.into() },
     )?;
     Err(CaptureError::Timestamp { text: text.into() }.into())
@@ -74,9 +74,7 @@ pub(crate) fn timestamp(text: &str) -> Result<Time> {
 /// `later - earlier` in seconds, from whole microseconds, the resolution the
 /// bench records.
 pub(crate) fn seconds(later: Time, earlier: Time) -> f64 {
-    let micros =
-        |t: Time| i128::from(t.timestamp()) * 1_000_000 + i128::from(t.timestamp_subsec_micros());
-    (micros(later) - micros(earlier)) as f64 / 1e6
+    (i128::from(later.as_microsecond()) - i128::from(earlier.as_microsecond())) as f64 / 1e6
 }
 
 /// A capture as loaded from disk; it is evidence only after `validate` passes.
@@ -217,22 +215,22 @@ pub(crate) mod tests {
         fs::write(dir.join("serial-rx.bin"), rx).unwrap();
         fs::write(dir.join("serial-tx.bin"), b"").unwrap();
 
-        let start = DateTime::parse_from_rfc3339("2026-10-22T10:00:00+00:00").unwrap();
+        let start: Timestamp = "2026-10-22T10:00:00+00:00".parse().unwrap();
         let mut events = String::new();
         let mut at = start;
         for (index, piece) in rx.chunks(chunk.max(1)).enumerate() {
-            at = start + chrono::Duration::microseconds(step_micros * index as i64);
+            at = start + jiff::SignedDuration::from_micros(step_micros * index as i64);
             events += &format!(
                 "{}\n",
-                json!({"utc": at.format("%Y-%m-%dT%H:%M:%S%.6f+00:00").to_string(), "direction": "rx",
+                json!({"utc": wellfed_formats::utc::micros(at), "direction": "rx",
                        "offset": index * chunk.max(1), "bytes": piece.len()})
             );
         }
 
         fs::write(dir.join("serial-events.jsonl"), events).unwrap();
-        let end = at + chrono::Duration::seconds(1);
+        let end = at + jiff::SignedDuration::from_secs(1);
         let report = json!({"status": "complete", "mode": "observe", "rx_sha256": digest(rx),
-                            "tx_sha256": digest(b""), "end_utc": end.format("%Y-%m-%dT%H:%M:%S%.6f+00:00").to_string()});
+                            "tx_sha256": digest(b""), "end_utc": wellfed_formats::utc::micros(end)});
         fs::write(dir.join("report.json"), report.to_string()).unwrap();
     }
 
@@ -291,6 +289,32 @@ pub(crate) mod tests {
             refusal(capture),
             CaptureError::Extent { offset: 0 }
         ));
+    }
+
+    /// Times carry their offset, so events written in two offsets still
+    /// order and subtract as instants; one without an offset is refused
+    /// apart from one that is no time at all.
+    #[test]
+    fn timestamps_are_instants_and_must_carry_an_offset() {
+        let utc = timestamp("2026-10-22T10:00:00.000250Z").unwrap();
+        let lisbon = timestamp("2026-10-22T11:00:00.5+01:00").unwrap();
+        assert_eq!(seconds(lisbon, utc), 0.49975);
+        assert_eq!(
+            timestamp("2026-10-22T10:00:00+00:00").unwrap(),
+            timestamp("2026-10-22T10:00:00Z").unwrap()
+        );
+
+        for text in ["2026-10-22T10:00:00", "2026-10-22T10:00:00.25"] {
+            let Err(crate::Error::Capture(CaptureError::NoTimezone { .. })) = timestamp(text)
+            else {
+                panic!("{text} has no offset");
+            };
+        }
+        for text in ["", "yesterday", "2026-10-22"] {
+            let Err(crate::Error::Capture(CaptureError::Timestamp { .. })) = timestamp(text) else {
+                panic!("{text} is no time");
+            };
+        }
     }
 
     /// Operators read this line in refused audits: it names the line and the

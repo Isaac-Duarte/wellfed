@@ -1,5 +1,5 @@
 //! Bounded observations of stock OTA reports. This module sends no commands.
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 pub use wellfed_formats::stock::{OtaCommand, OtaReport};
 
 use crate::protocol::Message;
@@ -16,7 +16,7 @@ fn token(value: &str, limit: usize) -> Option<String> {
 }
 
 /// The report a stock message carries, if it is an OTA report.
-pub fn from_message(message: &Message, now: DateTime<Utc>) -> Option<OtaReport> {
+pub fn from_message(message: &Message, now: Timestamp) -> Option<OtaReport> {
     let command = OtaCommand::from_cmd(&message.cmd)?;
 
     let report = &message.report;

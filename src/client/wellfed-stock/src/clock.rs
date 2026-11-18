@@ -15,7 +15,7 @@
 
 use std::fmt;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use tracing::{info, warn};
 
 /// What is known of the plans stock holds.
@@ -61,12 +61,12 @@ pub fn decide(stock: StockPlans) -> Calibration {
 
 /// The decision for an `NTP` request dated `ts` and answered `now`, logged
 /// so a bench run records what stock's clock read.
-pub fn calibration(stock: StockPlans, ts: Option<i64>, now: DateTime<Utc>) -> Calibration {
+pub fn calibration(stock: StockPlans, ts: Option<i64>, now: Timestamp) -> Calibration {
     let calibration = decide(stock);
 
     // `ts` is whatever the device sent: out of range, it reads as no skew.
     let skew = ts
-        .and_then(|ts| ts.checked_sub(now.timestamp_millis()))
+        .and_then(|ts| ts.checked_sub(now.as_millisecond()))
         .map(|ms| ms / 1000);
     info!(stock_ts = ?ts, skew_seconds = ?skew, %calibration, "NTP request");
     // 1214 is wellfed_client's `install::STOCK_CLOCK_UNSET`, the code the

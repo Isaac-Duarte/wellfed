@@ -3,7 +3,6 @@
 use std::fs;
 use std::path::Path;
 
-use chrono::{DateTime, Duration};
 use serde_json::{Value, json};
 use wellfed_formats::manifest::BuildManifest;
 
@@ -12,11 +11,11 @@ use crate::startup::{Declaration, PolicyError, find, verify};
 use crate::{Error, Result, digest};
 
 pub fn t0() -> Time {
-    DateTime::parse_from_rfc3339("2026-10-21T10:00:00+00:00").unwrap()
+    "2026-10-21T10:00:00+00:00".parse().unwrap()
 }
 
 pub fn at(seconds: f64) -> Time {
-    t0() + Duration::microseconds((seconds * 1e6).round() as i64)
+    t0() + jiff::SignedDuration::from_micros((seconds * 1e6).round() as i64)
 }
 
 pub fn replace(data: &[u8], old: &[u8], new: &[u8]) -> Vec<u8> {
@@ -127,9 +126,7 @@ impl Fixture {
         let mut events = String::new();
         let mut offset = 0;
         for (seconds, data) in sorted {
-            let utc = at(*seconds)
-                .format("%Y-%m-%dT%H:%M:%S%.6f+00:00")
-                .to_string();
+            let utc = wellfed_formats::utc::micros(at(*seconds));
             events += &format!(
                 "{}\n",
                 json!({"utc": utc, "direction": "rx", "offset": offset, "bytes": data.len()})
@@ -142,7 +139,7 @@ impl Fixture {
         fs::write(p.join("serial-tx.bin"), b"").unwrap();
         fs::write(p.join("serial-events.jsonl"), events).unwrap();
 
-        let end = at(end).format("%Y-%m-%dT%H:%M:%S%.6f+00:00").to_string();
+        let end = wellfed_formats::utc::micros(at(end));
         fs::write(
             p.join("report.json"),
             json!({"mode": "observe", "status": "complete", "end_utc": end,

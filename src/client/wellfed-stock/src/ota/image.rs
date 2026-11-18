@@ -20,9 +20,9 @@ use axum::{
     http::{HeaderMap, Method, Request, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use chrono::Utc;
 use hyper::{body::Incoming, server::conn::http1, service::service_fn};
 use hyper_util::rt::{TokioIo, TokioTimer};
+use jiff::{SignedDuration, Timestamp};
 use tokio::{net::TcpListener, task::JoinSet};
 use uuid::Uuid;
 use wellfed_formats::require;
@@ -455,7 +455,7 @@ pub async fn start(
     let lease = Lease {
         token: Uuid::new_v4(),
         peer,
-        expires_at: Utc::now() + chrono::Duration::seconds(ACCEPT_WINDOW_SECONDS),
+        expires_at: Timestamp::now() + SignedDuration::from_secs(ACCEPT_WINDOW_SECONDS),
         sha256: build.sha256.clone(),
         build: build.build.clone(),
     };
@@ -662,7 +662,7 @@ mod tests {
         let lease = Lease {
             token: Uuid::new_v4(),
             peer: Ipv4Addr::new(10, 0, 0, 2),
-            expires_at: Utc::now(),
+            expires_at: Timestamp::now(),
             sha256: canonical::sha256(b"build"),
             build: "ab".repeat(32),
         };

@@ -5,8 +5,8 @@
 
 mod common;
 
-use chrono::{DateTime, Duration, Utc};
 use common::Controller;
+use jiff::Timestamp;
 use serde_json::json;
 use uuid::Uuid;
 use wellfed_formats::stock::Enrollment;
@@ -29,11 +29,11 @@ fn served() -> String {
 
 /// A live image-server lease for `token`, serving [`served`] with digest
 /// `ab…`.
-fn lease(token: Uuid, now: DateTime<Utc>) -> Lease {
+fn lease(token: Uuid, now: Timestamp) -> Lease {
     Lease {
         token,
         peer: "10.0.0.2".parse().unwrap(),
-        expires_at: now + Duration::minutes(15),
+        expires_at: now + jiff::SignedDuration::from_mins(15),
         sha256: "ab".repeat(32),
         build: served(),
     }
@@ -43,23 +43,23 @@ fn lease(token: Uuid, now: DateTime<Utc>) -> Lease {
 fn submit(
     c: &mut Controller,
     input: ota::trial::Input,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<(ota::trial::Record, Option<Reply>), Rejection> {
     let lease = lease(input.server_token, now);
     c.ota_trial(input, Some(&lease), now)
 }
 
-fn observe(c: &mut Controller, value: serde_json::Value, now: DateTime<Utc>) {
+fn observe(c: &mut Controller, value: serde_json::Value, now: Timestamp) {
     let message: Message = serde_json::from_value(value).unwrap();
     c.observe(&message, now);
 }
 
 /// Simulate continued feeder presence; broker connectivity alone is insufficient.
-fn keep_connected(c: &mut Controller, until: DateTime<Utc>) {
-    let mut at = c.status.last_seen.unwrap() + Duration::seconds(30);
+fn keep_connected(c: &mut Controller, until: Timestamp) {
+    let mut at = c.status.last_seen.unwrap() + jiff::SignedDuration::from_secs(30);
     while at <= until {
         observe(c, json!({"cmd":"HEARTBEAT"}), at);
-        at += Duration::seconds(30);
+        at += jiff::SignedDuration::from_secs(30);
     }
 }
 
@@ -76,7 +76,7 @@ fn ready(c: &mut Controller, version: &str) {
         &serde_json::from_value(json!({"cmd":"ATTR_PUSH_EVENT",
         "softwareVersion":version,"powerType":1}))
         .unwrap(),
-        Utc::now(),
+        Timestamp::now(),
     );
 }
 
@@ -96,16 +96,16 @@ fn enabled(dir: &tempfile::TempDir) -> Controller {
 }
 
 /// [`enabled`], with one trial submitted now: the request and the time.
-fn submitted(dir: &tempfile::TempDir) -> (Controller, ota::trial::Input, DateTime<Utc>) {
+fn submitted(dir: &tempfile::TempDir) -> (Controller, ota::trial::Input, Timestamp) {
     let mut c = enabled(dir);
     let request = input();
-    let now = Utc::now();
+    let now = Timestamp::now();
     submit(&mut c, request.clone(), now).unwrap();
     (c, request, now)
 }
 
 /// What refuses this submission, which must not start a trial.
-fn refused(c: &mut Controller, input: ota::trial::Input, now: DateTime<Utc>) -> Rejection {
+fn refused(c: &mut Controller, input: ota::trial::Input, now: Timestamp) -> Rejection {
     let Err(rejection) = submit(c, input, now) else {
         panic!("the submission was accepted");
     };
@@ -118,28 +118,43 @@ fn default_disabled_and_guarded_by_version_and_power() {
     let mut c = common::load(dir.path().join("ledger.json")).unwrap();
     ready(&mut c, "1.1.15");
 
-    assert_eq!(refused(&mut c, input(), Utc::now()), Rejection::OtaDisabled);
+    assert_eq!(
+        refused(&mut c, input(), Timestamp::now()),
+        Rejection::OtaDisabled
+    );
 
     c.enable_ota_trial();
     c.status.version_reported_at = None;
-    assert_eq!(refused(&mut c, input(), Utc::now()), Rejection::InvalidOta);
+    assert_eq!(
+        refused(&mut c, input(), Timestamp::now()),
+        Rejection::InvalidOta
+    );
 
-    c.status.version_reported_at = Some(Utc::now() - Duration::seconds(301));
-    assert_eq!(refused(&mut c, input(), Utc::now()), Rejection::InvalidOta);
+    c.status.version_reported_at = Some(Timestamp::now() - jiff::SignedDuration::from_secs(301));
+    assert_eq!(
+        refused(&mut c, input(), Timestamp::now()),
+        Rejection::InvalidOta
+    );
 
     for version in ["1.1.14", "1.1.16", "2.0.0", "unverified"] {
         ready(&mut c, version);
-        assert_eq!(refused(&mut c, input(), Utc::now()), Rejection::InvalidOta);
+        assert_eq!(
+            refused(&mut c, input(), Timestamp::now()),
+            Rejection::InvalidOta
+        );
     }
 
     ready(&mut c, "1.1.15");
     c.status.attributes.insert("powerType".to_owned(), json!(2));
-    assert_eq!(refused(&mut c, input(), Utc::now()), Rejection::InvalidOta);
+    assert_eq!(
+        refused(&mut c, input(), Timestamp::now()),
+        Rejection::InvalidOta
+    );
 
     assert!(c.status.ota_trials.is_empty());
 
     c.status.attributes.insert("powerType".to_owned(), json!(1));
-    assert!(submit(&mut c, input(), Utc::now()).is_ok());
+    assert!(submit(&mut c, input(), Timestamp::now()).is_ok());
 }
 
 /// A ledger save that fails on a change the device or the clock caused does
@@ -154,26 +169,29 @@ fn a_failed_ledger_save_refuses_operations_but_keeps_observing() {
     let (mut c, request, now) = submitted(&dir);
     std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o500)).unwrap();
 
-    c.expire(now + Duration::seconds(600));
+    c.expire(now + jiff::SignedDuration::from_secs(600));
     assert_eq!(c.status.ota_trials[0].phase, Phase::Uncertain);
     observe(
         &mut c,
         json!({"cmd":"HEARTBEAT"}),
-        now + Duration::seconds(601),
+        now + jiff::SignedDuration::from_secs(601),
     );
     assert_eq!(
         c.status.last_seen,
-        Some(now + Duration::seconds(601)),
+        Some(now + jiff::SignedDuration::from_secs(601)),
         "telemetry still reaches the status"
     );
 
     ready(&mut c, "1.1.15");
-    assert_eq!(refused(&mut c, input(), Utc::now()), Rejection::Storage);
+    assert_eq!(
+        refused(&mut c, input(), Timestamp::now()),
+        Rejection::Storage
+    );
     assert_eq!(
         c.resolve_trial(
             resolve(request.request_id),
             ImageServer::Listening,
-            Utc::now()
+            Timestamp::now()
         ),
         Err(Rejection::Storage)
     );
@@ -188,7 +206,7 @@ fn journal_before_publish_duplicate_conflict_restart_and_timeout_never_replay() 
     let mut c = enabled(&dir);
 
     let request = input();
-    let now = Utc::now();
+    let now = Timestamp::now();
     let (record, command) = submit(&mut c, request.clone(), now).unwrap();
     assert!(command.is_some());
 
@@ -206,7 +224,7 @@ fn journal_before_publish_duplicate_conflict_restart_and_timeout_never_replay() 
     conflicting.server_token = Uuid::new_v4();
     assert_eq!(refused(&mut c, conflicting, now), Rejection::Conflict);
 
-    c.expire(now + Duration::seconds(600));
+    c.expire(now + jiff::SignedDuration::from_secs(600));
     assert_eq!(c.status.ota_trials[0].phase, Phase::Uncertain);
 
     drop(c);
@@ -217,7 +235,10 @@ fn journal_before_publish_duplicate_conflict_restart_and_timeout_never_replay() 
     // With fresh evidence, the uncertain trial alone refuses a new one.
     ready(&mut c, "1.1.15");
     c.enable_ota_trial();
-    assert_eq!(refused(&mut c, input(), Utc::now()), Rejection::OtaActive);
+    assert_eq!(
+        refused(&mut c, input(), Timestamp::now()),
+        Rejection::OtaActive
+    );
 }
 
 #[test]
@@ -226,7 +247,7 @@ fn a_replacement_install_announces_the_served_digest_and_needs_stock() {
     let mut c = enabled(&dir);
     let digest = "cd".repeat(32);
 
-    let now = Utc::now();
+    let now = Timestamp::now();
     let request = input();
     let images = Lease {
         sha256: digest.clone(),
@@ -260,14 +281,14 @@ fn progress_and_a_replacement_version_report_cannot_close_a_trial() {
     let mut c = enabled(&dir);
 
     let request = input();
-    let now = Utc::now();
+    let now = Timestamp::now();
     submit(&mut c, request.clone(), now).unwrap();
 
-    let later = now + Duration::seconds(1);
+    let later = now + jiff::SignedDuration::from_secs(1);
     for value in [
         json!({"cmd":"OTA_PROGRESS","msgId":request.request_id,"progress":100}),
-        json!({"cmd":"DEVICE_START_EVENT","ts":now.timestamp_millis()-1,"softwareVersion":"2.0.0"}),
-        json!({"cmd":"DEVICE_START_EVENT","ts":later.timestamp_millis(),"softwareVersion":"2.0.0"}),
+        json!({"cmd":"DEVICE_START_EVENT","ts":now.as_millisecond()-1,"softwareVersion":"2.0.0"}),
+        json!({"cmd":"DEVICE_START_EVENT","ts":later.as_millisecond(),"softwareVersion":"2.0.0"}),
     ] {
         let message: Message = serde_json::from_value(value).unwrap();
         c.observe(&message, later);
@@ -285,7 +306,7 @@ fn precheck_rejection_storage_failure_and_wrong_request_errors_do_not_resend() {
     let mut c = enabled(&dir);
 
     let request = input();
-    let now = Utc::now();
+    let now = Timestamp::now();
     submit(&mut c, request.clone(), now).unwrap();
 
     for id in [Uuid::new_v4(), request.request_id] {
@@ -313,7 +334,7 @@ fn precheck_rejection_storage_failure_and_wrong_request_errors_do_not_resend() {
     let mut c = common::load(path.clone()).unwrap();
     ready(&mut c, "1.1.15");
     c.enable_ota_trial();
-    let now = Utc::now();
+    let now = Timestamp::now();
     std::fs::remove_file(&path).unwrap();
     std::fs::create_dir(&path).unwrap();
 
@@ -328,7 +349,7 @@ fn an_error_after_progress_stays_failed_across_a_restart() {
     let mut c = enabled(&dir);
 
     let request = input();
-    let now = Utc::now();
+    let now = Timestamp::now();
     submit(&mut c, request.clone(), now).unwrap();
 
     for value in [
@@ -347,7 +368,10 @@ fn an_error_after_progress_stays_failed_across_a_restart() {
     let mut c = common::load(path).unwrap();
     ready(&mut c, "1.1.15");
     c.enable_ota_trial();
-    assert_eq!(refused(&mut c, input(), Utc::now()), Rejection::OtaActive);
+    assert_eq!(
+        refused(&mut c, input(), Timestamp::now()),
+        Rejection::OtaActive
+    );
 }
 
 #[test]
@@ -355,10 +379,10 @@ fn dispatch_requires_a_matching_unexpired_image_server_lease_and_fresh_power() {
     let dir = tempfile::tempdir().unwrap();
     let mut c = enabled(&dir);
 
-    let now = Utc::now();
+    let now = Timestamp::now();
     let request = input();
     let mut expiring = lease(request.server_token, now);
-    expiring.expires_at = now + Duration::minutes(4);
+    expiring.expires_at = now + jiff::SignedDuration::from_mins(4);
 
     for offered in [None, Some(lease(Uuid::new_v4(), now)), Some(expiring)] {
         assert!(matches!(
@@ -368,7 +392,7 @@ fn dispatch_requires_a_matching_unexpired_image_server_lease_and_fresh_power() {
     }
     assert!(c.status.ota_trials.is_empty());
 
-    c.status.power_reported_at = Some(now - Duration::seconds(301));
+    c.status.power_reported_at = Some(now - jiff::SignedDuration::from_secs(301));
     assert_eq!(refused(&mut c, request.clone(), now), Rejection::InvalidOta);
 
     c.status.power_reported_at = Some(now);
@@ -389,7 +413,7 @@ fn the_replacements_answer_closes_only_the_latest_open_install() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("ledger.json");
     let mut c = enabled(&dir);
-    let now = Utc::now();
+    let now = Timestamp::now();
     let request = input();
 
     // No trial with that ID.
@@ -415,12 +439,12 @@ fn the_replacements_answer_closes_only_the_latest_open_install() {
         ..answered(request.request_id)
     };
     assert_eq!(
-        c.replacement_answered(blank, now + Duration::seconds(200)),
+        c.replacement_answered(blank, now + jiff::SignedDuration::from_secs(200)),
         Err(Rejection::InvalidNote)
     );
     assert_eq!(c.status.ota_trials[0].phase, Phase::Submitted);
 
-    let later = now + Duration::seconds(200);
+    let later = now + jiff::SignedDuration::from_secs(200);
     let record = c
         .replacement_answered(answered(request.request_id), later)
         .unwrap();
@@ -457,11 +481,11 @@ fn an_answer_is_refused_while_stock_still_reports() {
     let (mut c, request, now) = submitted(&dir);
 
     // Stock's telemetry is current: it is the one running.
-    let later = now + Duration::seconds(200);
+    let later = now + jiff::SignedDuration::from_secs(200);
     observe(
         &mut c,
         json!({"cmd":"HEARTBEAT"}),
-        later - Duration::seconds(10),
+        later - jiff::SignedDuration::from_secs(10),
     );
     assert_eq!(
         c.replacement_answered(answered(request.request_id), later),
@@ -476,12 +500,15 @@ fn an_answer_is_refused_while_stock_still_reports() {
     observe(
         &mut c,
         json!({"cmd":"ATTR_PUSH_EVENT","softwareVersion":"1.1.15","powerType":1}),
-        later + Duration::seconds(5),
+        later + jiff::SignedDuration::from_secs(5),
     );
-    c.disconnected(later + Duration::seconds(10));
+    c.disconnected(later + jiff::SignedDuration::from_secs(10));
     assert!(c.status.ota_trials[0].stock_reported);
     assert_eq!(
-        c.replacement_answered(answered(request.request_id), later + Duration::seconds(300)),
+        c.replacement_answered(
+            answered(request.request_id),
+            later + jiff::SignedDuration::from_secs(300)
+        ),
         Err(Rejection::StockRunning)
     );
     assert_eq!(c.status.ota_trials[0].phase, Phase::Uncertain);
@@ -490,7 +517,10 @@ fn an_answer_is_refused_while_stock_still_reports() {
     drop(c);
     let mut c = common::load(dir.path().join("ledger.json")).unwrap();
     assert_eq!(
-        c.replacement_answered(answered(request.request_id), later + Duration::seconds(400)),
+        c.replacement_answered(
+            answered(request.request_id),
+            later + jiff::SignedDuration::from_secs(400)
+        ),
         Err(Rejection::StockRunning)
     );
 }
@@ -500,7 +530,7 @@ fn an_answer_must_name_the_served_build_on_bank_0() {
     let dir = tempfile::tempdir().unwrap();
     let (mut c, request, now) = submitted(&dir);
     assert_eq!(c.status.ota_trials[0].build, served());
-    let later = now + Duration::seconds(200);
+    let later = now + jiff::SignedDuration::from_secs(200);
 
     let other_build = AnsweredInput {
         build: "ef".repeat(32),
@@ -540,11 +570,14 @@ fn an_uncertain_install_still_closes_on_the_answer() {
     let (mut c, request, now) = submitted(&dir);
 
     // Stock's own session ends when it reboots into the new bank.
-    c.disconnected(now + Duration::seconds(100));
+    c.disconnected(now + jiff::SignedDuration::from_secs(100));
     assert_eq!(c.status.ota_trials[0].phase, Phase::Uncertain);
 
-    c.replacement_answered(answered(request.request_id), now + Duration::seconds(200))
-        .unwrap();
+    c.replacement_answered(
+        answered(request.request_id),
+        now + jiff::SignedDuration::from_secs(200),
+    )
+    .unwrap();
     assert_eq!(c.status.ota_trials[0].phase, Phase::ReplacementHealthy);
 }
 
@@ -555,12 +588,15 @@ fn a_failed_install_does_not_close_on_an_answer() {
     observe(
         &mut c,
         json!({"cmd":"OTA_UPGRADE","msgId":request.request_id,"phase":"precheck","errCode":1101}),
-        now + Duration::seconds(5),
+        now + jiff::SignedDuration::from_secs(5),
     );
     assert_eq!(c.status.ota_trials[0].phase, Phase::ReportedError);
 
     assert_eq!(
-        c.replacement_answered(answered(request.request_id), now + Duration::seconds(200)),
+        c.replacement_answered(
+            answered(request.request_id),
+            now + jiff::SignedDuration::from_secs(200)
+        ),
         Err(Rejection::NotOpen)
     );
 }
@@ -570,7 +606,7 @@ fn an_uncertain_install_resolves_only_after_a_quiet_period_with_version_evidence
     let dir = tempfile::tempdir().unwrap();
     let mut c = enabled(&dir);
 
-    let t0 = Utc::now();
+    let t0 = Timestamp::now();
     c.connected(t0);
     let request = input();
     submit(&mut c, request.clone(), t0).unwrap();
@@ -580,43 +616,51 @@ fn an_uncertain_install_resolves_only_after_a_quiet_period_with_version_evidence
         Err(Rejection::Conflict)
     ));
 
-    keep_connected(&mut c, t0 + Duration::seconds(600));
-    c.expire(t0 + Duration::seconds(600));
+    keep_connected(&mut c, t0 + jiff::SignedDuration::from_secs(600));
+    c.expire(t0 + jiff::SignedDuration::from_secs(600));
     assert_eq!(c.status.ota_trials[0].phase, Phase::Uncertain);
 
     let config = json!({"cmd":"GET_CONFIG","softwareVersion":"1.1.15","powerType":1});
     // Too soon after submission, even with fresh evidence.
-    keep_connected(&mut c, t0 + Duration::minutes(15));
-    observe(&mut c, config.clone(), t0 + Duration::minutes(15));
+    keep_connected(&mut c, t0 + jiff::SignedDuration::from_mins(15));
+    observe(
+        &mut c,
+        config.clone(),
+        t0 + jiff::SignedDuration::from_mins(15),
+    );
     assert!(matches!(
         c.resolve_trial(
             resolve(request.request_id),
             ImageServer::Listening,
-            t0 + Duration::minutes(15)
+            t0 + jiff::SignedDuration::from_mins(15)
         ),
         Err(Rejection::ResolutionEvidence)
     ));
 
     // An OTA report restarts the quiet period.
-    keep_connected(&mut c, t0 + Duration::minutes(20));
+    keep_connected(&mut c, t0 + jiff::SignedDuration::from_mins(20));
     observe(
         &mut c,
         json!({"cmd":"OTA_PROGRESS","msgId":request.request_id,"progress":40}),
-        t0 + Duration::minutes(20),
+        t0 + jiff::SignedDuration::from_mins(20),
     );
-    keep_connected(&mut c, t0 + Duration::minutes(25));
-    observe(&mut c, config.clone(), t0 + Duration::minutes(25));
+    keep_connected(&mut c, t0 + jiff::SignedDuration::from_mins(25));
+    observe(
+        &mut c,
+        config.clone(),
+        t0 + jiff::SignedDuration::from_mins(25),
+    );
     assert!(matches!(
         c.resolve_trial(
             resolve(request.request_id),
             ImageServer::Listening,
-            t0 + Duration::minutes(25)
+            t0 + jiff::SignedDuration::from_mins(25)
         ),
         Err(Rejection::ResolutionEvidence)
     ));
 
-    keep_connected(&mut c, t0 + Duration::minutes(31));
-    let at = t0 + Duration::minutes(31);
+    keep_connected(&mut c, t0 + jiff::SignedDuration::from_mins(31));
+    let at = t0 + jiff::SignedDuration::from_mins(31);
 
     let blank = ResolveInput {
         request_id: request.request_id,
@@ -651,16 +695,19 @@ fn feeder_telemetry_gaps_restart_resolution_quiet_time_with_or_without_expiry_ti
             let dir = tempfile::tempdir().unwrap();
             let mut c = enabled(&dir);
 
-            let t0 = Utc::now();
+            let t0 = Timestamp::now();
             c.connected(t0);
             let request = input();
             submit(&mut c, request.clone(), t0).unwrap();
 
-            keep_connected(&mut c, t0 + Duration::minutes(10));
-            c.expire(t0 + Duration::minutes(10));
+            keep_connected(&mut c, t0 + jiff::SignedDuration::from_mins(10));
+            c.expire(t0 + jiff::SignedDuration::from_mins(10));
 
-            let returning = t0 + Duration::minutes(30);
-            keep_connected(&mut c, returning - Duration::seconds(gap_seconds));
+            let returning = t0 + jiff::SignedDuration::from_mins(30);
+            keep_connected(
+                &mut c,
+                returning - jiff::SignedDuration::from_secs(gap_seconds),
+            );
 
             // Only the feeder goes silent. The server stays connected to its
             // own broker; the return must reset quiet time even without a tick.
@@ -681,7 +728,7 @@ fn feeder_telemetry_gaps_restart_resolution_quiet_time_with_or_without_expiry_ti
                 Err(Rejection::ResolutionEvidence)
             ));
 
-            let almost = returning + Duration::seconds(599);
+            let almost = returning + jiff::SignedDuration::from_secs(599);
             keep_connected(&mut c, almost);
             observe(&mut c, config.clone(), almost);
             assert!(matches!(
@@ -691,7 +738,7 @@ fn feeder_telemetry_gaps_restart_resolution_quiet_time_with_or_without_expiry_ti
 
             // Ten full observed minutes and fresh version evidence permit
             // resolution without publishing another command.
-            let complete = returning + Duration::minutes(10);
+            let complete = returning + jiff::SignedDuration::from_mins(10);
             observe(&mut c, config, complete);
             assert_eq!(
                 c.resolve_trial(
@@ -713,15 +760,15 @@ fn backwards_host_clock_restarts_the_resolution_observation_interval() {
     let dir = tempfile::tempdir().unwrap();
     let mut c = enabled(&dir);
 
-    let t0 = Utc::now();
+    let t0 = Timestamp::now();
     c.connected(t0);
     let request = input();
     submit(&mut c, request.clone(), t0).unwrap();
 
-    keep_connected(&mut c, t0 + Duration::minutes(25));
-    c.expire(t0 + Duration::minutes(25));
+    keep_connected(&mut c, t0 + jiff::SignedDuration::from_mins(25));
+    c.expire(t0 + jiff::SignedDuration::from_mins(25));
 
-    let adjusted = t0 + Duration::minutes(20);
+    let adjusted = t0 + jiff::SignedDuration::from_mins(20);
     let config = json!({"cmd":"GET_CONFIG","softwareVersion":"1.1.15"});
     observe(&mut c, config.clone(), adjusted);
     assert!(matches!(
@@ -733,7 +780,7 @@ fn backwards_host_clock_restarts_the_resolution_observation_interval() {
         Err(Rejection::ResolutionEvidence)
     ));
 
-    let complete = adjusted + Duration::minutes(10);
+    let complete = adjusted + jiff::SignedDuration::from_mins(10);
     keep_connected(&mut c, complete);
     observe(&mut c, config, complete);
     assert_eq!(
@@ -752,23 +799,23 @@ fn backwards_host_clock_restarts_the_resolution_observation_interval() {
 fn stock_s_61_second_heartbeat_keeps_the_quiet_interval_running() {
     let dir = tempfile::tempdir().unwrap();
     let mut c = enabled(&dir);
-    let now = Utc::now();
+    let now = Timestamp::now();
 
     let request = input();
     submit(&mut c, request.clone(), now).unwrap();
     observe(
         &mut c,
         json!({"cmd":"OTA_INFORM","msgId":request.request_id.to_string(),"errCode":2003}),
-        now + Duration::seconds(30),
+        now + jiff::SignedDuration::from_secs(30),
     );
     assert_eq!(c.status.ota_trials[0].phase, Phase::ReportedError);
 
     // Heartbeats 61 s apart, as stock 1.1.15 sends them, for 21 minutes,
     // with a fresh version report at the end.
-    let mut at = now + Duration::seconds(61);
-    while at < now + Duration::minutes(21) {
+    let mut at = now + jiff::SignedDuration::from_secs(61);
+    while at < now + jiff::SignedDuration::from_mins(21) {
         observe(&mut c, json!({"cmd":"HEARTBEAT"}), at);
-        at += Duration::seconds(61);
+        at += jiff::SignedDuration::from_secs(61);
     }
     observe(
         &mut c,
@@ -791,26 +838,26 @@ fn with_no_image_server_a_quiet_return_on_stock_resolves_within_minutes() {
     let dir = tempfile::tempdir().unwrap();
     let mut c = enabled(&dir);
 
-    let t0 = Utc::now();
+    let t0 = Timestamp::now();
     c.connected(t0);
     let request = input();
     submit(&mut c, request.clone(), t0).unwrap();
     observe(
         &mut c,
         json!({"cmd":"OTA_PROGRESS","msgId":request.request_id,"progress":47}),
-        t0 + Duration::seconds(30),
+        t0 + jiff::SignedDuration::from_secs(30),
     );
 
     // The power cut: the session drops, and the server's broker comes back
     // (a new process, say) to stock's own version in a new session.
-    c.disconnected(t0 + Duration::minutes(2));
+    c.disconnected(t0 + jiff::SignedDuration::from_mins(2));
     assert_eq!(c.status.ota_trials[0].phase, Phase::Uncertain);
-    let back = t0 + Duration::minutes(10);
+    let back = t0 + jiff::SignedDuration::from_mins(10);
     c.connected(back);
     let version = json!({"cmd":"ATTR_PUSH_EVENT","softwareVersion":"1.1.15","powerType":1});
     observe(&mut c, version.clone(), back);
 
-    let almost = back + Duration::seconds(179);
+    let almost = back + jiff::SignedDuration::from_secs(179);
     keep_connected(&mut c, almost);
     for image in [ImageServer::Listening, ImageServer::Gone] {
         assert!(matches!(
@@ -820,21 +867,21 @@ fn with_no_image_server_a_quiet_return_on_stock_resolves_within_minutes() {
     }
 
     // An OTA report in the new session restarts the quiet interval.
-    let report = back + Duration::minutes(4);
+    let report = back + jiff::SignedDuration::from_mins(4);
     keep_connected(&mut c, report);
     observe(
         &mut c,
         json!({"cmd":"OTA_INFORM","msgId":request.request_id,"state":5}),
         report,
     );
-    let quiet = report + Duration::minutes(2);
+    let quiet = report + jiff::SignedDuration::from_mins(2);
     keep_connected(&mut c, quiet);
     assert!(matches!(
         c.resolve_trial(resolve(request.request_id), ImageServer::Gone, quiet),
         Err(Rejection::ResolutionEvidence)
     ));
 
-    let complete = report + Duration::minutes(3);
+    let complete = report + jiff::SignedDuration::from_mins(3);
     keep_connected(&mut c, complete);
     assert!(matches!(
         c.resolve_trial(
@@ -858,10 +905,10 @@ fn with_no_image_server_a_refusal_settles_three_quiet_minutes_after_it() {
     let dir = tempfile::tempdir().unwrap();
     let mut c = enabled(&dir);
 
-    let t0 = Utc::now();
+    let t0 = Timestamp::now();
     c.connected(t0);
-    keep_connected(&mut c, t0 + Duration::minutes(30));
-    let sent = t0 + Duration::minutes(30);
+    keep_connected(&mut c, t0 + jiff::SignedDuration::from_mins(30));
+    let sent = t0 + jiff::SignedDuration::from_mins(30);
     let version = json!({"cmd":"ATTR_PUSH_EVENT","softwareVersion":"1.1.15","powerType":1});
     observe(&mut c, version.clone(), sent);
     let request = input();
@@ -869,19 +916,19 @@ fn with_no_image_server_a_refusal_settles_three_quiet_minutes_after_it() {
     observe(
         &mut c,
         json!({"cmd":"OTA_INFORM","msgId":request.request_id,"errCode":2003}),
-        sent + Duration::seconds(25),
+        sent + jiff::SignedDuration::from_secs(25),
     );
     assert_eq!(c.status.ota_trials[0].phase, Phase::ReportedError);
-    keep_connected(&mut c, sent + Duration::minutes(1));
-    observe(&mut c, version, sent + Duration::minutes(1));
+    keep_connected(&mut c, sent + jiff::SignedDuration::from_mins(1));
+    observe(&mut c, version, sent + jiff::SignedDuration::from_mins(1));
 
-    let almost = sent + Duration::seconds(25) + Duration::seconds(179);
+    let almost = sent + jiff::SignedDuration::from_secs(25) + jiff::SignedDuration::from_secs(179);
     keep_connected(&mut c, almost);
     assert!(matches!(
         c.resolve_trial(resolve(request.request_id), ImageServer::Gone, almost),
         Err(Rejection::ResolutionEvidence)
     ));
-    let complete = sent + Duration::seconds(25) + Duration::minutes(3);
+    let complete = sent + jiff::SignedDuration::from_secs(25) + jiff::SignedDuration::from_mins(3);
     keep_connected(&mut c, complete);
     assert_eq!(
         c.resolve_trial(resolve(request.request_id), ImageServer::Gone, complete)
@@ -908,7 +955,7 @@ fn a_trial_open_under_a_captured_config_refuses_the_same_device_through_an_insta
     let mut c = common::load(ledger).unwrap();
     ready(&mut c, "1.1.15");
     c.enable_ota_trial();
-    submit(&mut c, input(), Utc::now()).unwrap();
+    submit(&mut c, input(), Timestamp::now()).unwrap();
     drop(c);
     assert!(controller::open_request(&captured).unwrap());
 
@@ -917,7 +964,7 @@ fn a_trial_open_under_a_captured_config_refuses_the_same_device_through_an_insta
     wellfed_stock::config::init_installer(
         &installer,
         config.mqtt_listen,
-        chrono_tz::America::Denver,
+        "America/Denver".parse().unwrap(),
     )
     .unwrap();
     assert!(!controller::open_request(&installer).unwrap());
@@ -926,7 +973,7 @@ fn a_trial_open_under_a_captured_config_refuses_the_same_device_through_an_insta
         username: "stock".to_owned(),
         password: "stock-password".to_owned(),
         address: "10.0.0.2".parse().unwrap(),
-        enrolled_at: Utc::now(),
+        enrolled_at: Timestamp::now(),
     };
     wellfed_stock::enroll::create(&enrollment, &Enrollment::path(&installer)).unwrap();
     assert!(controller::open_request(&installer).unwrap());
@@ -939,7 +986,10 @@ fn a_trial_open_under_a_captured_config_refuses_the_same_device_through_an_insta
     ready(&mut c, "1.1.15");
     c.enable_ota_trial();
     assert_eq!(c.status.ota_trials.len(), 1);
-    assert_eq!(refused(&mut c, input(), Utc::now()), Rejection::OtaActive);
+    assert_eq!(
+        refused(&mut c, input(), Timestamp::now()),
+        Rejection::OtaActive
+    );
 }
 
 /// A ledger where this file's feeder has one trial out, nothing running.
@@ -950,7 +1000,7 @@ fn trial_out(dir: &tempfile::TempDir) -> (std::path::PathBuf, String) {
     let mut c = common::load(path).unwrap();
     ready(&mut c, "1.1.15");
     c.enable_ota_trial();
-    submit(&mut c, input(), Utc::now()).unwrap();
+    submit(&mut c, input(), Timestamp::now()).unwrap();
     drop(c);
     (config, device)
 }
@@ -1008,7 +1058,7 @@ fn stock_reporting_after_an_answer_reopens_the_trial_unless_a_restore_said_so() 
     ready(&mut c, "1.1.15");
     assert_eq!(c.status.ota_trials[0].phase, Phase::Uncertain);
     assert_eq!(
-        submit(&mut c, input(), Utc::now()).map(|_| ()),
+        submit(&mut c, input(), Timestamp::now()).map(|_| ()),
         Err(Rejection::OtaActive)
     );
     drop(c);
@@ -1024,7 +1074,7 @@ fn stock_reporting_after_an_answer_reopens_the_trial_unless_a_restore_said_so() 
     let mut c = reopened(&config, &device);
     ready(&mut c, "1.1.15");
     assert_eq!(c.status.ota_trials[0].phase, Phase::ReplacementHealthy);
-    assert!(submit(&mut c, input(), Utc::now()).is_ok());
+    assert!(submit(&mut c, input(), Timestamp::now()).is_ok());
 }
 
 /// Stock reports its version only around a connect. One still in that session,
@@ -1033,31 +1083,31 @@ fn stock_reporting_after_an_answer_reopens_the_trial_unless_a_restore_said_so() 
 #[test]
 fn a_report_holds_through_an_unbroken_session_and_not_past_a_drop() {
     let report = json!({"cmd":"ATTR_PUSH_EVENT","softwareVersion":"1.1.15","powerType":1});
-    let start = |dir: &tempfile::TempDir, t0: DateTime<Utc>| {
+    let start = |dir: &tempfile::TempDir, t0: Timestamp| {
         let mut c = enabled(dir);
         c.connected(t0);
         ready(&mut c, "1.1.15");
         let request = input();
-        let sent = Utc::now();
+        let sent = Timestamp::now();
         submit(&mut c, request.clone(), sent).unwrap();
-        c.disconnected(sent + Duration::seconds(10));
+        c.disconnected(sent + jiff::SignedDuration::from_secs(10));
         (c, request)
     };
-    let t0 = Utc::now();
-    let connect_at = t0 + Duration::minutes(25);
+    let t0 = Timestamp::now();
+    let connect_at = t0 + jiff::SignedDuration::from_mins(25);
 
     // Unbroken: the report at connect is 10 minutes old at the quiet mark.
     let dir = tempfile::tempdir().unwrap();
     let (mut c, request) = start(&dir, t0);
     c.connected(connect_at);
     observe(&mut c, report.clone(), connect_at);
-    let before = connect_at + Duration::minutes(9);
+    let before = connect_at + jiff::SignedDuration::from_mins(9);
     keep_connected(&mut c, before);
     assert!(matches!(
         c.resolve_trial(resolve(request.request_id), ImageServer::Listening, before),
         Err(Rejection::ResolutionEvidence)
     ));
-    let mark = connect_at + Duration::minutes(10);
+    let mark = connect_at + jiff::SignedDuration::from_mins(10);
     keep_connected(&mut c, mark);
     let record = c
         .resolve_trial(resolve(request.request_id), ImageServer::Listening, mark)
@@ -1069,12 +1119,12 @@ fn a_report_holds_through_an_unbroken_session_and_not_past_a_drop() {
     let (mut c, request) = start(&dir, t0);
     c.connected(connect_at);
     observe(&mut c, report.clone(), connect_at);
-    let dropped = connect_at + Duration::minutes(5);
+    let dropped = connect_at + jiff::SignedDuration::from_mins(5);
     keep_connected(&mut c, dropped);
     c.disconnected(dropped);
     c.connected(dropped);
     observe(&mut c, json!({"cmd":"HEARTBEAT"}), dropped);
-    let later = dropped + Duration::minutes(11);
+    let later = dropped + jiff::SignedDuration::from_mins(11);
     keep_connected(&mut c, later);
     assert!(matches!(
         c.resolve_trial(resolve(request.request_id), ImageServer::Listening, later),
@@ -1086,9 +1136,9 @@ fn a_report_holds_through_an_unbroken_session_and_not_past_a_drop() {
     let (mut c, request) = start(&dir, t0);
     c.connected(connect_at);
     observe(&mut c, report, connect_at);
-    let gap = connect_at + Duration::minutes(5);
+    let gap = connect_at + jiff::SignedDuration::from_mins(5);
     observe(&mut c, json!({"cmd":"HEARTBEAT"}), gap);
-    let later = gap + Duration::minutes(11);
+    let later = gap + jiff::SignedDuration::from_mins(11);
     keep_connected(&mut c, later);
     assert!(matches!(
         c.resolve_trial(resolve(request.request_id), ImageServer::Listening, later),

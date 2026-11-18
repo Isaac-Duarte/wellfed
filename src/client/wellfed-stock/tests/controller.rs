@@ -4,22 +4,22 @@
 
 mod common;
 
-use chrono::{Duration, Utc};
 use common::Controller;
+use jiff::Timestamp;
 use serde_json::json;
 use wellfed_stock::protocol::Channel;
 use wellfed_stock::protocol::Message;
 
 fn observe(controller: &mut Controller, value: serde_json::Value) {
     let message: Message = serde_json::from_value(value).unwrap();
-    controller.observe(&message, Utc::now());
+    controller.observe(&message, Timestamp::now());
 }
 
 fn ready(controller: &mut Controller) {
     controller.status.broker_connected = true;
     observe(
         controller,
-        json!({"cmd":"HEARTBEAT","ts":Utc::now().timestamp_millis()}),
+        json!({"cmd":"HEARTBEAT","ts":Timestamp::now().as_millisecond()}),
     );
 }
 
@@ -60,7 +60,7 @@ fn ota_reports_keep_distinct_phases_with_shared_ids_and_bound_history() {
             &c.config,
             Channel::System,
             &serde_json::from_value(json!({"cmd":"OTA_INFORM","state":5})).unwrap(),
-            Utc::now(),
+            Timestamp::now(),
             wellfed_stock::clock::StockPlans::Unknown,
         )
         .is_none()
@@ -84,9 +84,9 @@ fn ota_status_drops_unbounded_or_private_fields_and_survives_disconnect_as_histo
     assert!(report.state.is_none() && report.progress.is_none() && report.error_code.is_none());
     let output = serde_json::to_string(report).unwrap();
     assert!(!output.contains("private-url") && !output.contains("secret"));
-    assert!(report.received_at <= Utc::now());
+    assert!(report.received_at <= Timestamp::now());
 
-    c.disconnected(Utc::now());
+    c.disconnected(Timestamp::now());
     assert!(!c.status.device_online);
     assert_eq!(c.status.ota_reports.len(), 1);
     observe(&mut c, json!({"cmd":"HEARTBEAT"}));
@@ -108,7 +108,7 @@ fn stale_telemetry_goes_offline_and_private_attributes_are_not_exposed() {
     assert_eq!(c.status.attributes["volume"], 50);
 
     assert!(c.status.device_online);
-    c.expire(Utc::now() + Duration::seconds(91));
+    c.expire(Timestamp::now() + jiff::SignedDuration::from_secs(91));
     assert!(!c.status.device_online);
 }
 
@@ -137,7 +137,7 @@ fn an_out_of_range_device_time_leaves_no_clock_offset() {
     let calibration = wellfed_stock::clock::calibration(
         wellfed_stock::clock::StockPlans::Erased,
         Some(i64::MIN),
-        Utc::now(),
+        Timestamp::now(),
     );
     assert_eq!(calibration, wellfed_stock::clock::Calibration::Sent);
 }

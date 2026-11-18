@@ -12,8 +12,7 @@
 
 use std::fmt;
 
-use chrono::{DateTime, Offset, TimeDelta, TimeZone, Utc};
-use chrono_tz::Tz;
+use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
 use uuid::Uuid;
@@ -22,6 +21,7 @@ use wellfed_formats::require;
 use wellfed_model::Model;
 
 use crate::config::Config;
+use crate::zone::Zone;
 
 pub mod plaf103;
 
@@ -262,16 +262,16 @@ pub struct Ntp {
 }
 
 /// How far ahead the stock reply looks for the zone's next two changes.
-const NTP_HORIZON_DAYS: i64 = 800;
+const NTP_HORIZON: SignedDuration = SignedDuration::from_hours(800 * 24);
 
-pub fn ntp_response(zone: Tz, now: DateTime<Utc>, calibrate: bool) -> Ntp {
-    let current = offset_seconds(zone, now);
-    let horizon = now + TimeDelta::days(NTP_HORIZON_DAYS);
+pub fn ntp_response(zone: &Zone, now: Timestamp, calibrate: bool) -> Ntp {
+    let current = zone.offset_seconds(now);
+    let horizon = now + NTP_HORIZON;
 
     let first = next_offset_change(zone, now, horizon);
     let second = first.and_then(|(at, _)| next_offset_change(zone, at, horizon));
-    let wire = |change: Option<(DateTime<Utc>, i32)>| match change {
-        Some((at, offset)) => (offset, at.timestamp_millis()),
+    let wire = |change: Option<(Timestamp, i32)>| match change {
+        Some((at, offset)) => (offset, at.as_millisecond()),
         None => (current, 0),
     };
     let (next_offset, next_ts) = wire(first);
@@ -288,33 +288,29 @@ pub fn ntp_response(zone: Tz, now: DateTime<Utc>, calibrate: bool) -> Ntp {
         second_next_dst_transition_ts: second_ts,
         timezone: f64::from(current) / 3600.0,
         timezone_offset_seconds: current,
-        ts: now.timestamp_millis(),
+        ts: now.as_millisecond(),
     }
-}
-
-/// The zone's UTC offset at `at`, in seconds.
-pub(crate) fn offset_seconds(zone: Tz, at: DateTime<Utc>) -> i32 {
-    zone.offset_from_utc_datetime(&at.naive_utc())
-        .fix()
-        .local_minus_utc()
 }
 
 /// The first whole second after `after`, up to `until`, with a different UTC
 /// offset, and that offset. UTC days are scanned, then the exact second is
 /// found by bisection, so no ambiguous local time is involved.
 pub(crate) fn next_offset_change(
-    zone: Tz,
-    after: DateTime<Utc>,
-    until: DateTime<Utc>,
-) -> Option<(DateTime<Utc>, i32)> {
-    let offset_at =
-        |seconds: i64| DateTime::from_timestamp(seconds, 0).map(|at| offset_seconds(zone, at));
-    let current = offset_at(after.timestamp())?;
+    zone: &Zone,
+    after: Timestamp,
+    until: Timestamp,
+) -> Option<(Timestamp, i32)> {
+    let offset_at = |seconds: i64| {
+        Timestamp::from_second(seconds)
+            .ok()
+            .map(|at| zone.offset_seconds(at))
+    };
+    let current = offset_at(after.as_second())?;
 
-    let mut low = after.timestamp();
+    let mut low = after.as_second();
     let mut high = None;
-    while low < until.timestamp() {
-        let end = (low + 86_400).min(until.timestamp());
+    while low < until.as_second() {
+        let end = (low + 86_400).min(until.as_second());
         if offset_at(end)? != current {
             high = Some(end);
             break;
@@ -332,8 +328,8 @@ pub(crate) fn next_offset_change(
         }
     }
 
-    let at = DateTime::from_timestamp(high, 0)?;
-    Some((at, offset_seconds(zone, at)))
+    let at = Timestamp::from_second(high).ok()?;
+    Some((at, zone.offset_seconds(at)))
 }
 
 /// A command carrying only the stock envelope fields.
@@ -358,13 +354,13 @@ pub fn command(
     channel: Channel,
     cmd: &str,
     id: Uuid,
-    now: DateTime<Utc>,
+    now: Timestamp,
     body: &impl Serialize,
 ) -> Reply {
     let command = Command {
         cmd,
         msg_id: id.to_string(),
-        ts: now.timestamp_millis(),
+        ts: now.as_millisecond(),
         body,
     };
     Reply::new(channel.sub_topic(config), &command)
@@ -374,21 +370,77 @@ pub fn command(
 mod tests {
     use super::*;
 
+    /// 2026-10-17T21:17:41Z, when the Denver reply was captured.
+    fn captured_now() -> Timestamp {
+        Timestamp::from_second(1_792_271_861).unwrap()
+    }
+
     #[test]
     fn denver_time_response_matches_captured_dst_transitions() {
-        let now = Utc.with_ymd_and_hms(2026, 10, 17, 21, 17, 41).unwrap();
-        let response = ntp_response(chrono_tz::America::Denver, now, true);
+        let denver = "America/Denver".parse().unwrap();
+        let response = ntp_response(&denver, captured_now(), true);
 
         assert_eq!(response.timezone_offset_seconds, -21600);
         assert_eq!(response.next_dst_offset_seconds, -25200);
         assert_eq!(response.next_dst_transition_ts, 1793520000000_i64);
         assert_eq!(response.second_next_dst_offset_seconds, -21600);
         assert_eq!(response.second_next_dst_transition_ts, 1805014800000_i64);
+        assert_eq!(response.ts, 1_792_271_861_000);
+    }
+
+    /// Southern, half-hour, half-hour-shift and DST-ending zones, as the
+    /// reply gave them when it was built on chrono-tz: a change of zone
+    /// library must not move a feeder's clock.
+    #[test]
+    fn other_zones_keep_their_offsets_and_changes() {
+        let cases: [(&str, f64, [i64; 5]); 5] = [
+            (
+                "Australia/Sydney",
+                11.0,
+                [39600, 36000, 1806768000000, 39600, 1822492800000],
+            ),
+            ("Asia/Kolkata", 5.5, [19800, 19800, 0, 19800, 0]),
+            (
+                "Europe/Lisbon",
+                1.0,
+                [3600, 0, 1792890000000, 3600, 1806195600000],
+            ),
+            (
+                "America/Santiago",
+                -3.0,
+                [-10800, -14400, 1806807600000, -10800, 1820116800000],
+            ),
+            (
+                "Australia/Lord_Howe",
+                11.0,
+                [39600, 37800, 1806764400000, 39600, 1822491000000],
+            ),
+        ];
+
+        for (name, hours, [current, next, next_ts, second, second_ts]) in cases {
+            let zone = name.parse().unwrap();
+            let response = ntp_response(&zone, captured_now(), true);
+
+            assert_eq!(response.timezone, hours, "{name}");
+            assert_eq!(
+                i64::from(response.timezone_offset_seconds),
+                current,
+                "{name}"
+            );
+            assert_eq!(i64::from(response.next_dst_offset_seconds), next, "{name}");
+            assert_eq!(response.next_dst_transition_ts, next_ts, "{name}");
+            assert_eq!(
+                i64::from(response.second_next_dst_offset_seconds),
+                second,
+                "{name}"
+            );
+            assert_eq!(response.second_next_dst_transition_ts, second_ts, "{name}");
+        }
     }
 
     #[test]
     fn zones_without_dst_do_not_invent_transition_dates() {
-        let response = ntp_response(chrono_tz::UTC, Utc::now(), false);
+        let response = ntp_response(&Zone::utc(), Timestamp::now(), false);
 
         assert_eq!(response.next_dst_transition_ts, 0);
         assert!(!response.calibration_tag);

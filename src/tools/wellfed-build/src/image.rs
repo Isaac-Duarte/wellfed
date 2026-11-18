@@ -9,7 +9,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::{SecondsFormat, Utc};
 use wellfed_formats::manifest::{BuildChecks, BuildManifest};
 use wellfed_formats::require;
 
@@ -234,7 +233,7 @@ pub fn build(repo: &Repo, request: &Request, toolchain: &Path) -> Result<PathBuf
         provisioning,
         ota_public_key: ota_key,
         toolchain_sha256: built.toolchain_sha256,
-        built_at: Utc::now().to_rfc3339_opts(SecondsFormat::Micros, false),
+        built_at: wellfed_formats::utc::micros(jiff::Timestamp::now()),
         inputs: expected,
         sdk_overrides: built.sdk_overrides,
         compiled_archives: built.compiled_archives,

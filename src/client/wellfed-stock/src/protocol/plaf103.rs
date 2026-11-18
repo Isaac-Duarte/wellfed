@@ -3,7 +3,7 @@
 //! reply (clock, binding, the imported feeding-plan snapshot and event
 //! acknowledgements); schedules are served from the snapshot, never edited.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::Serialize;
 use serde_json::{Map, Value};
 use uuid::Uuid;
@@ -54,7 +54,7 @@ pub fn reply(
     config: &Config,
     channel: Channel,
     msg: &Message,
-    now: DateTime<Utc>,
+    now: Timestamp,
     stock_plans: StockPlans,
 ) -> Option<Reply> {
     let mut ack = Ack {
@@ -63,14 +63,14 @@ pub fn reply(
         exec_step: None,
         link_id: link_id(),
         msg_id: msg.msg_id.as_deref(),
-        ts: now.timestamp_millis(),
+        ts: now.as_millisecond(),
     };
     let topic = channel.sub_topic(config);
 
     match (channel, msg.cmd.as_str()) {
         (Channel::Ntp, "NTP") => {
             let calibration = clock::calibration(stock_plans, msg.ts, now);
-            let ntp = ntp_response(config.timezone, now, calibration.tag());
+            let ntp = ntp_response(&config.timezone, now, calibration.tag());
             return Some(Reply::new(topic, &ntp));
         }
 
@@ -85,7 +85,7 @@ pub fn reply(
                 None if config.hotspot().is_err() => installer_binding(),
                 None => return None,
             };
-            payload.insert("ts".into(), now.timestamp_millis().into());
+            payload.insert("ts".into(), now.as_millisecond().into());
             payload.insert("msgId".into(), msg.msg_id.clone().into());
             payload.insert("linkId".into(), link_id().into());
             return Some(Reply {
@@ -132,6 +132,6 @@ impl Sent {
 }
 
 /// A `service` command without fields of its own.
-pub fn service(config: &Config, sent: Sent, id: Uuid, now: DateTime<Utc>) -> Reply {
+pub fn service(config: &Config, sent: Sent, id: Uuid, now: Timestamp) -> Reply {
     command(config, Channel::Service, sent.cmd(), id, now, &Plain {})
 }

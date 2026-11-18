@@ -22,7 +22,7 @@ use std::{
     path::Path,
 };
 
-use chrono_tz::Tz;
+use crate::zone::Zone;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use uuid::Uuid;
@@ -97,7 +97,7 @@ pub struct Config {
     pub mqtt_listen: SocketAddr,
     pub http_listen: SocketAddr,
 
-    pub timezone: Tz,
+    pub timezone: Zone,
     /// The captured cloud `BINDING` reply, replayed verbatim.
     #[serde(default)]
     pub binding_response: Option<Map<String, Value>>,
@@ -219,7 +219,7 @@ pub struct InstallConfig {
     pub api_token: String,
     pub mqtt_listen: SocketAddr,
     pub http_listen: SocketAddr,
-    pub timezone: Tz,
+    pub timezone: Zone,
 }
 
 impl InstallConfig {
@@ -236,7 +236,7 @@ impl InstallConfig {
 
 /// A new installer's config at `output`, with fresh secrets; never replaces
 /// a file.
-pub fn init_installer(output: &Path, mqtt_listen: SocketAddr, timezone: Tz) -> Result<()> {
+pub fn init_installer(output: &Path, mqtt_listen: SocketAddr, timezone: Zone) -> Result<()> {
     let config = InstallConfig {
         version: 1,
         server_password: Uuid::new_v4().simple().to_string(),
@@ -402,7 +402,7 @@ mod tests {
             username: "stock".into(),
             password: "its-own".into(),
             address: "192.168.4.20".parse().unwrap(),
-            enrolled_at: chrono::Utc::now(),
+            enrolled_at: jiff::Timestamp::now(),
         }
     }
 

@@ -208,6 +208,18 @@ fn a_start_time_from_ps_reads_as_seconds_since_the_epoch() {
     assert_eq!(Stat::parse(""), None);
 }
 
+/// `ps -o lstart` as macOS prints it, rejoined with single spaces; checked
+/// on every host, since only a macOS build reads `ps`.
+#[test]
+fn a_ps_start_time_reads_as_utc_seconds() {
+    assert_eq!(
+        lstart_seconds("Sun Nov 1 11:00:56 2026"),
+        Some(1_793_530_856)
+    );
+    assert_eq!(lstart_seconds("Sun Nov 12 11:00:56 2026"), None);
+    assert_eq!(lstart_seconds("Sun Nov 1 11:00:56"), None);
+}
+
 #[cfg(not(target_os = "macos"))]
 #[test]
 fn stat_fields_count_from_the_last_parenthesis() {
@@ -230,7 +242,7 @@ fn stat_fields_count_from_the_last_parenthesis() {
 fn the_holder_reads_as_who_and_what() {
     let mut holder = Holder::current().unwrap();
     holder.command = vec!["wellfed-bench".into(), "dump".into(), "fw-01".into()];
-    holder.started = DateTime::from_timestamp(1_792_929_600, 0).unwrap();
+    holder.started = Timestamp::from_second(1_792_929_600).unwrap();
 
     let text = LeaseError::Stale(Box::new(holder.clone())).to_string();
 

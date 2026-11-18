@@ -37,7 +37,7 @@ fn writes_settings_with_utc_default_and_private_permissions() {
     let State::Unenrolled(config) = config::state(&path).unwrap() else {
         panic!("an installer's config names no device");
     };
-    assert_eq!(config.timezone, chrono_tz::UTC);
+    assert_eq!(config.timezone.name(), "UTC");
     assert_eq!(config.mqtt_listen.to_string(), "127.0.0.1:18883");
     assert_ne!(config.api_token, config.server_password);
 
@@ -64,7 +64,7 @@ fn takes_an_iana_timezone_and_refuses_to_replace_a_file() {
     let State::Unenrolled(config) = config::state(&path).unwrap() else {
         panic!("an installer's config names no device");
     };
-    assert_eq!(config.timezone, chrono_tz::Europe::Lisbon);
+    assert_eq!(config.timezone.name(), "Europe/Lisbon");
     let before = fs::read(&path).unwrap();
 
     assert!(!init("127.0.0.1:18884", &path, None).status.success());

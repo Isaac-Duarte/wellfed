@@ -53,7 +53,7 @@ enum Action {
         mqtt_listen: std::net::SocketAddr,
         /// IANA timezone used for device clock replies.
         #[arg(long, default_value = "UTC")]
-        timezone: chrono_tz::Tz,
+        timezone: wellfed_stock::zone::Zone,
         #[arg(long, default_value = INSTALLER_CONFIG)]
         output: PathBuf,
     },

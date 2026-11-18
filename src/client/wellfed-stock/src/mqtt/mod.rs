@@ -15,7 +15,7 @@ pub(crate) mod compat;
 use std::{sync::Arc, time::Duration};
 
 use crate::{Error, Result};
-use chrono::Utc;
+use jiff::Timestamp;
 use rumqttc::{AsyncClient, ConnectionError, Event, MqttOptions, Packet, Publish, QoS};
 use tokio::sync::{mpsc, oneshot, watch};
 use tracing::{info, warn};
@@ -97,7 +97,7 @@ impl Actor {
             &self.config,
             plaf103::Sent::Attributes,
             uuid::Uuid::new_v4(),
-            Utc::now(),
+            Timestamp::now(),
         );
         best_effort(publish(client, query), "attribute query");
     }
@@ -109,7 +109,7 @@ impl Actor {
                 .all(|code| matches!(code, rumqttc::SubscribeReasonCode::Success(_))),
             || Error::SubscriptionRefused,
         )?;
-        self.controller.connected(Utc::now());
+        self.controller.connected(Timestamp::now());
         self.query_attributes(client);
         Ok(())
     }
@@ -134,7 +134,7 @@ impl Actor {
             return;
         };
 
-        let now = Utc::now();
+        let now = Timestamp::now();
         let first_seen = self.controller.status.last_seen.is_none();
         self.controller.observe(&message, now);
         if let Some(reply) = plaf103::reply(&self.config, channel, &message, now, self.stock_plans)
@@ -163,14 +163,14 @@ impl Actor {
         if let Some(command) = command
             && publish(client, command).is_err()
         {
-            self.controller.disconnected(Utc::now());
+            self.controller.disconnected(Timestamp::now());
             return Ok(Err(Rejection::Offline));
         }
         Ok(Ok(record))
     }
 
     fn request(&mut self, client: &AsyncClient, request: Request) -> Result<()> {
-        let now = Utc::now();
+        let now = Timestamp::now();
         match request {
             Request::OtaTrial(input, lease, response) => {
                 let outcome = self.controller.ota_trial(input, lease.as_ref(), now);
@@ -201,7 +201,7 @@ impl Actor {
     /// Requests that send nothing, or (while disconnected) are refused or
     /// recorded without a command: nothing accumulates for a later session.
     fn request_without_device(&mut self, request: Request) {
-        let now = Utc::now();
+        let now = Timestamp::now();
         match request {
             Request::OtaTrial(input, lease, response) => {
                 let result = self
@@ -255,7 +255,7 @@ impl Actor {
                         None => return Ok(Session::Closed),
                     },
 
-                    _ = tick.tick() => self.controller.expire(Utc::now()),
+                    _ = tick.tick() => self.controller.expire(Timestamp::now()),
                 }
                 self.publish_status();
             }
@@ -276,7 +276,7 @@ impl Actor {
                     None => return Ok(Session::Closed),
                 },
 
-                _ = tick.tick() => self.controller.expire(Utc::now()),
+                _ = tick.tick() => self.controller.expire(Timestamp::now()),
             }
             self.publish_status();
         }
@@ -296,7 +296,7 @@ impl Actor {
             Ok(_) => {}
             Err(_) => {
                 warn!("MQTT disconnected; discarding pending outgoing messages");
-                self.controller.disconnected(Utc::now());
+                self.controller.disconnected(Timestamp::now());
                 self.publish_status();
                 return Ok(Some(Session::Dropped));
             }

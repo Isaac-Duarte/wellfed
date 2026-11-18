@@ -18,6 +18,17 @@ ignore = [
     # on heapless 0.7's CAS emulation through atomic-polyfill; a dependent
     # cannot switch it off. No postcard-rpc release drops it yet.
     { id = "RUSTSEC-2023-0089", reason = "atomic-polyfill: unmaintained, pulled in by postcard-rpc 0.12's postcard defaults with no upgrade" },
+    # First-party code keeps time with jiff. chrono remains only inside
+    # rmcp 3.11 (and the schemars `chrono04` feature rmcp turns on), which
+    # wellfed-bench links for its stdio MCP server: a host tool on the bench
+    # host, never in firmware, the app or Home Assistant. No rmcp release
+    # drops it.
+    { id = "RUSTSEC-2026-0543", reason = "chrono: unmaintained, pulled in by rmcp 3.11 (wellfed-bench's MCP server only) with no upgrade" },
+    # mqtt5 0.50's broker always depends on humantime-serde, which uses it
+    # only to (de)serialize the broker's config durations. wellfed-stock
+    # builds that config in code and never reads one from input. No mqtt5
+    # release drops it.
+    { id = "RUSTSEC-2026-0542", reason = "humantime: unmaintained, pulled in by mqtt5 0.50's broker config through humantime-serde with no upgrade" },
 ]
 
 [licenses]

@@ -8,7 +8,7 @@ description = "Local firmware builds: devices and firmwares from config, pinned 
 publish.workspace = true
 
 [dependencies]
-chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
+jiff.workspace = true
 clap.workspace = true
 wellfed-core.workspace = true
 wellfed-signed.workspace = true

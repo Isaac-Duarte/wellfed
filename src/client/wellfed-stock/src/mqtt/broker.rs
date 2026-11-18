@@ -34,7 +34,7 @@ use std::{
 };
 
 use crate::{Error, Result};
-use chrono::Utc;
+use jiff::Timestamp;
 use mqtt5::{
     broker::{
         BrokerConfig, MqttBroker,
@@ -191,7 +191,7 @@ impl DeviceAuth {
         let contest = Contest {
             client_id: client_id.into(),
             address: peer,
-            at: Utc::now(),
+            at: Timestamp::now(),
         };
         if let Err(error) = contest.record(&window.contested) {
             warn!(%error, "contest not recorded");
@@ -220,7 +220,7 @@ impl DeviceAuth {
             username: username.into(),
             password: password.into(),
             address: peer,
-            enrolled_at: Utc::now(),
+            enrolled_at: Timestamp::now(),
         };
         if let Err(error) = enroll::create(&record, &window.record) {
             warn!(%error, "enrollment not recorded; refusing the feeder");
