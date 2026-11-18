@@ -350,9 +350,8 @@ impl<S: Copy> Serve<S> {
     ) -> Boot {
         let boot = self.boot(platform, now_ms);
         let lost = platform.take_lost();
-        if lost > 0 {
-            let count = u16::try_from(lost).unwrap_or(u16::MAX);
-            events::record(platform, now_ms, EventBody::Lost { count });
+        if lost.events > 0 {
+            events::record(platform, now_ms, lost.event());
         }
         let unheard = events::written(platform, now_ms);
         if unheard > 0 {

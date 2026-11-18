@@ -76,7 +76,7 @@ use wellfed_core::store::handover;
 use wellfed_core::store::seed::{SeedStatus, SeedStore};
 use wellfed_core::store::update::{UpdateStatus, UpdateStore};
 use wellfed_device::store::clients::{ClientError, ClientStatus, ClientStore};
-use wellfed_device::store::events::{self as ring, EMPTY, EventLog, EventsFill};
+use wellfed_device::store::events::{self as ring, Dropped, EMPTY, EventLog, EventsFill};
 use wellfed_device::store::net::{NetStatus, NetStore};
 use wellfed_device::store::reset as reset_marker;
 use wellfed_device::store::settings::{
@@ -1104,7 +1104,7 @@ impl<F: FlashOps> Core<F> {
     ) -> WriteEvent {
         let mut bytes = [0; ring::BODY_BYTES];
         if wellfed_proto::encode(body, &mut bytes).is_err() {
-            events::append_failed();
+            events::append_failed(Dropped::of(body));
             return WriteEvent::Lost;
         }
 
@@ -1113,7 +1113,7 @@ impl<F: FlashOps> Core<F> {
         arming::clear_attempt();
 
         if appended.is_err() {
-            events::append_failed();
+            events::append_failed(Dropped::of(body));
             return WriteEvent::Lost;
         }
         events::landed();
@@ -1179,11 +1179,13 @@ impl<F: FlashOps> Core<F> {
     }
 }
 
-/// The count a queued body reports lost, if it is the loop's `Lost`.
-fn lost_count(body: &[u8; ring::BODY_BYTES]) -> Option<u16> {
+/// Count a queued body the ring refused. The loop's `Lost` holds its counts
+/// until a record lands; anything else is reported at once.
+fn refused(body: &[u8; ring::BODY_BYTES]) {
     match wellfed_proto::decode_padded::<EventBody>(body) {
-        Some(EventBody::Lost { count }) => Some(count),
-        _ => None,
+        Some(lost @ EventBody::Lost { .. }) => events::lost_refused(Dropped::of(&lost)),
+        Some(body) => events::append_failed(Dropped::of(&body)),
+        None => events::append_failed(Dropped::EVENT),
     }
 }
 
@@ -1205,10 +1207,7 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
                 arming::clear_attempt();
                 if appended.is_err() {
                     record = Some(Record::EventError);
-                    match lost_count(&queued.body) {
-                        Some(count) => events::lost_refused(count),
-                        None => events::append_failed(),
-                    }
+                    refused(&queued.body);
                 } else {
                     events::landed();
                 }

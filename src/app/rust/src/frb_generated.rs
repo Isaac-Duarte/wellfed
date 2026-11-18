@@ -6911,7 +6911,11 @@ impl SseDecode for crate::api::session::HistoryBody {
             }
             11 => {
                 let mut var_count = <u16>::sse_decode(deserializer);
-                return crate::api::session::HistoryBody::Lost { count: var_count };
+                let mut var_feeds = <u16>::sse_decode(deserializer);
+                return crate::api::session::HistoryBody::Lost {
+                    count: var_count,
+                    feeds: var_feeds,
+                };
             }
             12 => {
                 let mut var_reason = <Option<crate::api::model::Blocked>>::sse_decode(deserializer);
@@ -12135,9 +12139,12 @@ impl flutter_rust_bridge::IntoDart for crate::api::session::HistoryBody {
             crate::api::session::HistoryBody::ClockSet { by } => {
                 [10.into_dart(), by.into_into_dart().into_dart()].into_dart()
             }
-            crate::api::session::HistoryBody::Lost { count } => {
-                [11.into_dart(), count.into_into_dart().into_dart()].into_dart()
-            }
+            crate::api::session::HistoryBody::Lost { count, feeds } => [
+                11.into_dart(),
+                count.into_into_dart().into_dart(),
+                feeds.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
             crate::api::session::HistoryBody::FeedingBlocked { reason } => {
                 [12.into_dart(), reason.into_into_dart().into_dart()].into_dart()
             }
@@ -16555,9 +16562,10 @@ impl SseEncode for crate::api::session::HistoryBody {
                 <i32>::sse_encode(10, serializer);
                 <crate::api::session::FedBy>::sse_encode(by, serializer);
             }
-            crate::api::session::HistoryBody::Lost { count } => {
+            crate::api::session::HistoryBody::Lost { count, feeds } => {
                 <i32>::sse_encode(11, serializer);
                 <u16>::sse_encode(count, serializer);
+                <u16>::sse_encode(feeds, serializer);
             }
             crate::api::session::HistoryBody::FeedingBlocked { reason } => {
                 <i32>::sse_encode(12, serializer);

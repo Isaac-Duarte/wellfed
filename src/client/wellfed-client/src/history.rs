@@ -114,16 +114,19 @@ impl Delivered {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Entry {
     Feed(Feed),
-    /// Events that left the feeder's ring before they were read: any feeds
-    /// among them are gone from the feeder.
+    /// Events that left the feeder's ring before they were read. Nothing
+    /// says what they were, so they may have included feeds, which are gone
+    /// from the feeder.
     Gap(Gap),
-    /// The feeder's event queue overflowed and dropped `count` events,
-    /// which may have included feeds.
+    /// The feeder could not record `count` events (its queue overflowed, or
+    /// the ring refused them), `feeds` of them feeds' results, which are
+    /// gone from the feeder.
     Lost {
         epoch: u32,
         seq: u64,
         at: Option<Timestamp>,
         count: u16,
+        feeds: u16,
     },
 }
 
@@ -136,12 +139,13 @@ impl Entry {
                 epoch,
                 seq,
                 at,
-                body: EventBody::Core(CoreEvent::Lost { count }),
+                body: EventBody::Core(CoreEvent::Lost { count, feeds }),
             }) => Some(Self::Lost {
                 epoch: *epoch,
                 seq: *seq,
                 at: *at,
                 count: *count,
+                feeds: *feeds,
             }),
             Pushed::Event(event) => Feed::from_event(event).map(Self::Feed),
             Pushed::Gap(gap) => Some(Self::Gap(*gap)),
@@ -349,7 +353,7 @@ mod tests {
             }),
         };
         let lost = Event {
-            body: EventBody::Core(CoreEvent::Lost { count: 2 }),
+            body: EventBody::Core(CoreEvent::Lost { count: 2, feeds: 1 }),
             ..boot
         };
 
@@ -361,7 +365,8 @@ mod tests {
                 epoch: 3,
                 seq: 42,
                 at: None,
-                count: 2
+                count: 2,
+                feeds: 1,
             })
         );
         assert!(matches!(

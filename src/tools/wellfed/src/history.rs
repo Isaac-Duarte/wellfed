@@ -13,7 +13,7 @@ use wellfed_client::trace::Pages;
 use wellfed_model::{Answer, Gap, Op, Pushed, StatsSection};
 
 use crate::device::Connection;
-use crate::text::{self, time};
+use crate::text::{self, lost, time};
 use crate::{Target, connect, print_answer, print_json, trace};
 
 #[derive(Args)]
@@ -273,14 +273,17 @@ fn line(entry: &Entry, zone: &TimeZone) -> String {
         Entry::Feed(feed) => feed,
         Entry::Gap(Gap { from, to, .. }) => {
             return format!(
-                "events {from}-{to} left the feeder's history before they were read; feeds among them are gone"
+                "events {from}-{to} left the feeder's history before they were read; they may have included feeds"
             );
         }
-        Entry::Lost { seq, at, count, .. } => {
-            return format!(
-                "{seq:>6}  {}  the feeder could not record {count} events; feeds among them are gone",
-                time(at, zone)
-            );
+        Entry::Lost {
+            seq,
+            at,
+            count,
+            feeds,
+            ..
+        } => {
+            return format!("{seq:>6}  {}  {}", time(at, zone), lost(count, feeds));
         }
     };
 
@@ -456,27 +459,43 @@ mod tests {
         );
     }
 
+    /// A gap may have held feeds, which nothing can tell; an overflow says
+    /// feeds are gone only when the feeder counted some among what it
+    /// dropped.
     #[test]
-    fn a_gap_or_an_overflow_says_its_feeds_are_gone() {
+    fn a_gap_may_hold_feeds_and_an_overflow_names_the_feeds_it_lost() {
         let gap = Entry::Gap(Gap {
             epoch: 1,
             from: 1,
             to: 40,
         });
-        let lost = Entry::Lost {
+        let lost = |count, feeds| Entry::Lost {
             epoch: 1,
             seq: 77,
             at: None,
-            count: 3,
+            count,
+            feeds,
         };
 
         assert_eq!(
             line(&gap, &TimeZone::UTC),
-            "events 1-40 left the feeder's history before they were read; feeds among them are gone"
+            "events 1-40 left the feeder's history before they were read; they may have included feeds"
         );
         assert_eq!(
-            line(&lost, &TimeZone::UTC),
-            "    77  (clock not set)  the feeder could not record 3 events; feeds among them are gone"
+            line(&lost(759, 0), &TimeZone::UTC),
+            "    77  (clock not set)  the feeder could not record 759 events"
+        );
+        assert_eq!(
+            line(&lost(3, 1), &TimeZone::UTC),
+            "    77  (clock not set)  the feeder could not record 3 events; 1 feed among them is gone"
+        );
+        assert_eq!(
+            line(&lost(1, 1), &TimeZone::UTC),
+            "    77  (clock not set)  the feeder could not record 1 event; 1 feed among them is gone"
+        );
+        assert_eq!(
+            line(&lost(20, 2), &TimeZone::UTC),
+            "    77  (clock not set)  the feeder could not record 20 events; 2 feeds among them are gone"
         );
     }
 }

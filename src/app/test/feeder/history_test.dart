@@ -140,7 +140,7 @@ void main() {
       await show(tester, [
         entry(1, HistoryBody.fed(result: fakeFed()), at: now),
         entry(2, const HistoryBody.plansChanged(by: FedBy.feeder()), at: now),
-        entry(3, const HistoryBody.lost(count: 2), at: now),
+        entry(3, const HistoryBody.lost(count: 2, feeds: 0), at: now),
       ]);
 
       await tapIn(tester, find.widgetWithText(ChoiceChip, 'Feeds'));
@@ -171,6 +171,17 @@ void main() {
 
       await tapIn(tester, find.text('Settings changed'));
       expect(find.text(List.filled(5, '12:30 AM').join(', ')), findsOneWidget);
+    });
+
+    testWidgets('lost events name feeds only when the feeder counted some', (tester) async {
+      await show(tester, [
+        entry(1, const HistoryBody.lost(count: 759, feeds: 0), at: now),
+        entry(2, const HistoryBody.lost(count: 20, feeds: 2), at: now),
+      ]);
+
+      expect(find.text('759 could not be recorded'), findsOneWidget);
+      expect(find.text('20 could not be recorded, 2 feeds among them'), findsOneWidget);
+      expect(lostWords(3, 1), '3 could not be recorded, a feed among them');
     });
   });
 }

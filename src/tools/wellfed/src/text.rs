@@ -46,6 +46,19 @@ fn source(by: Option<Source>) -> String {
     }
 }
 
+/// Events the feeder could not record. Feeds are said to be gone only when
+/// the feeder counted some among them.
+pub(crate) fn lost(count: u16, feeds: u16) -> String {
+    let events = if count == 1 { "event" } else { "events" };
+    match feeds {
+        0 => format!("the feeder could not record {count} {events}"),
+        1 => format!("the feeder could not record {count} {events}; 1 feed among them is gone"),
+        feeds => format!(
+            "the feeder could not record {count} {events}; {feeds} feeds among them are gone"
+        ),
+    }
+}
+
 /// One feed's number, source, portions and ending, as `wellfed feeds`, the
 /// events and the feed's own result line all show it.
 pub(crate) fn fed(feed: &Feed) -> String {
@@ -413,9 +426,7 @@ pub(crate) fn event(event: &Event, zone: &TimeZone) -> String {
             );
             format!("clock set by {} ({jump})", source(Some(by)))
         }
-        EventBody::Core(CoreEvent::Lost { count }) => {
-            format!("the feeder could not record {count} events; feeds among them are gone")
-        }
+        EventBody::Core(CoreEvent::Lost { count, feeds }) => lost(count, feeds),
         EventBody::Feeder(FeederEvent::Fed { .. }) => {
             Feed::from_event(event).map_or_else(String::new, |feed| fed(&feed))
         }

@@ -4,14 +4,14 @@
 
 use std::sync::MutexGuard;
 
-use wellfed_device::store::events::Read;
+use wellfed_device::store::events::{Dropped, Read};
 use wellfed_device_api::Reader;
 use wellfed_device_runtime::events;
 use wellfed_device_runtime::writer::{self as writer};
 use wellfed_feeder_runtime::writer::{Record, Writer};
 use wellfed_hal::flash_lock::provider::Provider;
 use wellfed_hal::interlock::INTERLOCK;
-use wellfed_proto::api::EventBody;
+use wellfed_proto::api::{EventBody, FeedOutcome, FeedReason, FoodLevel, Source};
 
 use crate::support::{A, Armed, B, EVENTS_PROGRAMS_FAIL, Unreached, start, step};
 
@@ -364,8 +364,25 @@ fn a_stalled_reader_s_batch_gives_way_after_its_bound() {
     ));
 }
 
+/// A feed's `Fed` event as the queue holds it.
+fn fed(feed: u32) -> [u8; 16] {
+    let mut body = [0; 16];
+    let fed = EventBody::Fed {
+        feed,
+        requested: 1,
+        completed: 1,
+        outcome: FeedOutcome::Done.into(),
+        reason: FeedReason::Done.into(),
+        hopper: FoodLevel::Present.into(),
+        by: Source::Panel,
+    };
+    wellfed_proto::encode(&fed, &mut body).unwrap();
+    body
+}
+
 /// Events pile up while a feed holds the outputs; the last slot is kept for
 /// the feed's own outcome, which is appended after the release with the rest.
+/// What the full queue drops is counted, a feed's result apart.
 #[test]
 fn a_feeds_outcome_has_a_slot_however_many_events_pile_up() {
     let (_guard, mut writer, mut provider) = start();
@@ -383,12 +400,12 @@ fn a_feeds_outcome_has_a_slot_however_many_events_pile_up() {
         events::record_outcome(None, [0xfe; 16]),
         "the outcome's slot"
     );
-    assert!(!events::record_outcome(None, [0xff; 16]), "one slot");
+    assert!(!events::record_outcome(None, fed(9)), "one slot");
     step(&mut writer, &mut provider);
     assert_eq!(events::last_seq(), None, "held off by the feed");
     assert_eq!(
         events::take_lost(),
-        0,
+        Dropped::NONE,
         "the count waits for a slot its Lost fits"
     );
 
@@ -399,8 +416,11 @@ fn a_feeds_outcome_has_a_slot_however_many_events_pile_up() {
     assert_eq!(events::last_seq(), Some(u64::from(queued) + 1));
     assert_eq!(
         events::take_lost(),
-        2,
-        "every record dropped while the queue was full"
+        Dropped {
+            events: 2,
+            feeds: 1
+        },
+        "every record dropped while the queue was full, one a feed's"
     );
     assert_eq!(
         events::read_result(A, Some(u64::from(queued))),
@@ -428,20 +448,38 @@ fn an_event_the_ring_refused_is_counted_lost_and_a_refused_lost_waits() {
 
     assert!(events::record(None, [1; 16]));
     assert_eq!(step(&mut writer, &mut provider), Some(Record::EventError));
-    assert_eq!(events::take_lost(), 1, "the refused event");
+    assert_eq!(events::take_lost(), Dropped::EVENT, "the refused event");
+
+    assert!(events::record_outcome(None, fed(4)));
+    assert_eq!(step(&mut writer, &mut provider), Some(Record::EventError));
+    assert_eq!(
+        events::take_lost(),
+        Dropped {
+            events: 1,
+            feeds: 1
+        },
+        "a refused feed's result"
+    );
 
     let mut lost = [0; 16];
-    wellfed_proto::encode(&EventBody::Lost { count: 3 }, &mut lost).unwrap();
+    wellfed_proto::encode(&EventBody::Lost { count: 3, feeds: 1 }, &mut lost).unwrap();
     assert!(events::record(None, lost));
     assert_eq!(step(&mut writer, &mut provider), Some(Record::EventError));
-    assert_eq!(events::take_lost(), 0, "held while the ring refuses");
+    assert_eq!(
+        events::take_lost(),
+        Dropped::NONE,
+        "held while the ring refuses"
+    );
 
     EVENTS_PROGRAMS_FAIL.with(|f| f.set(false));
     assert!(events::record(None, [2; 16]));
     step(&mut writer, &mut provider);
     assert_eq!(
         events::take_lost(),
-        3,
-        "the refused Lost's count, once one lands"
+        Dropped {
+            events: 3,
+            feeds: 1
+        },
+        "the refused Lost's counts, once one lands"
     );
 }

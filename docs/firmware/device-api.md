@@ -186,7 +186,7 @@ Every flash lease checks that the outputs are stopped, and fails closed when the
 
 ### Events and samples
 
-**The queue.** The loop's event recorder (`wellfed_feeder::feeder::events`) queues records in `wellfed_device_runtime::events`. The queue holds 16 in RAM, the last kept for a feed's `Fed` event, since appends wait out a feed and events pile up meanwhile. Overflow is counted and recorded as a `Lost { count }` event.
+**The queue.** The loop's event recorder (`wellfed_feeder::feeder::events`) queues records in `wellfed_device_runtime::events`. The queue holds 16 in RAM, the last kept for a feed's `Fed` event, since appends wait out a feed and events pile up meanwhile. Overflow is counted and recorded as a `Lost { count, feeds }` event: `feeds` counts the feeds' `Fed` events among the dropped, so a client says feeds are gone only when it is above zero. An event the ring refuses (a failed program) is counted the same way. A gap in a session's read says nothing of what it held, so clients say it may have included feeds.
 
 **The ring.** The settings writer appends records to the ring in storage sectors 13–24 (`wellfed_device::store::events`: 32-byte records, at least 1,408 kept) and answers the API's reads. It polls every 5 ms while either waits, and for about 1 s after its last read. While a feed holds the outputs, an append waits at the head of the queue.
 

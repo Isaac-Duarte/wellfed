@@ -435,7 +435,9 @@ impl From<proto::EventBody> for EventBody {
                 by: by.into(),
                 jump_ms,
             }),
-            proto::EventBody::Lost { count } => EventBody::Core(CoreEvent::Lost { count }),
+            proto::EventBody::Lost { count, feeds } => {
+                EventBody::Core(CoreEvent::Lost { count, feeds })
+            }
             proto::EventBody::UpdateStop { stop } => {
                 EventBody::Core(CoreEvent::UpdateStop { stop: stop.into() })
             }
@@ -565,7 +567,7 @@ impl TryFrom<EventBody> for proto::EventBody {
                 by: by.try_into()?,
                 jump_ms,
             },
-            EventBody::Core(CoreEvent::Lost { count }) => Self::Lost { count },
+            EventBody::Core(CoreEvent::Lost { count, feeds }) => Self::Lost { count, feeds },
             EventBody::Core(CoreEvent::UpdateStop { stop }) => Self::UpdateStop {
                 stop: stop.try_into()?,
             },
@@ -2545,7 +2547,7 @@ mod tests {
                 by,
                 jump_ms: Some(-5),
             },
-            proto::EventBody::Lost { count: 3 },
+            proto::EventBody::Lost { count: 3, feeds: 1 },
             proto::EventBody::Fed {
                 feed: 9,
                 requested: 2,

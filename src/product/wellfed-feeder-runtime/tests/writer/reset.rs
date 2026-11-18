@@ -6,6 +6,7 @@ use std::cell::Cell;
 use std::sync::MutexGuard;
 
 use wellfed_device::store::clients::ClientStatus;
+use wellfed_device::store::events::Dropped;
 use wellfed_device_api::mailbox::{SettingsFields, SettingsResult};
 use wellfed_device_runtime::keys::{self, Change};
 use wellfed_device_runtime::writer::{self as writer, ErrorStage, Identity, KeyChange, KeyResult};
@@ -521,7 +522,7 @@ fn events_recorded_during_the_reset_wait_for_the_new_ring() {
     }
     assert!(done);
     assert_eq!(events::last_seq(), Some(2), "both landed");
-    assert_eq!(events::take_lost(), 0);
+    assert_eq!(events::take_lost(), Dropped::NONE);
 }
 
 #[test]

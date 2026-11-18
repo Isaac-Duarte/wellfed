@@ -108,9 +108,11 @@ pub enum CoreEvent {
         /// How far the clock moved, when it was valid before.
         jump_ms: Option<i32>,
     },
-    /// Events the feeder could not record (its queue overflowed).
+    /// Events the feeder could not record (its queue overflowed), `feeds`
+    /// of them feeds' results.
     Lost {
         count: u16,
+        feeds: u16,
     },
     /// An install stopped before activation, a cancel among them.
     UpdateStop {
