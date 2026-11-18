@@ -55,7 +55,7 @@ fn check_signature(item: &ItemFn) -> syn::Result<()> {
             "the start hook takes no arguments and is not generic",
         ));
     }
-    if sig.asyncness.is_some() || sig.unsafety.is_some() {
+    if sig.asyncness.is_some() || matches!(sig.safety, syn::Safety::Unsafe(_)) {
         return Err(syn::Error::new(
             sig.span(),
             "the start hook is a plain safe function: it creates tasks and returns",

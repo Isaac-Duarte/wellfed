@@ -40,7 +40,7 @@ pub enum ToolchainError {
     Partial { path: PathBuf },
     #[error("Toolchain archive has entries outside its pinned directory")]
     Entries,
-    #[error("This initial toolchain setup supports Linux x86_64 only")]
+    #[error("This initial toolchain setup supports Linux x86_64 and aarch64 only")]
     Host,
     #[error("Missing host tool: {tool}")]
     HostTool { tool: &'static str },
@@ -174,7 +174,7 @@ fn extract_toolchain(
 /// the toolchain directory.
 pub(crate) fn bootstrap(repo: &Repo) -> Result<PathBuf> {
     require(
-        cfg!(target_os = "linux") && cfg!(target_arch = "x86_64"),
+        cfg!(target_os = "linux") && cfg!(any(target_arch = "x86_64", target_arch = "aarch64")),
         || ToolchainError::Host,
     )?;
     let path = std::env::var("PATH").ok();

@@ -293,7 +293,7 @@ async fn skip(target: &Target, slot: u8, change: MealChange) -> Result<()> {
 
 /// What a skip or undo did, at the meal's minute on the feeder's day.
 pub(crate) fn skipped(slot: u8, due: Timestamp, zone: &TimeZone, change: MealChange) -> String {
-    let at = due.to_zoned(zone.clone()).strftime("%H:%M");
+    let at = due.to_zoned_datetime(zone.clone()).strftime("%H:%M");
     match change {
         MealChange::Skip => format!("Skipped plan {slot}'s {at} meal today."),
         MealChange::Undo => format!("Plan {slot}'s {at} meal today runs again."),

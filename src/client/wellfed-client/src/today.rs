@@ -131,7 +131,7 @@ impl<T: TimeSettings> Facts<T> {
     pub fn portions_today(&self, fallback: TimeZone) -> Option<Portions> {
         let now = self.clock()?;
         let zone = self.zone(fallback);
-        let day = now.to_zoned(zone.clone()).date();
+        let day = now.to_zoned_datetime(zone.clone()).date();
 
         let mut portions = Portions::default();
         let today: Vec<&Feed> = self
@@ -139,7 +139,7 @@ impl<T: TimeSettings> Facts<T> {
             .iter()
             .filter(|fed| {
                 fed.at
-                    .is_some_and(|at| at.to_zoned(zone.clone()).date() == day)
+                    .is_some_and(|at| at.to_zoned_datetime(zone.clone()).date() == day)
             })
             .collect();
         let newest = today.iter().enumerate().filter(|(index, fed)| {
@@ -163,7 +163,7 @@ impl<T: TimeSettings> Facts<T> {
 
 /// A moment's minute of the local day in `zone`.
 fn minute_of(at: Timestamp, zone: &TimeZone) -> u16 {
-    let local = at.to_zoned(zone.clone());
+    let local = at.to_zoned_datetime(zone.clone());
     u16::try_from(i32::from(local.hour()) * 60 + i32::from(local.minute())).unwrap_or(0)
 }
 

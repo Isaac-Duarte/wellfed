@@ -316,7 +316,7 @@ class Kept:
             return False
         try:
             await self._store.async_save(self._data)
-        except (OSError, HomeAssistantError):
+        except OSError, HomeAssistantError:
             # Home Assistant's store catches only its own write errors; the
             # folder it makes first can fail too.
             return False

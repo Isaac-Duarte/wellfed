@@ -225,9 +225,7 @@ SENSORS = (
         key="desiccant",
         translation_key="desiccant",
         native_unit_of_measurement=UnitOfTime.DAYS,
-        value=lambda session: (
-            session.status.desiccant_days if session.status is not None else None
-        ),
+        value=lambda session: session.status.desiccant_days if session.status is not None else None,
         offered=lambda session: serves(session, lambda caps: caps.desiccant),
     ),
     WellfedSensorDescription(

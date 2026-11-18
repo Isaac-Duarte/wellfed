@@ -52,6 +52,7 @@ pub(crate) fn expand(args: TokenStream, item: TokenStream) -> syn::Result<TokenS
         vis,
         sig,
         block,
+        ..
     } = item;
     let ident = sig.ident;
     Ok(quote! {
@@ -116,7 +117,8 @@ fn check_signature(item: &ItemFn) -> syn::Result<()> {
     if let Some(token) = sig.asyncness.map(|t| t.span) {
         return Err(syn::Error::new(token, "a task step is not async"));
     }
-    if let Some(token) = sig.unsafety.map(|t| t.span) {
+    if let syn::Safety::Unsafe(token) = sig.safety {
+        let token = token.span;
         return Err(syn::Error::new(token, "a task step is safe to call"));
     }
     let returns_u32 = matches!(

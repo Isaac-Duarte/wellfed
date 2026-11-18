@@ -8,7 +8,7 @@ description = "What every simulated Wellfed device shares: its storage image, th
 publish.workspace = true
 
 [dependencies]
-sha2 = { version = "0.10", default-features = false }
+sha2 = { version = "0.11", default-features = false }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "sync", "time"] }
 wellfed-amebad-sys.workspace = true

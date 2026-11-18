@@ -72,7 +72,7 @@ def _names_a_feeder(keys: Path) -> bool:
     reads as not yet."""
     try:
         feeders = json.loads(keys.read_text()).get("feeders")
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return False
     return bool(feeders)
 

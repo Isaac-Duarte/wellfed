@@ -8,7 +8,7 @@ description = "Update signing, only ever of a frozen review: the bench key, vers
 publish.workspace = true
 
 [dependencies]
-ed25519-dalek = "2"
+ed25519-dalek = "3"
 wellfed-signed.workspace = true
 wellfed-formats.workspace = true
 wellfed-image.workspace = true

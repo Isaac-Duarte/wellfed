@@ -26,7 +26,7 @@ pub(crate) fn time(at: Option<Timestamp>, zone: &TimeZone) -> String {
     at.map_or_else(
         || "(clock not set)".to_owned(),
         |at| {
-            at.to_zoned(zone.clone())
+            at.to_zoned_datetime(zone.clone())
                 .strftime("%Y-%m-%d %H:%M:%S %:z")
                 .to_string()
         },

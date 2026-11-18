@@ -20,7 +20,7 @@ clap.workspace = true
 # sqlx-postgres on Windows.
 etcetera = "0.11.0"
 futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
-jiff = "0.2.38"
+jiff = "1.0.1"
 wellfed-bench-formats = { path = "../wellfed-bench-formats", features = ["device"] }
 wellfed-ble.workspace = true
 wellfed-client.workspace = true

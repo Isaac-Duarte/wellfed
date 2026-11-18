@@ -27,7 +27,7 @@
 //! Host tests check every handshake against `snow` in both roles, so the two
 //! implementations agree byte for byte.
 
-use chacha20poly1305::aead::{AeadInPlace, KeyInit};
+use chacha20poly1305::aead::{AeadInOut, KeyInit};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce, Tag};
 use sha2::{Digest, Sha256};
 use x25519_dalek::{PublicKey, StaticSecret, X25519_BASEPOINT_BYTES, x25519};
@@ -157,8 +157,8 @@ impl CipherState {
         let out = out.get_mut(..len).ok_or(Error::BufferTooSmall)?;
         let (body, tag_out) = out.split_at_mut(plain.len());
         body.copy_from_slice(plain);
-        let tag = ChaCha20Poly1305::new(Key::from_slice(&key))
-            .encrypt_in_place_detached(&self.nonce()?, ad, body)
+        let tag = ChaCha20Poly1305::new(&Key::from(key))
+            .encrypt_inout_detached(&self.nonce()?, ad, body.into())
             .map_err(|_| Error::BufferTooSmall)?;
         tag_out.copy_from_slice(&tag);
 
@@ -178,8 +178,9 @@ impl CipherState {
         let (body, tag) = message.split_at(len);
         let out = out.get_mut(..len).ok_or(Error::BufferTooSmall)?;
         out.copy_from_slice(body);
-        ChaCha20Poly1305::new(Key::from_slice(&key))
-            .decrypt_in_place_detached(&self.nonce()?, ad, out, Tag::from_slice(tag))
+        let tag = <&Tag>::try_from(tag).map_err(|_| Error::BadLength)?;
+        ChaCha20Poly1305::new(&Key::from(key))
+            .decrypt_inout_detached(&self.nonce()?, ad, out.into(), tag)
             .map_err(|_| Error::Decrypt)?;
 
         self.nonce += 1;

@@ -285,6 +285,10 @@ const TARGET_LINTS: [&str; 10] = [
     "unreachable_pub",
 ];
 
+/// sha2's compact software backend, as `CARGO_ENCODED_RUSTFLAGS` (flags
+/// separated by 0x1f). With `--target`, it reaches target crates only.
+const SHA2_COMPACT: &str = "--cfg\x1fsha2_backend_soft=\"compact\"";
+
 /// Cross-compile one firmware archive per core and stage it beside the SDK:
 /// KM0's from `wellfed-hal-common`, KM4's from the firmware crate, which links
 /// the SDK runtime, with the variant's feature. Each is linted first, with
@@ -326,6 +330,10 @@ fn build_rust(
                 .current_dir(&repo.root)
                 .env_clear()
                 .envs(environment)
+                // The compact SHA-2 rounds: the unrolled SHA-512 alone was
+                // 21.8 KB of a firmware image, for a hash that only checks
+                // update signatures. Host builds keep the unrolled rounds.
+                .env("CARGO_ENCODED_RUSTFLAGS", SHA2_COMPACT)
                 .stdout(log.try_clone()?)
                 .stderr(log.try_clone()?)
                 .status()?)

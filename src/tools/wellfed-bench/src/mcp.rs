@@ -164,7 +164,8 @@ impl Bench {
             Call::Banks => serde_json::to_value(client.banks().await?)?,
 
             Call::Note(args) => {
-                let body = crate::note::body(args, &self.root, &self.root, &jiff::Zoned::now())?;
+                let body =
+                    crate::note::body(args, &self.root, &self.root, &jiff::ZonedDateTime::now())?;
                 let note = client.note(&body).await?;
                 serde_json::json!({ "noted": crate::note::describe(&note) })
             }

@@ -12,15 +12,9 @@ proptest.workspace = true
 snow = "0.10"
 
 [dependencies]
-chacha20poly1305 = { version = "0.10", default-features = false }
-sha2 = { version = "0.10", default-features = false }
-x25519-dalek = { version = "2", default-features = false, features = ["static_secrets", "zeroize"] }
-
-# On the feeder, the compact SHA-2 rounds, as wellfed-core takes them: one
-# sha2 build serves both crates, and the unrolled SHA-512 alone was 21.8 KB
-# of a firmware image. Host builds keep the unrolled rounds.
-[target.'cfg(target_os = "none")'.dependencies]
-sha2 = { version = "0.10", default-features = false, features = ["force-soft-compact"] }
+chacha20poly1305 = { version = "0.11", default-features = false }
+sha2 = { version = "0.11", default-features = false }
+x25519-dalek = { version = "3", default-features = false, features = ["static_secrets", "zeroize"] }
 
 [lints]
 workspace = true

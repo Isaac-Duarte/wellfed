@@ -18,9 +18,9 @@ http-body-util.workspace = true
 hyper = { version = "1.12.0", features = ["client", "http1"] }
 hyper-util = { version = "0.1.21", features = ["tokio"] }
 # The operator's timers: local clock times and lengths such as `5m`.
-jiff = "0.2.38"
+jiff = "1.0.1"
 # `wellfed-bench mcp`: the bench's tools for an agent, over stdio.
-rmcp = { version = "3.9.0", default-features = false, features = ["server", "transport-io"] }
+rmcp = { version = "3.11.0", default-features = false, features = ["server", "transport-io"] }
 # The MCP tools' argument schemas, as rmcp's own are made.
 schemars = "1.2.3"
 serde.workspace = true

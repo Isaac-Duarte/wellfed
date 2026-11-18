@@ -22,15 +22,15 @@
     "@eslint-community/eslint-plugin-eslint-comments": "4.8.1",
     "@eslint/js": "10.0.1",
     "@types/node": "24.19.2",
-    "eslint": "10.13.0",
+    "eslint": "10.14.0",
     "eslint-config-prettier": "10.1.8",
-    "eslint-plugin-svelte": "3.23.1",
-    "globals": "17.13.0",
+    "eslint-plugin-svelte": "3.24.1",
+    "globals": "17.14.0",
     "prettier": "3.9.10",
     "prettier-plugin-svelte": "4.1.1",
-    "svelte": "5.57.2",
-    "svelte-eslint-parser": "1.9.0",
+    "svelte": "5.57.3",
+    "svelte-eslint-parser": "1.10.1",
     "typescript": "6.0.3",
-    "typescript-eslint": "8.71.2"
+    "typescript-eslint": "8.72.2"
   }
 }

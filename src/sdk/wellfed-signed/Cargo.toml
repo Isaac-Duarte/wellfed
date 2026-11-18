@@ -8,20 +8,14 @@ description = "The frozen signed update formats bank 0 checks: manifest, key sta
 publish.workspace = true
 
 [dev-dependencies]
-ed25519-dalek = "2"
+ed25519-dalek = "3"
 proptest.workspace = true
-sha2 = "0.10"
+sha2 = "0.11"
 wellfed-session.workspace = true
 
 [dependencies]
-ed25519-dalek = { version = "2", default-features = false }
-sha2 = { version = "0.10", default-features = false }
-
-# On the feeder, the compact SHA-2 rounds: the unrolled SHA-512 alone was
-# 21.8 KB of a firmware image, for a hash that only checks update
-# signatures. Host builds keep the unrolled rounds.
-[target.'cfg(target_os = "none")'.dependencies]
-sha2 = { version = "0.10", default-features = false, features = ["force-soft-compact"] }
+ed25519-dalek = { version = "3", default-features = false }
+sha2 = { version = "0.11", default-features = false }
 
 [lints]
 workspace = true

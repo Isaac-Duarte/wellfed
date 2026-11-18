@@ -6,7 +6,7 @@ Host tests and cross-compilation checks need no vendor SDK. Full images use the 
 
 ## Prerequisites
 
-The build wrapper supports **Linux x86_64** and needs, installed by you (it installs no system packages):
+The build wrapper supports **Linux x86_64 and aarch64**. Realtek's compiler is an i686 binary, so an aarch64 host runs it through FEX; on a 16 KB-page kernel (Asahi), run the whole build inside `muvm` (`muvm -- make -C src/firmware/vendor bootstrap`), whose 4 KB pages FEX needs. It needs, installed by you (it installs no system packages):
 
 - Git, Make, Bash, tar with bzip2, curl and the standard GNU tools;
 - the pinned Rust toolchain;

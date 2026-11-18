@@ -159,7 +159,7 @@ pub fn to_skip(
     let due = wellfed_core_feeder::schedule::next_due(&core_plan(&plan), now_ms, offsets(zone))
         .and_then(|ms| i64::try_from(ms).ok())
         .and_then(|ms| Timestamp::from_millisecond(ms).ok())
-        .filter(|at| same_day(*at, zone, now.to_zoned(zone.clone()).date()))
+        .filter(|at| same_day(*at, zone, now.to_zoned_datetime(zone.clone()).date()))
         .ok_or(SkipError::NoneToday { slot })?;
     Ok(due)
 }
@@ -229,7 +229,7 @@ pub struct Meal {
 /// it was read: each meal takes the last feed its plan's slot fed today, at
 /// or after its minute, so a plan moved later today shows nothing as fed.
 pub fn today(plans: &Plans, feeds: &[Feed], now: Timestamp, zone: &TimeZone) -> Vec<Meal> {
-    let day = now.to_zoned(zone.clone()).date();
+    let day = now.to_zoned_datetime(zone.clone()).date();
     let next = next_meal(plans, now, zone);
 
     let mut meals: Vec<Meal> = plans
@@ -293,7 +293,7 @@ fn runs_on(days: Weekdays, day: jiff::civil::Date) -> bool {
 }
 
 fn same_day(at: Timestamp, zone: &TimeZone, day: jiff::civil::Date) -> bool {
-    at.to_zoned(zone.clone()).date() == day
+    at.to_zoned_datetime(zone.clone()).date() == day
 }
 
 fn last_feed(
@@ -307,7 +307,7 @@ fn last_feed(
         let ours =
             matches!(feed.by, Some(wellfed_model::Source::Schedule { plan }) if plan == slot);
         ours && feed.at.is_some_and(|at| {
-            let local = at.to_zoned(zone.clone());
+            let local = at.to_zoned_datetime(zone.clone());
             let at_minute = i32::from(local.hour()) * 60 + i32::from(local.minute());
             local.date() == day && at_minute >= i32::from(minute)
         })

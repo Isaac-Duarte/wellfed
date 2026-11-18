@@ -10,19 +10,13 @@ publish.workspace = true
 [dev-dependencies]
 wellfed-testkit.workspace = true
 proptest.workspace = true
-sha2 = "0.10"
-simple-dns = "0.12.0"
+sha2 = "0.11"
+simple-dns = "0.13.1"
 
 [dependencies]
 wellfed-session.workspace = true
 wellfed-signed.workspace = true
-sha2 = { version = "0.10", default-features = false }
-
-# On the feeder, the compact SHA-2 rounds: the unrolled SHA-512 alone was
-# 21.8 KB of a firmware image, for a hash that only checks update
-# signatures. Host builds keep the unrolled rounds.
-[target.'cfg(target_os = "none")'.dependencies]
-sha2 = { version = "0.10", default-features = false, features = ["force-soft-compact"] }
+sha2 = { version = "0.11", default-features = false }
 
 [lints]
 workspace = true

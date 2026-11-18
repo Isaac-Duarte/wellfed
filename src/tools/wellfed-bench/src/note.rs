@@ -13,7 +13,7 @@ use std::str::FromStr;
 
 use anyhow::Context;
 use clap::{ArgGroup, Args, Subcommand};
-use jiff::{SignedDuration, Timestamp, Zoned, civil};
+use jiff::{SignedDuration, Timestamp, ZonedDateTime, civil};
 use wellfed_bench::server::Client;
 use wellfed_bench_formats::notes::{Body, Expect, Note, Verdict, WINDOW};
 
@@ -82,7 +82,7 @@ pub(crate) struct EvidenceArgs {
 /// `note`: post it, and say what the server kept.
 pub(crate) async fn note(client: &Client, root: &Path, args: NoteArgs) -> anyhow::Result<u8> {
     let cwd = std::env::current_dir()?;
-    let body = body(args, root, &cwd, &Zoned::now())?;
+    let body = body(args, root, &cwd, &ZonedDateTime::now())?;
 
     let note = client.note(&body).await?;
     wellfed_rig::say!("Noted: {}", describe(&note));
@@ -90,7 +90,12 @@ pub(crate) async fn note(client: &Client, root: &Path, args: NoteArgs) -> anyhow
 }
 
 /// The note `args` asks for, as of `now`, with a path taken from `cwd`.
-pub(crate) fn body(args: NoteArgs, root: &Path, cwd: &Path, now: &Zoned) -> anyhow::Result<Body> {
+pub(crate) fn body(
+    args: NoteArgs,
+    root: &Path,
+    cwd: &Path,
+    now: &ZonedDateTime,
+) -> anyhow::Result<Body> {
     Ok(match args.what {
         What::Step { text } => Body::Step { text },
         What::Next { steps } => Body::Next { steps },
@@ -108,7 +113,7 @@ pub(crate) fn body(args: NoteArgs, root: &Path, cwd: &Path, now: &Zoned) -> anyh
     })
 }
 
-fn timer_body(args: TimerArgs, now: &Zoned) -> anyhow::Result<Body> {
+fn timer_body(args: TimerArgs, now: &ZonedDateTime) -> anyhow::Result<Body> {
     if args.clear {
         return Ok(Body::Clear { label: args.name });
     }
@@ -141,14 +146,14 @@ fn timer_body(args: TimerArgs, now: &Zoned) -> anyhow::Result<Body> {
 
 /// The next time the local clock reads `at`: today, or tomorrow once it
 /// has passed.
-fn next_at(at: &str, now: &Zoned) -> anyhow::Result<Timestamp> {
+fn next_at(at: &str, now: &ZonedDateTime) -> anyhow::Result<Timestamp> {
     let time = civil::Time::from_str(at)
         .with_context(|| format!("--at {at:?}: not a time such as 14:30"))?;
     let mut day = now.date();
     loop {
         let due = day
             .to_datetime(time)
-            .to_zoned(now.time_zone().clone())
+            .to_zoned_datetime(now.time_zone().clone())
             .with_context(|| format!("--at {at}"))?;
         if due.timestamp() > now.timestamp() {
             return Ok(due.timestamp());
@@ -249,7 +254,7 @@ pub(crate) fn clock(at: f64) -> String {
     else {
         return format!("{at:.0}");
     };
-    at.to_zoned(jiff::tz::TimeZone::system())
+    at.to_zoned_datetime(jiff::tz::TimeZone::system())
         .strftime("%H:%M:%S")
         .to_string()
 }
@@ -272,7 +277,7 @@ mod tests {
             .note
     }
 
-    fn noon() -> Zoned {
+    fn noon() -> ZonedDateTime {
         "2026-10-29T12:00:00+00:00[UTC]".parse().unwrap()
     }
 

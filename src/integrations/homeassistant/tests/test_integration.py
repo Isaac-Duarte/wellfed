@@ -100,8 +100,9 @@ async def test_a_feeder_that_needs_the_time_is_given_it(
     entry = await _pair(hass, simulator)
     await _until(
         hass,
-        lambda: entry.runtime_data.status is not None
-        and entry.runtime_data.status.clock_ms is not None,
+        lambda: (
+            entry.runtime_data.status is not None and entry.runtime_data.status.clock_ms is not None
+        ),
     )
 
     view = _time(simulator)
@@ -131,8 +132,10 @@ async def test_the_button_feeds_once_to_its_fed_event(
     assert fed[0]["completed"] == 1
     await _until(
         hass,
-        lambda: _state(hass, "sensor.feeder_" + _short(entry) + "_last_fed").attributes.get("feed")
-        == fed[0]["feed"],
+        lambda: (
+            _state(hass, "sensor.feeder_" + _short(entry) + "_last_fed").attributes.get("feed")
+            == fed[0]["feed"]
+        ),
     )
 
     assert await hass.config_entries.async_unload(entry.entry_id)
