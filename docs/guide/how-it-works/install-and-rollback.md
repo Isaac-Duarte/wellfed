@@ -28,7 +28,7 @@ The phone asks exactly once. A refused request can damage the updater's records 
 
 The feeder's flash has room for two firmware images, called bank 0 and bank 1. It boots bank 1 if bank 1 is valid, and bank 0 only if it isn't. An update never overwrites the firmware that's running.
 
-That rule is what the install relies on, and it happens in stages. These are the stages on the one feeder we've tested, which runs the vendor's firmware from bank 1:
+That rule is what the install relies on, and it happens in stages. These are the stages on the two feeders we've tested, which both ran the vendor's firmware from bank 1:
 
 ```mermaid
 %% svg: install-banks.svg
@@ -76,10 +76,11 @@ The vendor's firmware then runs, and it keeps trying to reach the server it knew
 - **A restore that goes wrong.** The vendor's firmware doesn't run on trial, so if it's valid but won't boot, nothing falls back and only UART recovers it. A restore that's interrupted can leave Wellfed with its Wi-Fi, phones and meals already cleared.
 - **Losing your backup.** After the install, the feeder holds no copy of the vendor's firmware. Uninstalling the app or clearing its data deletes the app's copy, so save one elsewhere.
 - **A feeder laid out differently.** A feeder running the vendor's firmware from bank 0, perhaps after a vendor update, hasn't been tried. Don't assume these stages apply to it.
-- **A different feeder.** All of this was checked on one feeder, on one firmware version.
+- **A different feeder.** All of this was checked on two feeders, on one firmware version.
 
 ## Evidence
 
 - **Observed, October 29 to 31, 2026.** The install, the backup, the promotion and the return to stock ran on one research feeder, from the app and from a command-line installer since removed. The backup's bytes were checked against the pinned hash.
+- **Observed, November 16 and 17, 2026.** On a second feeder, the install from the app ran twice, and the return to stock went over the air three times from the bench's tools. A build that couldn't start its watchdog gave way to bank 0 after three trial boots.
 - **Recovered.** That a refused request can erase the updater's status comes from analysis of the vendor's firmware, not from a test on a feeder.
 - **Observed.** A build that fails to start or hangs gave way to the previous one on the same feeder. [Consumer installation](../../firmware/consumer-installation.md#evidence) and [the OTA design](../../firmware/ota-design.md) hold the record.

@@ -110,6 +110,7 @@ Follow what the stop screen offers, since the right move depends on where it sto
 ## Evidence
 
 - **Observed, October 30, 2026.** The app ran these steps on one research feeder from a real Reset hold, including a retry after a wrong password.
+- **Observed, November 17, 2026.** A test copy of the app ran them twice on a second feeder, from a real Reset hold. A power cut during step 3, while the vendor's firmware wrote the update, left it booting from its own copy with its setup kept, and the next try installed. With a VPN on, the app sent the Wi-Fi details by the wrong network. That's what the VPN advice in step 2 prevents, and the fixed app hasn't yet run that case on a phone.
 - **Modeled.** The install from a computer, with its switch of networks by hand, is tested on the host only and hasn't been run on a feeder. The 20 second window comes from stock's behavior with no answer to its binding request, not from a timed run from a computer.
 - **Recovered.** The Lock and Reset sequence for disabled buttons comes from analysis of the vendor's firmware, and hasn't been pressed on the feeder.
 - The screenshots are from an October 30 run. Device details are painted over. The setup code shown had expired.

@@ -119,13 +119,13 @@ Once time returns, a meal up to 15 minutes late runs once, and a later one is re
 
 ## What this doesn't protect against
 
-- **A pet going hungry.** Meals can be missed through a long outage, a power cut, a fault or an empty hopper. The feeder opens alerts, such as a failed or missed meal, low food or a feeder that can't feed, and the app notifies it, but only while it can reach the feeder, on your home network, and on a computer only while the app is open. A feeder that's off or off your network can't report anything, and the app can only say it can't reach it. Alerts have run in simulation only ([roadmap](../../roadmap.md)).
+- **A pet going hungry.** Meals can be missed through a long outage, a power cut, a fault or an empty hopper. The feeder opens alerts, such as a failed or missed meal, low food or a feeder that can't feed, and the app notifies it, but only while it can reach the feeder, on your home network, and on a computer only while the app is open. A feeder that's off or off your network can't report anything, and the app can only say it can't reach it. On a second feeder we caused each alert but the power outage one, and the feeder raised it. A phone has notified one, and a locked phone hasn't been checked ([roadmap](../../roadmap.md)).
 - **A real jam.** Kibble pressed into the rotor by hand didn't jam it, so the jam handling has run only on simulated current readings. Whether 1 second of reversing frees a real jam is unknown. The limit of 300 came from empty and lightly filled drives. Four full-hopper feeds later peaked at 236 to 283 and one feed on batteries at 268, on the feeder's own scale, but a real stall's current hasn't been measured, so the margin to a real jam is unknown.
 - **Food stuck above the rotor.** Food bridging in the hopper still counts as portions.
 - **A stuck-clear outlet beam.** The feeder doesn't check that the beam really responds, so a blocked outlet could read as clear. A jam would still end the drive.
 - **A bug past the supervision.** These stops bound how long the motor runs. They don't check that a meal's time or size is what you meant.
 - **Motion after a reset.** On one captured reset, the motor leads showed three short flickers within 0.2 ms, one in the opposite direction. No drive followed, and it's not fully explained.
-- **A different feeder.** The limits and timings come from one feeder and a few foods.
+- **A different feeder.** The limits and timings come from two feeders, and the food from one feeder and a few foods.
 
 Don't rely on Wellfed alone to feed a pet yet.
 

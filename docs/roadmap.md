@@ -1,6 +1,6 @@
 # Roadmap
 
-What works today and what comes next, for the replacement firmware, the Android app, Home Assistant and the tools around them. Everything here was tested on one PLAF103 on our bench, which is no promise that it works on yours.
+What works today and what comes next, for the replacement firmware, the Android app, Home Assistant and the tools around them. Everything here was tested on PLAF103s on our bench: a research unit until November 6, 2026, and a second unit bought for the bench from November 16. That's no promise that it works on yours.
 
 | Word | Meaning |
 | --- | --- |
@@ -15,7 +15,7 @@ What works today and what comes next, for the replacement firmware, the Android 
 | --- | --- | --- |
 | Install over stock's own updater | Works | No soldering or UART needed. See [consumer installation](firmware/consumer-installation.md). |
 | Go back to stock over the air | Works | Using a stock image we serve. |
-| Guided installer (the Android app) | Works | Run from stock on the research unit: setup frame, stock's install, Bluetooth setup, kept backup, promotion and confirmation. |
+| Guided installer (the Android app) | Works | Run from stock on the research unit, and twice on the second unit on November 17: setup frame, stock's install, Bluetooth setup, kept backup, promotion and confirmation. A power cut during stock's own write left stock booting, and the next try installed. |
 | Roll back to your feeder's own stock image | Works | Run from the app, and from the developer CLI, then set up in the vendor's app; checked on the feeder once |
 | UART backup and recovery | Works | For developers. See [recovery](devices/plaf103/recovery.md). |
 | Updates over the air, with automatic rollback | Works | An image that fails to start or hangs gives way to the previous one. Each boot checks the recovery copy in bank 0, and the status (and the app) says why an update would be refused. After a UART write of bank 0 the bench tools finish the job so updates install again; both ran on the research unit, followed by an update. |
@@ -53,8 +53,8 @@ What works today and what comes next, for the replacement firmware, the Android 
 | Statistics and per-feed traces | Experimental | |
 | Lights and sound settings | Works | Lights and sound windows, volume-0 mute and a beep on every button press, checked on the bench. |
 | Desiccant reminder | Works | Counted on the feeder from the last replacement; the period and the date survive a reboot. |
-| Alerts on the feeder | Experimental | The rules and the read run in simulation. The Android app notifies them, and Home Assistant shows them. |
-| Alerts at home | Experimental | The Android app catches up with each feeder about every 15 minutes, or each minute with "instant while home", notifies each alert once by level, clears it when the feeder does, and says when it can't reach a feeder while home. Mutes and dismissals stay on the phone. On macOS, Linux and Windows the app does the same each minute while it is open, with the system's own notifications. In simulation only: it has not run on a phone or a computer. |
+| Alerts on the feeder | Partial | On the second unit (November 17) we caused each alert and the feeder raised it: a meal uncertain, missed or failed, can't feed, repeated restarts, a rollback, a member removed, food likely out, an update failed and no clock. The power-outage alert needs batteries to run on and hasn't run. The Android app notifies them, and Home Assistant shows them. |
+| Alerts at home | Experimental | The Android app catches up with each feeder about every 15 minutes, or each minute with "instant while home", notifies each alert once by level, clears it when the feeder does, and says when it can't reach a feeder while home. Mutes and dismissals stay on the phone. On macOS, Linux and Windows the app does the same each minute while it is open, with the system's own notifications. On a phone: a member's join alert posted on November 10, and the background check ran with the app closed on November 17. A locked phone, and how long an alert takes, are still to check. The desktops are in simulation only. |
 | Alerts away from home | Not started | Nothing reads a feeder's alerts from outside the home network. Planned: a Home Assistant automation that sends them to its phone app, and the app reaching feeders over a VPN such as Tailscale. |
 | Meal reminder | Works | An event on the event stream before each scheduled meal, repeated once after a reboot inside the lead. |
 | Skip a meal | Experimental | Skip a plan's next meal today, or undo it until it is due, from the app's Today tab. On the research unit, from the developer CLI, skipped daily and one-time meals neither reminded nor fed, and an undone skip reminded and fed once. The feeder's refusals and the app ran in simulation only. |
@@ -87,9 +87,10 @@ What works today and what comes next, for the replacement firmware, the Android 
 
 ## What's next
 
-1. A long unattended run with injected faults, to prove the feeder stays safe over hours.
-2. Checking the battery floor and a brownout on a bench supply, and a feed on a tired pack.
-3. Finishing the Android app: its next install from stock on the research unit, then alerts on a phone at home.
+1. Checking the battery floor and a brownout on a bench supply, and a feed on a tired pack.
+2. Alerts on a locked phone, with the delay measured.
+3. A first research release.
 4. Alerts away from home without a server: a Home Assistant notification recipe, and the app reaching feeders over Tailscale.
-5. A first research release.
-6. The desktop app on macOS, Linux and Windows in the beta: alerts while it is open, installers, and each run proved on a feeder from each system. Then iPhone.
+5. The desktop app on macOS, Linux and Windows in the beta: alerts while it is open, installers, and each run proved on a feeder from each system. Then iPhone.
+
+The long unattended run with injected faults passed on November 19: 24 half-hour cycles, 12 hours, on the release candidate ([the test log](guide/how-it-works/testing.md#the-8-hour-fault-run)).

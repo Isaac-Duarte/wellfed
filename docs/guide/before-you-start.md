@@ -83,6 +83,25 @@ Holding Reset erases the feeder's meals, Wi-Fi and settings, its link to the ven
 
 If you stop after the Reset, the feeder has no meals until you finish the install or set it up again in the vendor's app.
 
+## Limits we've measured
+
+These are what our test feeders showed, not promises for yours.
+
+| What | What we saw |
+| --- | --- |
+| The install | About 10 minutes from the vendor's firmware |
+| An update | About 3 minutes. Feeding waits, and a meal due meanwhile runs afterwards |
+| Wi-Fi coming back | The feeder answered again 29 to 34 s after a 40 s outage ended |
+| On batteries | Wi-Fi went off 5 s after the adapter did, so the app can't reach the feeder until it's back. Dispense still fed. Meals run only while the clock holds, from about 6.6 hours to a week depending on how well it knows its drift ([power](../firmware/power.md)) |
+| The food sensor | It reads low with about five portions left, so treat it as a warning, not empty |
+| A portion | 7.1 g of one dry food and 8.1 g of another. Weigh yours and set it in the app |
+| The clock | It drifted 8 to 18 parts per million, under 2 s a day, and needs a time source after each power-up |
+| A blocked outlet | Noticed only when a feed starts, so that meal fails |
+| A jam | Faked jams ended the feed by name. A real one has never happened on our bench |
+| Alerts | Only while your phone or computer can reach the feeder on your home network. A phone checks about every 15 minutes, or every minute with **Instant while home** on |
+
+[The test log](how-it-works/testing.md) has each run behind these.
+
 ## What can go wrong
 
 | What happens | What it means |
@@ -91,7 +110,7 @@ If you stop after the Reset, the feeder has no meals until you finish the instal
 | The feeder never connects | Usually a wrong password or a network without 2.4 GHz. Nothing has been installed, and you can send the details again |
 | The app closes or your phone drops out partway | The install can usually continue, and [Install](install.md#if-the-install-stops) says how. Don't unplug the feeder during an install unless the app asks you to restart it |
 | Your feeder's firmware doesn't match the known 1.1.15 | The install stops before overwriting it, and the feeder stays on Wellfed. There's then no over-the-air way back to the vendor's firmware. UART is the only route left, and our UART tools are pinned to our one test feeder, so we have no way back to offer you |
-| Wellfed has a bug that affects feeding | It's possible. It has run on one feeder and hasn't finished a long unattended run. Don't rely on it alone to feed a pet yet |
+| Wellfed has a bug that affects feeding | It's possible. It has run on two feeders, and passed a 12-hour run of injected faults on one of them, but no home has run it for weeks. Don't rely on it alone to feed a pet yet |
 | The feeder won't boot at all | The update path is built so that this shouldn't happen. The last resort is [recovery over UART](../devices/plaf103/recovery.md), which means opening the feeder and using a USB serial adapter. Our tools for it are pinned to our one test feeder, so you'd have to adapt them |
 
 [Install and rollback](how-it-works/install-and-rollback.md) explains how the install avoids the worst of these, and where it can't.
@@ -108,6 +127,8 @@ You can put your feeder's own copy of the vendor's firmware back over the air, t
 ## Evidence
 
 - **Observed, October 30 and 31, 2026.** The install and the return to the vendor's firmware ran on one research feeder, from the app.
+- **Observed, November 17, 2026.** The install from 1.1.15 ran twice from the app on a second feeder, about 10 minutes the first time. A power cut while the vendor's firmware wrote the update left it booting, and the next try installed.
+- **Observed, November 19, 2026.** The release candidate passed a 12-hour run of injected faults ([the test log](how-it-works/testing.md#the-8-hour-fault-run)).
 - **Modeled.** The app's minimum Android version comes from its build settings, and it hasn't been tried on every version.
 - **Recovered.** What the Reset hold clears on the vendor's firmware comes from analysis of that firmware.
 - **Observed, November 13, 2026.** The computer installers were built and checked, and the Windows one installed, opened and uninstalled in a Windows 11 virtual machine, leaving its data. The Linux packages started in clean Debian 13 and Ubuntu 24.04 containers. Nobody has yet opened a downloaded installer on a real Mac or PC, so the warnings above are each system's documented behavior for unsigned apps.
