@@ -333,11 +333,14 @@ One build fails at start, one hangs, and one never confirms because its server w
 
 ### Sent bad downloads
 
-*Oct 22 and 24*
+*Oct 22 and 24, and Nov 18 on the second feeder*
 
 A corrupted chunk, a truncated offer, a stalled server, a restarted server and a power cut mid-download.
 
-**Passed with gaps.** Each one stopped before activation, or resumed and activated. The next boot after a cut downloaded again from the start. The activation marker was never written early. One Oct 24 run of this suite failed when bank 0 itself crashed mid-download, and the rerun passed (see the Oct 27 entry).
+**Fixed.**
+
+- **October:** each one stopped before activation, or resumed and activated. The next boot after a cut downloaded again from the start. The activation marker was never written early. But one Oct 24 run failed when bank 0 itself crashed mid-download. The rerun passed, and the crashes were later traced to the flash clock (see [repeated installs](#installed-over-and-over-through-bank-0)).
+- **Nov 18, with the flash clock lowered:** bank 0 stopped a corrupt, an out-of-order and a stalled transfer in each of three runs, then put the earlier build back, with no crash. A power cut mid-download passed in two more runs, with bank 0 starting the download again from the start.
 
 ### Reset storms
 
