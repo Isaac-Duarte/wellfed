@@ -28,7 +28,6 @@ Each row links to its entry, which has the numbers and what the fix did and didn
 
 These entries are **Open**:
 
-- [The 8-hour fault run](#the-8-hour-fault-run-six-tries)
 - [The motor leads through a reset mid-drive](#looked-at-the-motor-leads-through-a-reset-mid-drive)
 - [A real jam](#tried-and-failed-to-jam-it-on-purpose)
 
@@ -82,13 +81,31 @@ The gaps:
 
 This is one feeder on DC power at room temperature, on the build from November 1. Builds since then, including the clock's new limit, haven't had a long run.
 
-### The 8-hour fault run, six tries
+### The 8-hour fault run
 
-*Oct 27 and 28 · Hopper empty*
+*Oct 27 and 28, and Nov 18 and 19 · Hopper empty · The release candidate on the second feeder*
 
-The plan was 16 half-hour cycles, with feeds every 10 minutes and one fault a cycle. Any failed check cuts the power and ends the run.
+The run is 16 half-hour cycles, with feeds every 10 minutes and one fault a cycle. Any failed check cuts the power and ends the run. On November 18 we ran it for 24 cycles, 12 hours, so each fault came three times.
 
-**Open.** It never ran the full 8 hours.
+**Passed.** All 24 cycles passed, on the seventh try.
+
+The faults, three times each:
+
+- Writes during a feed, and a cancel during the next.
+- A reboot at rest.
+- A power cut with a feed reserved, and one mid-drive.
+- The hotspot down mid-feed.
+- A test build faking a jam, a sensor fault or a stall.
+- Power cuts during an update.
+
+| Check | Result |
+| --- | --- |
+| Feeds | 108: 78 done with every portion, 156 portions in all. 9 uncertain after the power cuts, none run again. 18 failed on the faked faults, as they should. 3 cancelled. |
+| Heap | The least free heap was 109,216 B after the first cycle and 108,576 B from the eighth to the end. |
+| Answers | 1,256 status polls, the slowest in 0.2 s. |
+| Clock | No time server: the clock drifted up to 1.7 s from the bench computer, inside its own error bound. |
+
+The October tries ended early:
 
 | Try | How far it got | What ended it |
 | --- | --- | --- |
@@ -99,7 +116,7 @@ The plan was 16 half-hour cycles, with feeds every 10 minutes and one fault a cy
 | 5 | Failed at once | Out-of-date bench tools |
 | 6 | 4 cycles in 2 hours (26 feeds, least free heap 133,376 B) | A real Wi-Fi hang (see [power cuts](#power-cuts)) |
 
-The 72-hour run takes its place as the long run, but only with power cuts and hotspot drops. It doesn't repeat the injected faults or installs.
+This is one feeder with an empty hopper, so a portion is a turn of the rotor past its mark. The 72-hour run above stays the longest, but it had only power cuts and hotspot drops.
 
 ## Power cuts
 
@@ -691,4 +708,4 @@ These need a person, more equipment or a change to the test network. None of the
 
 ## Evidence
 
-- **Observed, October 22 to November 6, 2026, on one research feeder, and November 16 to 18 on a second feeder, as each entry says.** Much of the detail is on the pages for [motor and feeds](../../firmware/motor-and-feeds.md#evidence), [jams and sensor faults](../../firmware/jams-and-sensor-faults.md#evidence), [calibration](../../firmware/calibration.md#evidence), [power](../../firmware/power.md#evidence), [the clock](../../firmware/clock.md#evidence), [the OTA design](../../firmware/ota-design.md#evidence), [consumer installation](../../firmware/consumer-installation.md#evidence), [the device API](../../firmware/device-api.md#evidence) and [the resource budget](../../firmware/resource-budget.md#evidence).
+- **Observed, October 22 to November 6, 2026, on one research feeder, and November 16 to 19 on a second feeder, as each entry says.** Much of the detail is on the pages for [motor and feeds](../../firmware/motor-and-feeds.md#evidence), [jams and sensor faults](../../firmware/jams-and-sensor-faults.md#evidence), [calibration](../../firmware/calibration.md#evidence), [power](../../firmware/power.md#evidence), [the clock](../../firmware/clock.md#evidence), [the OTA design](../../firmware/ota-design.md#evidence), [consumer installation](../../firmware/consumer-installation.md#evidence), [the device API](../../firmware/device-api.md#evidence) and [the resource budget](../../firmware/resource-budget.md#evidence).
