@@ -89,8 +89,7 @@ What works today and what comes next, for the replacement firmware, the Android 
 
 1. Checking the battery floor and a brownout on a bench supply, and a feed on a tired pack.
 2. Alerts on a locked phone, with the delay measured.
-3. A first research release.
-4. Alerts away from home without a server: a Home Assistant notification recipe, and the app reaching feeders over Tailscale.
-5. The desktop app on macOS, Linux and Windows in the beta: alerts while it is open, installers, and each run proved on a feeder from each system. Then iPhone.
+3. Alerts away from home without a server: a Home Assistant notification recipe, and the app reaching feeders over Tailscale.
+4. The desktop app on macOS, Linux and Windows in the beta: alerts while it is open, installers, and each run proved on a feeder from each system. Then iPhone.
 
-The long unattended run with injected faults passed on November 19: 24 half-hour cycles, 12 hours, on the release candidate ([the test log](guide/how-it-works/testing.md#the-8-hour-fault-run)).
+The public beta's first release is on the [releases page](https://github.com/Isaac-Duarte/wellfed/releases). The long unattended run with injected faults passed on November 19: 24 half-hour cycles, 12 hours, on the release candidate ([the test log](guide/how-it-works/testing.md#the-8-hour-fault-run)).

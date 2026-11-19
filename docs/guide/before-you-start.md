@@ -2,9 +2,6 @@
 
 This page lists what to check before you install Wellfed, what the install erases, and what could go wrong. It is for owners deciding whether to go ahead. Nothing here touches your feeder.
 
-> [!NOTE]
-> There's no public build to install yet: no release has been published. This page describes the install as it runs on our test feeder.
-
 ## Check your feeder
 
 Do these checks first, because the installer can only read the feeder after Reset has already erased it.
@@ -24,6 +21,16 @@ Do these checks first, because the installer can only read the feeder after Rese
 | A second place to keep a file | You'll want a copy of the vendor's firmware away from your phone |
 
 Your phone or computer must be on the same network as the feeder. Client isolation or a guest network will block it.
+
+## Get the app on Android
+
+The Android app comes from the [releases page](https://github.com/Isaac-Duarte/wellfed/releases) as `app-release.apk`, with its `SHA256SUMS`. It isn't in the Play Store.
+
+1. On your phone, open the release and download the APK.
+2. Open the download. Android asks whether your browser may install apps: allow it, then go back and install.
+3. Open Wellfed. Allow notifications when it asks, so alerts can reach you.
+
+To check the download first, compare its SHA-256 with the list, from any computer with the commands below. Later releases install over this one and keep your feeders. Uninstalling the app deletes its key and its copy of your feeder's original firmware, so save the backup elsewhere first ([Install](install.md#step-5-make-it-permanent)).
 
 ## Get the app on a computer
 

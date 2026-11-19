@@ -2,9 +2,6 @@
 
 This page walks through putting the vendor's firmware back on a feeder running Wellfed, then setting it up in the vendor's app. It is for owners. It needs the backup the install made, and the phone or computer that owns the feeder.
 
-> [!NOTE]
-> There's no public build of Wellfed yet, so nobody can follow this outside our bench. It shows what the return involves, on the one feeder we've tested.
-
 > [!WARNING]
 > **Don't start by holding Reset.** That's the last step, and only after a restore reports success. On a feeder still running Wellfed, the hold wipes it and draws a new identity, and the phone's backup stays filed under the old one. You'd then need the copy you saved. If you didn't save one, the app's settings still list the copy under **Firmware backups**, named by the old identity if the feeder is no longer in your list, so you can share it. We haven't tried that rescue.
 

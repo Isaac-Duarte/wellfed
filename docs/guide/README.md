@@ -3,7 +3,7 @@
 Wellfed is open firmware for the PETLIBRO Granary PLAF103 pet feeder. It runs the feeder on your own Wi-Fi, with no vendor cloud and no account. These pages are for you if you own one, or if you're deciding whether to run it.
 
 > [!NOTE]
-> Wellfed is in heavy development and has run on two test feeders. It isn't ready to look after a real pet yet, and there's no public build to install. The [roadmap](../roadmap.md) shows where each piece stands.
+> Wellfed is a public beta. It has run on two test feeders, and it isn't ready to look after a pet on its own: keep another way to feed until you trust it. The [roadmap](../roadmap.md) shows where each piece stands.
 
 ```mermaid
 %% svg: feeder.svg
@@ -31,7 +31,7 @@ flowchart TD
 
 ## Is it for you today?
 
-Not yet, as an owner: there's nothing public to install. Follow the [roadmap](../roadmap.md) and come back after a first release. If you'd like to help build it, start with the [development guide](../development/README.md).
+If you'd like to try a beta and can keep an eye on your pet's meals, yes. The beta is on the [releases page](https://github.com/Isaac-Duarte/wellfed/releases). Start with [Before you start](before-you-start.md), which lists what to check and what the install erases. If you'd like to help build it, start with the [development guide](../development/README.md).
 
 ## Where to go next
 

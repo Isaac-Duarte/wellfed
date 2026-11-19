@@ -3,7 +3,7 @@
 This page covers life with a feeder running Wellfed: meals, feeding now, the buttons and lights, refilling and what happens when something is down. It is for owners, and each task starts with the app.
 
 > [!NOTE]
-> There's no public build to install yet, so this describes Wellfed as it runs on our test feeder. The [roadmap](../roadmap.md) shows how far along each piece is. Don't rely on it alone to feed a pet yet.
+> Wellfed is a beta. The [roadmap](../roadmap.md) shows how far along each piece is. Don't rely on it alone to feed a pet yet.
 
 The app runs on Android phones and on macOS, Linux and Windows computers. It has one screen per feeder, with four tabs: **Today**, **Schedule**, **History** and **Settings**. The app talks to the feeder directly on your home network, so away from home it can't reach it. On a computer it shows alerts only while it's open ([alerts](#alerts)).
 
@@ -165,7 +165,7 @@ An invite works once and runs out after 10 minutes, or sooner if the feeder rest
 
 ## Updates
 
-Nothing updates by itself, and there's no release to update to yet. In the app, an owner opens **Settings**, then **Firmware**. Today that offers only the build the app itself carries.
+Nothing updates by itself. Each release of the app carries the feeder build that goes with it, so updating the feeder starts with installing the app's new release from the [releases page](https://github.com/Isaac-Duarte/wellfed/releases). Then an owner opens **Settings**, then **Firmware**, which offers the build the app carries.
 
 A new build runs on trial, and if it doesn't start properly the feeder goes back to its other copy of Wellfed, which may be older. Feeding waits during the install. A meal due meanwhile runs afterward if it's within its 15 minutes, and otherwise it's missed. [Install and rollback](how-it-works/install-and-rollback.md#when-an-update-goes-wrong) has the details.
 
