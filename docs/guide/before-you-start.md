@@ -90,7 +90,7 @@ These are what our test feeders showed, not promises for yours.
 | What | What we saw |
 | --- | --- |
 | The install | About 10 minutes from the vendor's firmware |
-| An update | About 3 minutes. Feeding waits, and a meal due meanwhile runs afterwards |
+| An update | About 3 minutes. Feeding waits, and a meal due meanwhile runs afterwards if it's within its 15 minutes |
 | Wi-Fi coming back | The feeder answered again 29 to 34 s after a 40 s outage ended |
 | On batteries | Wi-Fi went off 5 s after the adapter did, so the app can't reach the feeder until it's back. Dispense still fed. Meals run only while the clock holds, from about 6.6 hours to a week depending on how well it knows its drift ([power](../firmware/power.md)) |
 | The food sensor | It reads low with about five portions left, so treat it as a warning, not empty |
