@@ -105,9 +105,9 @@ WELLFED_INSTALLER_PIN=<what it printed, with the version> flutter build apk --de
 
 The pin is compiled in: the digest of the review (which binds the image and its build manifest), the digest of the manifest, and the manifest's version. At startup the bridge checks the unpacked files against it, and against the review's own digests, as the image server does. A mismatch, or an image with no pin, is refused on the first screen.
 
-A release build's pin goes in the bridge as `RELEASE_PIN`, which the environment cannot override. It is empty until a release image exists, since only the offline release key can sign one. Until then a build with no input says it has no firmware to install.
+A release's pin goes in the bridge as `RELEASE_PIN`, which the environment cannot override, and only the offline release key can sign its manifest. It holds the current release's image, so every build installs that image unless `RELEASE_PIN` is set back to `None` in a local tree: a debug build that installs a bench image needs that change, kept out of commits. With no pin, a build with no input says it has no firmware to install.
 
-A bench image carries the build's Wi-Fi and trusts the bench key, so it never goes into a release. `make app-release-apk` refuses an `assets/installer/` that holds anything but a consumer image or nothing, and a release or profile build of the bridge refuses to install a bench image whatever its pin. Install a bench image from a debug APK.
+A bench image carries the build's Wi-Fi and trusts the bench key, so it never goes into a release. `make app-release-apk` refuses an `assets/installer/` that holds anything but a consumer image or nothing, and a release or profile build of the bridge refuses to install a bench image whatever its pin. Install a bench image from a debug APK built with `RELEASE_PIN` cleared.
 
 ### What the app keeps
 

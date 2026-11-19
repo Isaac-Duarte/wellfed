@@ -79,9 +79,14 @@ pub struct Pin {
     pub release: bool,
 }
 
-/// The release's pin, set when a release image exists; it can only be
+/// The release's pin: the consumer image's review and its update manifest,
 /// signed with the offline release key, which no checkout holds.
-const RELEASE_PIN: Option<Pin> = None;
+const RELEASE_PIN: Option<Pin> = Some(Pin {
+    review_sha256: "ebd42ace520e115361192001c0fee3e5db4452198cfebcbe6d7943afd6d9cf8e",
+    manifest_sha256: "2df376a7330626610ed103cc32ea87b027509ae044d3cb5059677a3c6c183aba",
+    version: 1000,
+    release: true,
+});
 
 /// The profile the bridge was compiled in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
