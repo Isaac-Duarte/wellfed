@@ -19,9 +19,20 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await RustLib.init();
   await nameDataDirectory();
-  if (Platform.isAndroid) await startAlerts();
-  if (onDesktopHost) await startComputerAlerts();
-  runApp(switch (await AppState.start()) {
+
+  // The app's key first, then alerts. Asking for the catch-up can start it at
+  // once in a background engine with its own secure storage, and two engines
+  // opening Android's secure storage before it holds a key each make one:
+  // the second overwrites the first, and the next start can't read the
+  // client key. So no background engine starts until this one has read or
+  // made the key, and a start that failed starts none.
+  final AppStart start = await AppState.start();
+  if (start is AppStarted) {
+    if (Platform.isAndroid) await startAlerts();
+    if (onDesktopHost) await startComputerAlerts();
+  }
+
+  runApp(switch (start) {
     AppStarted(:final AppState app) => WellfedApp(app: app, alerts: Platform.isAndroid || onDesktopHost),
     AppFailed(:final String message) => StartFailedApp(message: message),
   });

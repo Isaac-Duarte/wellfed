@@ -39,10 +39,17 @@ Future<void> background() async {
 /// One round with every feeder this phone knows. With no client key or no feeders there is
 /// nobody to catch up with.
 Future<void> _round(String dir) async {
-  final String? secret = await secureStorage.read(key: clientSecretName);
-  if (secret == null || dir.isEmpty) return;
+  if (dir.isEmpty) return;
 
+  // Feeders before the key. Any secure storage call makes key material when
+  // there is none, and two engines doing that at once leave a key the next
+  // start can't read. A phone with feeders always has its key, written
+  // before any pairing, so this engine only ever reads one.
   final AppStore store = await loadStore(path: '$dir/wellfed.json');
+  if (store.feeders.isEmpty) return;
+  final String? secret = await secureStorage.read(key: clientSecretName);
+  if (secret == null) return;
+
   await catchUpRound(
     key: ClientKey.restore(secret: identityBytes(hex: secret)),
     dir: dir,
